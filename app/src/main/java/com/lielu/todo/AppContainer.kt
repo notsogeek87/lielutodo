@@ -8,9 +8,13 @@ import com.lielu.todo.backup.BackupManager
 import com.lielu.todo.backup.BackupSection
 import com.lielu.todo.backup.SafBackupFolder
 import com.lielu.todo.backup.SettingsBackupSection
+import com.lielu.todo.data.api.SessionStore
+import com.lielu.todo.data.api.VikunjaClient
 import com.lielu.todo.data.settings.SettingsRepository
 import com.lielu.todo.data.settings.SettingsRepositoryImpl
 import com.lielu.todo.data.settings.settingsDataStore
+import com.lielu.todo.data.todo.FileLocalCache
+import com.lielu.todo.data.todo.TodoRepository
 import com.lielu.todo.work.AutoBackupScheduler
 import com.lielu.todo.work.AutoBackupWorker
 import kotlinx.coroutines.CoroutineScope
@@ -18,6 +22,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import java.io.File
 
 /**
  * Conteneur de dépendances écrit à la main : une app de ce modèle est petite et mono-module, un framework
@@ -33,6 +38,22 @@ class AppContainer(
     private val applicationScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
     val settingsRepository: SettingsRepository = SettingsRepositoryImpl(appContext.settingsDataStore)
+
+    /** Serveur Vikunja + jeton. Les tâches elles-mêmes vivent sur le serveur : voir [todoRepository]. */
+    val session = SessionStore(appContext)
+
+    val vikunjaClient = VikunjaClient(session)
+
+    /** Tâches, projets et étiquettes : copie locale + file d'écritures, resynchronisée avec le serveur. */
+    val todoRepository =
+        TodoRepository(
+            api = vikunjaClient,
+            cache = FileLocalCache(File(appContext.filesDir, "todo-cache.json")),
+            scope = applicationScope,
+            onAuthExpired = {
+                session.clear()
+            },
+        )
 
     /**
      * Données incluses dans toute sauvegarde (manuelle ou automatique) et restaurées à l'import.

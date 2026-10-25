@@ -5,13 +5,15 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
 
 // Palette neutre du modèle (violet doux). Les couleurs vivent ici et nulle part ailleurs : un écran ne code
 // pas de couleur en dur. `BackgroundLight`/`BackgroundDark` doivent suivre `window_background` dans
 // res/values*/colors.xml.
-private val BrandLight = Color(0xFF6750A4)
-private val BrandDark = Color(0xFFD0BCFF)
+private val BrandLight = Color(0xFFC9352B)
+private val BrandDark = Color(0xFFFFB4AB)
 private val BackgroundLight = Color(0xFFFBF8FF)
 private val BackgroundDark = Color(0xFF141218)
 
@@ -19,8 +21,8 @@ private val LightColors =
     lightColorScheme(
         primary = BrandLight,
         onPrimary = Color.White,
-        primaryContainer = Color(0xFFEADDFF),
-        onPrimaryContainer = Color(0xFF21005D),
+        primaryContainer = Color(0xFFFFDAD5),
+        onPrimaryContainer = Color(0xFF410002),
         background = BackgroundLight,
         onBackground = Color(0xFF1D1B20),
         surface = BackgroundLight,
@@ -33,9 +35,9 @@ private val LightColors =
 private val DarkColors =
     darkColorScheme(
         primary = BrandDark,
-        onPrimary = Color(0xFF381E72),
-        primaryContainer = Color(0xFF4F378A),
-        onPrimaryContainer = Color(0xFFEADDFF),
+        onPrimary = Color(0xFF690005),
+        primaryContainer = Color(0xFF93000A),
+        onPrimaryContainer = Color(0xFFFFDAD5),
         background = BackgroundDark,
         onBackground = Color(0xFFE6E0E9),
         surface = BackgroundDark,
@@ -45,13 +47,56 @@ private val DarkColors =
         outline = Color(0xFF948F99),
     )
 
+/** Couleurs propres à l'app (priorités, retard) : les écrans ne codent aucune couleur en dur. */
+data class TodoColors(
+    val priorityUrgent: Color,
+    val priorityHigh: Color,
+    val priorityMedium: Color,
+    val priorityNone: Color,
+    val overdue: Color,
+    val today: Color,
+)
+
+private val LightTodoColors =
+    TodoColors(
+        priorityUrgent = Color(0xFFD1453B),
+        priorityHigh = Color(0xFFEB8909),
+        priorityMedium = Color(0xFF246FE0),
+        priorityNone = Color(0xFF7A757F),
+        overdue = Color(0xFFD1453B),
+        today = Color(0xFF058527),
+    )
+
+private val DarkTodoColors =
+    TodoColors(
+        priorityUrgent = Color(0xFFFF7066),
+        priorityHigh = Color(0xFFFF9A14),
+        priorityMedium = Color(0xFF4B9BFF),
+        priorityNone = Color(0xFF948F99),
+        overdue = Color(0xFFFF7066),
+        today = Color(0xFF6ACC7F),
+    )
+
+val LocalTodoColors = staticCompositionLocalOf { LightTodoColors }
+
+/** Couleur de la case d'une tâche selon sa priorité Vikunja (0 à 5), comme les p1 à p4 de Todoist. */
+fun TodoColors.forPriority(priority: Int): Color =
+    when {
+        priority >= 4 -> priorityUrgent
+        priority == 3 -> priorityHigh
+        priority == 2 -> priorityMedium
+        else -> priorityNone
+    }
+
 @Composable
 fun AppTheme(
     darkTheme: Boolean = isSystemInDarkTheme(),
     content: @Composable () -> Unit,
 ) {
-    MaterialTheme(
-        colorScheme = if (darkTheme) DarkColors else LightColors,
-        content = content,
-    )
+    CompositionLocalProvider(LocalTodoColors provides if (darkTheme) DarkTodoColors else LightTodoColors) {
+        MaterialTheme(
+            colorScheme = if (darkTheme) DarkColors else LightColors,
+            content = content,
+        )
+    }
 }
