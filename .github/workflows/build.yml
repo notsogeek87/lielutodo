@@ -1,0 +1,152 @@
+name: Build
+
+on:
+  # Toutes les branches, pas seulement staging/main : c'est ce qui permet de valider une branche de travail
+  # AVANT de la fusionner. Les APK et les releases, eux, restent réservés à staging/main.
+  push:
+    branches:
+      - "**"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+# Un nouveau push sur une branche de travail annule le run précédent ; sur staging/main les runs sont
+# conservés, chacun publiant sa propre release.
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref_name != 'staging' && github.ref_name != 'main' }}
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    env:
+      # Publication (APK release + GitHub Release) uniquement depuis les branches de livraison.
+      PUBLISH: ${{ github.ref_name == 'staging' || github.ref_name == 'main' }}
+      # Devient versionCode et dernier segment du versionName (voir app/build.gradle.kts).
+      BUILD_NUMBER: ${{ github.run_number }}
+      # Clé de publication optionnelle. Sans ces secrets, l'APK est signé avec le keystore versionné
+      # (app/debug.keystore) : installable et mettable à jour, mais pas pour une vraie publication.
+      KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+      KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+      KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Compute build identifiers
+        id: ids
+        run: |
+          base="$(grep -m1 '^appVersionBase=' gradle.properties | cut -d= -f2)"
+          name="$(grep -m1 '^appName=' gradle.properties | cut -d= -f2-)"
+          if [ -z "$base" ] || [ -z "$name" ]; then
+            echo "::error::appVersionBase / appName introuvables dans gradle.properties"
+            exit 1
+          fi
+          # Même valeur que le versionName compilé : tag v1.0.<run>, comparable en SemVer par l'app.
+          echo "version=$base.${{ github.run_number }}" >> "$GITHUB_OUTPUT"
+          echo "app_name=$name" >> "$GITHUB_OUTPUT"
+          # Nom de fichier sûr (« Mon App » -> « Mon-App »).
+          echo "app_slug=$(echo "$name" | tr -cs 'A-Za-z0-9._' '-' | sed 's/^-//; s/-$//')" >> "$GITHUB_OUTPUT"
+          echo "sha=$(echo "${{ github.sha }}" | cut -c1-7)" >> "$GITHUB_OUTPUT"
+          # Un nom d'artifact ne peut pas contenir "/" : `claude/ma-branche` deviendrait invalide.
+          echo "ref_slug=$(echo "${{ github.ref_name }}" | tr '/' '-')" >> "$GITHUB_OUTPUT"
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Grant execute permission for gradlew
+        run: chmod +x gradlew
+
+      - name: Decode release keystore (optional)
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+        run: |
+          if [ -n "$KEYSTORE_BASE64" ]; then
+            echo "$KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/release.jks"
+            echo "KEYSTORE_FILE=$RUNNER_TEMP/release.jks" >> "$GITHUB_ENV"
+          else
+            echo "Pas de KEYSTORE_BASE64 : signature avec le keystore versionné."
+          fi
+
+      - name: Run Kotlin lint (ktlint)
+        run: ./gradlew ktlintCheck --no-daemon
+
+      - name: Run unit tests (staging + production)
+        run: ./gradlew testStagingDebugUnitTest testProductionDebugUnitTest --no-daemon
+
+      # Même tâche sur toutes les branches : une branche dont l'APK release ne se construit pas ne doit pas
+      # pouvoir être fusionnée. Inclut lintVital (erreurs de lint fatales).
+      - name: Build release APKs (staging + production)
+        run: ./gradlew assembleRelease --no-daemon
+
+      - name: Rename APKs
+        if: env.PUBLISH == 'true'
+        run: |
+          mkdir -p artifact
+          production_apk="$(find app/build/outputs/apk/production/release -name '*.apk' -print -quit)"
+          staging_apk="$(find app/build/outputs/apk/staging/release -name '*.apk' -print -quit)"
+          if [ -z "$staging_apk" ] || [ -z "$production_apk" ]; then
+            echo "::error::APK introuvable (staging: '$staging_apk', production: '$production_apk')"
+            exit 1
+          fi
+          # Le nom de l'asset de la release `main` est ce que la mise à jour intégrée télécharge.
+          cp "$production_apk" "artifact/${{ steps.ids.outputs.app_slug }}-${{ steps.ids.outputs.version }}.apk"
+          cp "$staging_apk" "artifact/${{ steps.ids.outputs.app_slug }}-Staging-${{ steps.ids.outputs.version }}.apk"
+
+      - name: Publish staging release for this build
+        if: env.PUBLISH == 'true' && github.ref_name == 'staging'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: staging-v${{ steps.ids.outputs.version }}
+          name: "${{ steps.ids.outputs.app_name }} Staging ${{ steps.ids.outputs.version }} (build ${{ github.run_number }})"
+          prerelease: true
+          files: artifact/${{ steps.ids.outputs.app_slug }}-Staging-${{ steps.ids.outputs.version }}.apk
+          body: |
+            Build automatique depuis le commit `${{ steps.ids.outputs.sha }}` (branche `${{ github.ref_name }}`).
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Publish main release for this build
+        if: env.PUBLISH == 'true' && github.ref_name == 'main'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ steps.ids.outputs.version }}
+          name: "${{ steps.ids.outputs.app_name }} ${{ steps.ids.outputs.version }} (build ${{ github.run_number }})"
+          prerelease: false
+          files: artifact/${{ steps.ids.outputs.app_slug }}-${{ steps.ids.outputs.version }}.apk
+          body: |
+            ## Comment installer ou mettre à jour ${{ steps.ids.outputs.app_name }}
+
+            **L'app est déjà installée ?** Ouvrez-la : une fenêtre « Mise à jour disponible » vous guide
+            (toucher « Installer », autoriser l'app à installer des applications si Android le demande, puis
+            confirmer « Mettre à jour »).
+
+            **Première installation, ou la fenêtre n'apparaît pas ?**
+            1. Téléchargez `${{ steps.ids.outputs.app_slug }}-${{ steps.ids.outputs.version }}.apk` ci-dessous.
+            2. Ouvrez le fichier téléchargé. Si Android bloque l'installation, touchez « Paramètres » et
+               activez « Autoriser depuis cette source », puis revenez en arrière.
+            3. Touchez « Installer » (ou « Mettre à jour »).
+
+            Vos données sont conservées lors d'une mise à jour.
+
+            ---
+            Build automatique depuis le commit `${{ steps.ids.outputs.sha }}` (branche `${{ github.ref_name }}`).
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload test and lint reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: reports-${{ steps.ids.outputs.ref_slug }}-${{ github.run_number }}
+          path: |
+            app/build/reports/tests
+            app/build/reports/ktlint
+          if-no-files-found: ignore

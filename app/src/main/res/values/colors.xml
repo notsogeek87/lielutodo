@@ -1,0 +1,6 @@
+<resources>
+    <color name="ic_launcher_background">#EDE7F6</color>
+    <!-- Doit suivre `background` du thème Compose (BackgroundLight), sinon un flash apparaît entre
+         l'affichage de la fenêtre et la première frame Compose. -->
+    <color name="window_background">#FBF8FF</color>
+</resources>

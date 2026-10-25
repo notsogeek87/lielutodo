@@ -1,0 +1,4 @@
+<resources>
+    <!-- Surchargé par les product flavors (build.gradle.kts), à partir de `appName` de gradle.properties. -->
+    <string name="app_name" translatable="false">LieluTodo</string>
+</resources>

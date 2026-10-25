@@ -1,0 +1,7 @@
+<resources>
+    <!-- Pendant sombre de Theme.LieluApp : les éléments rendus par la plateforme (poignées de sélection,
+         menus système) suivent ainsi le thème de l'app. -->
+    <style name="Theme.LieluApp" parent="android:Theme.Material.NoActionBar">
+        <item name="android:windowBackground">@color/window_background</item>
+    </style>
+</resources>
