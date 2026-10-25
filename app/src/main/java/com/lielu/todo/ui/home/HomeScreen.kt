@@ -2,28 +2,27 @@ package com.lielu.todo.ui.home
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.CalendarMonth
-import androidx.compose.material.icons.filled.Folder
-import androidx.compose.material.icons.filled.Today
+import androidx.compose.material.icons.filled.Menu
+import androidx.compose.material.icons.outlined.CalendarMonth
+import androidx.compose.material.icons.outlined.Inbox
+import androidx.compose.material.icons.outlined.Today
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -43,7 +42,9 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.lielu.todo.data.model.Task
 import com.lielu.todo.data.todo.TodoRepository
 import com.lielu.todo.data.todo.TodoState
+import com.lielu.todo.ui.common.AddFab
 import com.lielu.todo.ui.common.EmptyState
+import com.lielu.todo.ui.common.ScreenTitle
 import com.lielu.todo.ui.common.SectionHeader
 import com.lielu.todo.ui.common.TaskRow
 import com.lielu.todo.ui.common.dayHeader
@@ -56,10 +57,11 @@ import kotlinx.coroutines.launch
 import java.time.LocalDate
 
 private enum class HomeTab(
-    val title: String,
+    val label: String,
 ) {
-    TODAY("Aujourd'hui"),
-    UPCOMING("À venir"),
+    INBOX("Boîte"),
+    TODAY("Auj"),
+    UPCOMING("Prochainement"),
     BROWSE("Parcourir"),
 }
 
@@ -67,6 +69,7 @@ private enum class HomeTab(
 @Composable
 fun HomeScreen(
     repository: TodoRepository,
+    userName: String,
     serverLabel: String,
     onOpenTask: (Long) -> Unit,
     onOpenProject: (Long) -> Unit,
@@ -77,7 +80,7 @@ fun HomeScreen(
     val state by repository.state.collectAsStateWithLifecycle()
     val scope = rememberCoroutineScope()
     val snackbar = remember { SnackbarHostState() }
-    var tab by rememberSaveable { mutableIntStateOf(0) }
+    var tab by rememberSaveable { mutableIntStateOf(HomeTab.TODAY.ordinal) }
     var showAdd by remember { mutableStateOf(false) }
     val today = LocalDate.now()
 
@@ -99,20 +102,8 @@ fun HomeScreen(
     }
 
     Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text(HomeTab.entries[tab].title) },
-                actions = {
-                    if (state.syncing) {
-                        CircularProgressIndicator(
-                            modifier = Modifier.padding(end = 16.dp).size(24.dp),
-                        )
-                    }
-                },
-            )
-        },
         bottomBar = {
-            NavigationBar {
+            NavigationBar(containerColor = MaterialTheme.colorScheme.background, tonalElevation = 0.dp) {
                 HomeTab.entries.forEachIndexed { index, item ->
                     NavigationBarItem(
                         selected = tab == index,
@@ -120,23 +111,28 @@ fun HomeScreen(
                         icon = {
                             Icon(
                                 when (item) {
-                                    HomeTab.TODAY -> Icons.Filled.Today
-                                    HomeTab.UPCOMING -> Icons.Filled.CalendarMonth
-                                    HomeTab.BROWSE -> Icons.Filled.Folder
+                                    HomeTab.INBOX -> Icons.Outlined.Inbox
+                                    HomeTab.TODAY -> Icons.Outlined.Today
+                                    HomeTab.UPCOMING -> Icons.Outlined.CalendarMonth
+                                    HomeTab.BROWSE -> Icons.Filled.Menu
                                 },
                                 contentDescription = null,
                             )
                         },
-                        label = { Text(item.title) },
+                        label = { Text(item.label, maxLines = 1) },
+                        colors =
+                            NavigationBarItemDefaults.colors(
+                                selectedIconColor = MaterialTheme.colorScheme.primary,
+                                selectedTextColor = MaterialTheme.colorScheme.primary,
+                                indicatorColor = MaterialTheme.colorScheme.primaryContainer,
+                                unselectedIconColor = MaterialTheme.colorScheme.outline,
+                                unselectedTextColor = MaterialTheme.colorScheme.outline,
+                            ),
                     )
                 }
             }
         },
-        floatingActionButton = {
-            FloatingActionButton(
-                onClick = { showAdd = true },
-            ) { Icon(Icons.Filled.Add, contentDescription = "Ajouter une tâche") }
-        },
+        floatingActionButton = { AddFab(onClick = { showAdd = true }) },
         snackbarHost = { SnackbarHost(snackbar) },
     ) { padding ->
         PullToRefreshBox(
@@ -146,12 +142,14 @@ fun HomeScreen(
         ) {
             val onToggle: (Task, Boolean) -> Unit = { task, done -> scope.toggleDone(repository, snackbar, task, done) }
             when (HomeTab.entries[tab]) {
+                HomeTab.INBOX -> InboxTab(state, today, onToggle, onOpenTask)
                 HomeTab.TODAY -> TodayTab(state, today, onToggle, onOpenTask)
                 HomeTab.UPCOMING -> UpcomingTab(state, today, onToggle, onOpenTask)
                 HomeTab.BROWSE ->
                     BrowseTab(
                         repository = repository,
                         state = state,
+                        userName = userName,
                         serverLabel = serverLabel,
                         snackbar = snackbar,
                         onOpenProject = onOpenProject,
@@ -195,15 +193,19 @@ private fun TodayTab(
         return
     }
     val projects = state.projects.associate { it.id to it.title }
-    LazyColumn(modifier = Modifier.fillMaxSize()) {
+    LazyColumn(modifier = Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 96.dp)) {
+        item {
+            val count = overdue.size + dueToday.size
+            ScreenTitle("Aujourd'hui", if (count == 0) null else "$count tâche${if (count > 1) "s" else ""}")
+        }
         if (overdue.isNotEmpty()) {
-            item { SectionHeader("En retard", color = colors.overdue) }
+            item { SectionHeader("En retard", color = colors.overdue, count = overdue.size) }
             items(overdue, key = {
                 it.id
             }) { TaskRow(it, today, projects[it.projectId], { d -> onToggle(it, d) }, { onOpenTask(it.id) }) }
         }
         if (dueToday.isNotEmpty()) {
-            item { SectionHeader("Aujourd'hui") }
+            item { SectionHeader(if (overdue.isEmpty()) dayHeader(today) else "Aujourd'hui", count = dueToday.size) }
             items(dueToday, key = {
                 it.id
             }) { TaskRow(it, today, projects[it.projectId], { d -> onToggle(it, d) }, { onOpenTask(it.id) }) }
@@ -232,9 +234,10 @@ private fun UpcomingTab(
         return
     }
     val projects = state.projects.associate { it.id to it.title }
-    LazyColumn(modifier = Modifier.fillMaxSize()) {
+    LazyColumn(modifier = Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 96.dp)) {
+        item { ScreenTitle("Prochainement") }
         if (overdue.isNotEmpty()) {
-            item { SectionHeader("En retard", color = colors.overdue) }
+            item { SectionHeader("En retard", color = colors.overdue, count = overdue.size) }
             items(overdue, key = {
                 it.id
             }) { TaskRow(it, today, projects[it.projectId], { d -> onToggle(it, d) }, { onOpenTask(it.id) }) }
@@ -250,6 +253,32 @@ private fun UpcomingTab(
             }
         }
         if (overdue.isEmpty() && byDay.isEmpty()) item { EmptyState("Aucune tâche planifiée.") }
+    }
+}
+
+@Composable
+private fun InboxTab(
+    state: TodoState,
+    today: LocalDate,
+    onToggle: (Task, Boolean) -> Unit,
+    onOpenTask: (Long) -> Unit,
+) {
+    if (!state.loaded) {
+        LoadingState()
+        return
+    }
+    val tasks = state.tasks.filter { !it.done && it.projectId == state.inboxId }.sortedBy { it.position }
+    LazyColumn(modifier = Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 96.dp)) {
+        item {
+            ScreenTitle(
+                "Boîte de réception",
+                if (tasks.isEmpty()) null else "${tasks.size} tâche${if (tasks.size > 1) "s" else ""}",
+            )
+        }
+        items(tasks, key = { it.id }) {
+            TaskRow(it, today, null, { d -> onToggle(it, d) }, { onOpenTask(it.id) })
+        }
+        if (tasks.isEmpty()) item { EmptyState("Votre boîte de réception est vide.") }
     }
 }
 

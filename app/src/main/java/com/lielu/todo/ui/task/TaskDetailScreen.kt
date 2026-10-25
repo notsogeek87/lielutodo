@@ -14,20 +14,19 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Label
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.CalendarToday
-import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Flag
 import androidx.compose.material.icons.filled.Inbox
-import androidx.compose.material.icons.filled.RadioButtonUnchecked
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextField
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -51,6 +50,8 @@ import com.lielu.todo.ui.common.DatePickerSheet
 import com.lielu.todo.ui.common.LabelsDialog
 import com.lielu.todo.ui.common.PriorityMenu
 import com.lielu.todo.ui.common.ProjectMenu
+import com.lielu.todo.ui.common.TaskCheckbox
+import com.lielu.todo.ui.common.borderlessFieldColors
 import com.lielu.todo.ui.common.dueLabel
 import com.lielu.todo.ui.common.localDate
 import com.lielu.todo.ui.common.priorityName
@@ -117,6 +118,7 @@ fun TaskDetailScreen(
     Scaffold(
         topBar = {
             TopAppBar(
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background),
                 title = {
                     Text(
                         state.projects
@@ -141,28 +143,24 @@ fun TaskDetailScreen(
     ) { padding ->
         Column(modifier = Modifier.padding(padding).fillMaxSize().verticalScroll(rememberScrollState())) {
             Row(modifier = Modifier.padding(horizontal = 4.dp), verticalAlignment = Alignment.Top) {
-                IconButton(onClick = { repository.setDone(task.id, !task.done) }) {
-                    Icon(
-                        if (task.done) Icons.Filled.CheckCircle else Icons.Filled.RadioButtonUnchecked,
-                        contentDescription = if (task.done) "Rouvrir la tâche" else "Terminer la tâche",
-                        tint = colors.forPriority(task.priority),
-                    )
-                }
-                OutlinedTextField(
+                TaskCheckbox(task.done, task.priority, onToggle = { repository.setDone(task.id, it) })
+                TextField(
                     value = title,
                     onValueChange = { title = it },
-                    modifier = Modifier.weight(1f).padding(end = 12.dp),
+                    colors = borderlessFieldColors(),
+                    modifier = Modifier.weight(1f).padding(end = 4.dp),
                     textStyle =
                         MaterialTheme.typography.titleMedium.copy(
                             textDecoration = if (task.done) TextDecoration.LineThrough else null,
                         ),
                 )
             }
-            OutlinedTextField(
+            TextField(
                 value = description,
                 onValueChange = { description = it },
-                label = { Text("Description") },
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+                placeholder = { Text("Description") },
+                colors = borderlessFieldColors(),
+                modifier = Modifier.fillMaxWidth().padding(start = 52.dp, end = 4.dp, bottom = 8.dp),
                 minLines = 2,
             )
 
@@ -230,10 +228,16 @@ fun TaskDetailScreen(
                     modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    OutlinedTextField(
+                    TextField(
                         value = newComment,
                         onValueChange = { newComment = it },
                         placeholder = { Text("Ajouter un commentaire") },
+                        shape = MaterialTheme.shapes.medium,
+                        colors =
+                            borderlessFieldColors().copy(
+                                focusedContainerColor = MaterialTheme.colorScheme.surfaceContainer,
+                                unfocusedContainerColor = MaterialTheme.colorScheme.surfaceContainer,
+                            ),
                         modifier = Modifier.weight(1f),
                     )
                     IconButton(

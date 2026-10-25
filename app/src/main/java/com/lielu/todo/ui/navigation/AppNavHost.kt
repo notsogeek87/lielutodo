@@ -50,7 +50,8 @@ fun AppNavHost(container: AppContainer) {
         composable(AppDestinations.HOME) {
             HomeScreen(
                 repository = repository,
-                serverLabel = "${container.session.username} · ${container.session.baseUrl}",
+                userName = container.session.username,
+                serverLabel = container.session.baseUrl,
                 onOpenTask = { navController.navigate(AppDestinations.task(it)) },
                 onOpenProject = { navController.navigate(AppDestinations.project(it)) },
                 onOpenLabel = { navController.navigate(AppDestinations.label(it)) },
