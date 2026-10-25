@@ -15,6 +15,7 @@ import androidx.navigation.navArgument
 import com.lielu.todo.AppContainer
 import com.lielu.todo.ui.home.HomeScreen
 import com.lielu.todo.ui.home.ListTarget
+import com.lielu.todo.ui.home.SearchScreen
 import com.lielu.todo.ui.home.TaskListScreen
 import com.lielu.todo.ui.login.LoginScreen
 import com.lielu.todo.ui.settings.SettingsScreen
@@ -27,6 +28,8 @@ object AppDestinations {
     const val PROJECT = "project/{id}"
     const val LABEL = "label/{id}"
     const val FILTER = "filter/{id}"
+    const val FAVORITES = "favorites"
+    const val SEARCH = "search"
     const val TASK = "task/{id}"
 
     fun project(id: Long) = "project/$id"
@@ -72,6 +75,9 @@ fun AppNavHost(
                 onOpenProject = { navController.navigate(AppDestinations.project(it)) },
                 onOpenLabel = { navController.navigate(AppDestinations.label(it)) },
                 onOpenFilter = { navController.navigate(AppDestinations.filter(it)) },
+                onOpenFavorites = { navController.navigate(AppDestinations.FAVORITES) },
+                onSearch = { navController.navigate(AppDestinations.SEARCH) },
+                reminderScheduler = container.reminderScheduler,
                 onSettings = { navController.navigate(AppDestinations.SETTINGS) },
                 onLogout = { container.session.clear() },
             )
@@ -99,6 +105,23 @@ fun AppNavHost(
             TaskListScreen(
                 repository = repository,
                 target = ListTarget(filterId = entry.arguments?.getLong("id")),
+                onOpenTask = { navController.navigate(AppDestinations.task(it)) },
+                onBack = { navController.popBackStack() },
+            )
+        }
+
+        composable(AppDestinations.FAVORITES) {
+            TaskListScreen(
+                repository = repository,
+                target = ListTarget(favorites = true),
+                onOpenTask = { navController.navigate(AppDestinations.task(it)) },
+                onBack = { navController.popBackStack() },
+            )
+        }
+
+        composable(AppDestinations.SEARCH) {
+            SearchScreen(
+                repository = repository,
                 onOpenTask = { navController.navigate(AppDestinations.task(it)) },
                 onBack = { navController.popBackStack() },
             )

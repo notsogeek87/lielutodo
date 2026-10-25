@@ -16,6 +16,7 @@ import androidx.compose.material.icons.filled.FilterList
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.Inbox
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Star
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -36,6 +37,7 @@ import androidx.compose.ui.unit.dp
 import com.lielu.todo.data.model.Project
 import com.lielu.todo.data.todo.TodoRepository
 import com.lielu.todo.data.todo.TodoState
+import com.lielu.todo.reminder.ReminderScheduler
 import kotlinx.coroutines.launch
 import java.io.IOException
 
@@ -50,6 +52,8 @@ fun BrowseTab(
     onOpenProject: (Long) -> Unit,
     onOpenLabel: (Long) -> Unit,
     onOpenFilter: (Long) -> Unit,
+    onOpenFavorites: () -> Unit,
+    reminderScheduler: ReminderScheduler,
     onSettings: () -> Unit,
     onLogout: () -> Unit,
 ) {
@@ -69,6 +73,10 @@ fun BrowseTab(
                     onClick = { onOpenProject(inbox.id) },
                 )
             }
+        }
+        item {
+            val favorites = state.tasks.count { it.isFavorite && !it.done }
+            BrowseRow(Icons.Filled.Star, "Favoris", favorites.takeIf { it > 0 }, onClick = onOpenFavorites)
         }
         item { BrowseHeader("Projets", onAdd = { creating = Creating.PROJECT }) }
         items(others, key = { "p-${it.first.id}" }) { (project, depth) ->
@@ -104,6 +112,26 @@ fun BrowseTab(
                 color = MaterialTheme.colorScheme.outline,
                 modifier = Modifier.padding(horizontal = 16.dp),
             )
+        }
+        item {
+            var daily by remember { mutableStateOf(reminderScheduler.dailyEnabled) }
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    "Résumé quotidien à 8 h",
+                    modifier = Modifier.weight(1f),
+                    style = MaterialTheme.typography.bodyLarge,
+                )
+                androidx.compose.material3.Switch(
+                    checked = daily,
+                    onCheckedChange = {
+                        daily = it
+                        reminderScheduler.dailyEnabled = it
+                    },
+                )
+            }
         }
         item { BrowseRow(Icons.Filled.Settings, "Paramètres et sauvegarde", null, onClick = onSettings) }
         item { BrowseRow(Icons.AutoMirrored.Filled.Logout, "Se déconnecter", null, onClick = onLogout) }
@@ -180,6 +208,7 @@ private fun BrowseRow(
     title: String,
     count: Int?,
     indent: Int = 0,
+    tint: androidx.compose.ui.graphics.Color? = null,
     onClick: () -> Unit,
 ) {
     Row(
@@ -191,7 +220,7 @@ private fun BrowseRow(
                 ).padding(start = 16.dp + 20.dp * indent, end = 16.dp, top = 12.dp, bottom = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+        Icon(icon, contentDescription = null, tint = tint ?: MaterialTheme.colorScheme.onSurfaceVariant)
         Text(title, modifier = Modifier.weight(1f).padding(start = 16.dp), style = MaterialTheme.typography.bodyLarge)
         if (count !=
             null
@@ -272,3 +301,11 @@ private fun NameDialog(
         dismissButton = { TextButton(onClick = onDismiss) { Text("Annuler") } },
     )
 }
+
+/** Couleur d'un projet : hex sans « # » tel que Vikunja le stocke ; `null` si vide ou invalide (couleur du thème). */
+internal fun hexColor(hex: String): androidx.compose.ui.graphics.Color? =
+    hex.removePrefix("#").takeIf { it.length == 6 }?.toLongOrNull(16)?.let {
+        androidx.compose.ui.graphics.Color(
+            0xFF000000 or it,
+        )
+    }

@@ -51,6 +51,7 @@ import com.lielu.todo.ui.common.TaskRow
 import com.lielu.todo.ui.common.toggleDone
 import com.lielu.todo.ui.task.QuickAddSheet
 import com.lielu.todo.ui.task.add
+import com.lielu.todo.ui.theme.ProjectPalette
 import kotlinx.coroutines.launch
 import java.io.IOException
 import java.time.LocalDate
@@ -60,6 +61,7 @@ data class ListTarget(
     val projectId: Long? = null,
     val labelId: Long? = null,
     val filterId: Long? = null,
+    val favorites: Boolean = false,
 )
 
 private const val POSITION_STEP = 65_536.0
@@ -78,12 +80,15 @@ fun TaskListScreen(
     var showAdd by remember { mutableStateOf(false) }
     var showShare by remember { mutableStateOf(false) }
     var showDone by remember { mutableStateOf(false) }
+    var showMenu by remember { mutableStateOf(false) }
+    var projectDialog by remember { mutableStateOf<ProjectDialog?>(null) }
     val today = LocalDate.now()
     val projectId = target.projectId
     val live = state.tasks.associateBy { it.id }
 
     val title =
         when {
+            target.favorites -> "Favoris"
             projectId != null -> state.projects.firstOrNull { it.id == projectId }?.title ?: "Projet"
             target.filterId != null -> state.filters.firstOrNull { it.id == target.filterId }?.title ?: "Filtre"
             else ->
@@ -94,6 +99,7 @@ fun TaskListScreen(
         }
     val all: List<Task> =
         when {
+            target.favorites -> state.tasks.filter { it.isFavorite }
             projectId != null -> state.tasks.filter { it.projectId == projectId }
             target.filterId != null -> state.filterResults[target.filterId].orEmpty().map { live[it.id] ?: it }
             else -> state.tasks.filter { t -> t.labels.any { it.id == target.labelId } }
@@ -257,6 +263,35 @@ fun TaskListScreen(
             onDismiss = { showAdd = false },
         )
     }
+    val currentProject = state.projects.firstOrNull { it.id == projectId }
+    if (projectDialog != null && projectId != null && currentProject != null) {
+        ProjectActionDialog(
+            kind = projectDialog!!,
+            projectTitle = currentProject.title,
+            onDismiss = { projectDialog = null },
+            onConfirm = { kind, value ->
+                projectDialog = null
+                scope.launch {
+                    try {
+                        when (kind) {
+                            ProjectDialog.RENAME -> repository.updateProject(projectId) { it.put("title", value) }
+                            ProjectDialog.COLOR -> repository.updateProject(projectId) { it.put("hex_color", value) }
+                            ProjectDialog.ARCHIVE -> {
+                                repository.updateProject(projectId) { it.put("is_archived", true) }
+                                onBack()
+                            }
+                            ProjectDialog.DELETE -> {
+                                repository.deleteProject(projectId)
+                                onBack()
+                            }
+                        }
+                    } catch (e: IOException) {
+                        snackbar.showSnackbar("Action impossible (serveur injoignable ou refus) : ${e.message}")
+                    }
+                }
+            },
+        )
+    }
     if (showShare && projectId != null) {
         ShareDialog(
             onShare = { username, permission ->
@@ -380,6 +415,74 @@ private fun ShareDialog(
                 onClick = { onShare(username.trim(), permission) },
                 enabled = username.isNotBlank(),
             ) { Text("Partager") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Annuler") } },
+    )
+}
+
+private enum class ProjectDialog { RENAME, COLOR, ARCHIVE, DELETE }
+
+@Composable
+private fun ProjectActionDialog(
+    kind: ProjectDialog,
+    projectTitle: String,
+    onDismiss: () -> Unit,
+    onConfirm: (ProjectDialog, String) -> Unit,
+) {
+    var name by remember { mutableStateOf(projectTitle) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Text(
+                when (kind) {
+                    ProjectDialog.RENAME -> "Renommer le projet"
+                    ProjectDialog.COLOR -> "Couleur du projet"
+                    ProjectDialog.ARCHIVE -> "Archiver « $projectTitle » ?"
+                    ProjectDialog.DELETE -> "Supprimer « $projectTitle » ?"
+                },
+            )
+        },
+        text = {
+            when (kind) {
+                ProjectDialog.RENAME ->
+                    OutlinedTextField(
+                        value = name,
+                        onValueChange = { name = it },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                ProjectDialog.COLOR ->
+                    Column {
+                        ProjectPalette.chunked(5).forEach { row ->
+                            Row {
+                                row.forEach { hex ->
+                                    TextButton(onClick = { onConfirm(kind, hex) }) {
+                                        Text("●", color = hexColor(hex) ?: MaterialTheme.colorScheme.onSurface)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                ProjectDialog.ARCHIVE -> Text("Le projet disparaît de la liste mais ses tâches sont conservées.")
+                ProjectDialog.DELETE ->
+                    Text("Le projet et TOUTES ses tâches seront supprimés du serveur. Cette action est définitive.")
+            }
+        },
+        confirmButton = {
+            if (kind != ProjectDialog.COLOR) {
+                TextButton(
+                    onClick = { onConfirm(kind, name.trim()) },
+                    enabled = kind != ProjectDialog.RENAME || name.isNotBlank(),
+                ) {
+                    Text(
+                        when (kind) {
+                            ProjectDialog.RENAME -> "Renommer"
+                            ProjectDialog.ARCHIVE -> "Archiver"
+                            else -> "Supprimer"
+                        },
+                    )
+                }
+            }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Annuler") } },
     )

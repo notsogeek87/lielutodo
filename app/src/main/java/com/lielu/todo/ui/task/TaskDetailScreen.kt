@@ -16,12 +16,15 @@ import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Alarm
 import androidx.compose.material.icons.filled.CalendarToday
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Flag
 import androidx.compose.material.icons.filled.Inbox
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.RadioButtonUnchecked
 import androidx.compose.material.icons.filled.Repeat
+import androidx.compose.material.icons.filled.Star
+import androidx.compose.material.icons.filled.StarBorder
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -157,6 +160,16 @@ fun TaskDetailScreen(
                     ) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Retour") }
                 },
                 actions = {
+                    IconButton(onClick = { repository.updateTask(task.copy(isFavorite = !task.isFavorite)) }) {
+                        Icon(
+                            if (task.isFavorite) Icons.Filled.Star else Icons.Filled.StarBorder,
+                            contentDescription = if (task.isFavorite) "Retirer des favoris" else "Ajouter aux favoris",
+                        )
+                    }
+                    IconButton(onClick = {
+                        repository.duplicateTask(task.id)
+                        onBack()
+                    }) { Icon(Icons.Filled.ContentCopy, contentDescription = "Dupliquer la tâche") }
                     IconButton(onClick = {
                         repository.deleteTask(task.id)
                         onBack()

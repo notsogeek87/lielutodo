@@ -141,6 +141,7 @@ class AppContainer(
     @OptIn(FlowPreview::class)
     fun start() {
         SyncWorker.schedule(appContext)
+        reminderScheduler.scheduleDaily()
         applicationScope.launch {
             todoRepository.state
                 .map { it.tasks }

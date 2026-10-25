@@ -674,6 +674,75 @@ class TodoRepository(
         )
     }
 
+    /**
+     * Reporte à [today] les tâches en retard, en gardant l'heure de chacune (comme « Reporter » dans Todoist).
+     * Renvoie le nombre de tâches déplacées.
+     */
+    fun rescheduleOverdue(
+        today: java.time.LocalDate,
+        zone: java.time.ZoneId = java.time.ZoneId.systemDefault(),
+    ): Int {
+        val overdue =
+            _state.value.tasks.filter { t ->
+                !t.done &&
+                    t.dueDate != null &&
+                    t.dueDate
+                        .atZone(zone)
+                        .toLocalDate()
+                        .isBefore(today)
+            }
+        overdue.forEach { t ->
+            val time = t.dueDate!!.atZone(zone).toLocalTime()
+            updateTask(t.copy(dueDate = today.atTime(time).atZone(zone).toInstant()))
+        }
+        return overdue.size
+    }
+
+    /** Copie une tâche (même projet, mêmes réglages, non terminée). Renvoie l'id local de la copie. */
+    fun duplicateTask(id: Long): Long? {
+        val t = task(id) ?: return null
+        return addTask(
+            title = t.title,
+            projectId = t.projectId,
+            due = t.dueDate,
+            priority = t.priority,
+            labels = t.labels,
+            description = t.description,
+            parentId = t.parentId,
+            repeatAfter = t.repeatAfter,
+            repeatMode = t.repeatMode,
+        )
+    }
+
+    // ---- Gestion d'un projet (en ligne : rare, et le serveur doit valider) ----
+
+    /** Modifie un projet : relit sa version du serveur (pour ne rien effacer), applique [change], renvoie. */
+    suspend fun updateProject(
+        id: Long,
+        change: (JSONObject) -> Unit,
+    ) {
+        val json = JSONObject(api.call("GET", "/projects/$id").body)
+        change(json)
+        api.call("POST", "/projects/$id", body = json)
+        refresh()
+    }
+
+    /** Supprime un projet ET ses tâches côté serveur. */
+    suspend fun deleteProject(id: Long) {
+        api.call("DELETE", "/projects/$id")
+        _state.update { s ->
+            s.copy(
+                projects = s.projects.filter { it.id != id },
+                tasks =
+                    s.tasks.filter {
+                        it.projectId !=
+                            id
+                    },
+            )
+        }
+        refresh()
+    }
+
     /** Remplace tout l'état local (restauration d'une sauvegarde), puis tente de resynchroniser. */
     fun restore(restored: TodoState) {
         _state.value = restored.copy(syncing = false, error = null, loaded = true)

@@ -43,6 +43,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.lielu.todo.data.model.Task
 import com.lielu.todo.data.todo.TodoRepository
 import com.lielu.todo.data.todo.TodoState
+import com.lielu.todo.reminder.ReminderScheduler
 import com.lielu.todo.ui.common.EmptyState
 import com.lielu.todo.ui.common.SectionHeader
 import com.lielu.todo.ui.common.TaskRow
@@ -74,6 +75,9 @@ fun HomeScreen(
     onOpenProject: (Long) -> Unit,
     onOpenLabel: (Long) -> Unit,
     onOpenFilter: (Long) -> Unit,
+    onOpenFavorites: () -> Unit,
+    onSearch: () -> Unit,
+    reminderScheduler: ReminderScheduler,
     onSettings: () -> Unit,
     onLogout: () -> Unit,
 ) {
@@ -162,7 +166,11 @@ fun HomeScreen(
         ) {
             val onToggle: (Task, Boolean) -> Unit = { task, done -> scope.toggleDone(repository, snackbar, task, done) }
             when (HomeTab.entries[tab]) {
-                HomeTab.TODAY -> TodayTab(state, today, onToggle, onOpenTask)
+                HomeTab.TODAY ->
+                    TodayTab(state, today, onToggle, onOpenTask, onReschedule = {
+                        val moved = repository.rescheduleOverdue(today)
+                        scope.launch { snackbar.showSnackbar("$moved tâche(s) reportée(s) à aujourd'hui") }
+                    })
                 HomeTab.UPCOMING -> UpcomingTab(state, today, onToggle, onOpenTask)
                 HomeTab.BROWSE ->
                     BrowseTab(
@@ -173,6 +181,8 @@ fun HomeScreen(
                         onOpenProject = onOpenProject,
                         onOpenLabel = onOpenLabel,
                         onOpenFilter = onOpenFilter,
+                        onOpenFavorites = onOpenFavorites,
+                        reminderScheduler = reminderScheduler,
                         onSettings = onSettings,
                         onLogout = onLogout,
                     )
@@ -197,6 +207,7 @@ private fun TodayTab(
     today: LocalDate,
     onToggle: (Task, Boolean) -> Unit,
     onOpenTask: (Long) -> Unit,
+    onReschedule: () -> Unit,
 ) {
     val colors = LocalTodoColors.current
     val dated = state.tasks.filter { !it.done && it.dueDate != null }

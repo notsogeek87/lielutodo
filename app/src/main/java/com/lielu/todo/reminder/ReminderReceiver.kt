@@ -26,6 +26,10 @@ class ReminderReceiver : BroadcastReceiver() {
         val container = (context.applicationContext as LieluApplication).container
         val taskId = intent.getLongExtra(EXTRA_TASK_ID, 0)
         when (intent.action) {
+            ACTION_DAILY -> {
+                showDaily(context, container.todoRepository.state.value.tasks)
+                container.reminderScheduler.scheduleDaily()
+            }
             ACTION_REMIND ->
                 show(
                     context,
@@ -52,6 +56,50 @@ class ReminderReceiver : BroadcastReceiver() {
                 container.reminderScheduler.snooze(taskId, title, System.currentTimeMillis() + SNOOZE_MS)
             }
         }
+    }
+
+    @SuppressLint("MissingPermission") // Vérifiée juste avant : voir canNotify.
+    private fun showDaily(
+        context: Context,
+        tasks: List<com.lielu.todo.data.model.Task>,
+    ) {
+        val today = java.time.LocalDate.now()
+        val due =
+            tasks.count { t ->
+                !t.done &&
+                    t.dueDate != null &&
+                    !t.dueDate
+                        .atZone(java.time.ZoneId.systemDefault())
+                        .toLocalDate()
+                        .isAfter(today)
+            }
+        if (due == 0 || !canNotify(context)) return
+        val manager = NotificationManagerCompat.from(context)
+        manager.createNotificationChannel(
+            NotificationChannelCompat
+                .Builder(CHANNEL_ID, NotificationManagerCompat.IMPORTANCE_HIGH)
+                .setName("Rappels")
+                .build(),
+        )
+        val open =
+            PendingIntent.getActivity(
+                context,
+                DAILY_NOTIFICATION_ID,
+                Intent(context, MainActivity::class.java).addFlags(
+                    Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP,
+                ),
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+            )
+        val notification =
+            NotificationCompat
+                .Builder(context, CHANNEL_ID)
+                .setSmallIcon(R.drawable.ic_notification)
+                .setContentTitle("Aujourd'hui")
+                .setContentText(if (due == 1) "1 tâche à faire" else "$due tâches à faire")
+                .setAutoCancel(true)
+                .setContentIntent(open)
+                .build()
+        manager.notify(DAILY_NOTIFICATION_ID, notification)
     }
 
     @SuppressLint("MissingPermission") // Vérifiée juste avant : voir canNotify.
@@ -123,6 +171,8 @@ class ReminderReceiver : BroadcastReceiver() {
 
     companion object {
         const val ACTION_REMIND = "com.lielu.todo.REMIND"
+        const val ACTION_DAILY = "com.lielu.todo.DAILY"
+        private const val DAILY_NOTIFICATION_ID = 7_009
         const val ACTION_COMPLETE = "com.lielu.todo.COMPLETE"
         const val ACTION_SNOOZE = "com.lielu.todo.SNOOZE"
         const val EXTRA_TASK_ID = "task_id"
