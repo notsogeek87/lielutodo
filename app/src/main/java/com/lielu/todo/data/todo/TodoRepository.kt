@@ -10,8 +10,10 @@ import com.lielu.todo.data.model.Task
 import com.lielu.todo.data.model.User
 import com.lielu.todo.data.model.commentFromJson
 import com.lielu.todo.data.model.labelFromJson
+import com.lielu.todo.data.model.lastUnreadableDate
 import com.lielu.todo.data.model.objects
 import com.lielu.todo.data.model.projectFromJson
+import com.lielu.todo.data.model.resetUnreadableDate
 import com.lielu.todo.data.model.taskFromJson
 import com.lielu.todo.data.model.userFromJson
 import kotlinx.coroutines.CoroutineScope
@@ -281,7 +283,7 @@ class TodoRepository(
             try {
                 val clean = flush()
                 pull(clean)
-                _state.update { it.copy(error = null, loaded = true, offline = false, lastSync = clock()) }
+                _state.update { it.copy(loaded = true, offline = false, lastSync = clock()) }
             } catch (e: IOException) {
                 reportError(e)
                 _state.update { it.copy(loaded = true) }
@@ -292,6 +294,7 @@ class TodoRepository(
     }
 
     private suspend fun pull(clean: Boolean) {
+        resetUnreadableDate()
         val projectJson = fetchPaged("/projects", mapOf("is_archived" to "false"))
         val projects = projectJson.filter { it.getLong("id") > 0 }.map(::projectFromJson)
         val labels = fetchPaged("/labels").map(::labelFromJson)
@@ -315,6 +318,7 @@ class TodoRepository(
             tasks = withPositions(open + recentDone.filter { it.id !in openIds }, projects)
         }
         val results = if (clean) fetchFilterResults(filters) else null
+        tasks?.let(::diagnoseDates)
         _state.update {
             it.copy(
                 projects = projects,
@@ -325,6 +329,19 @@ class TodoRepository(
                 defaultProjectId = defaultProject,
             )
         }
+    }
+
+    /** Des tâches sans date alors que le serveur en envoie : on le dit, avec la valeur reçue, pour pouvoir corriger. */
+    private fun diagnoseDates(tasks: List<Task>) {
+        val bad = lastUnreadableDate
+        val missingKey = tasks.isNotEmpty() && tasks.none { it.raw.contains("\"due_date\"") }
+        val message =
+            when {
+                bad != null -> "Date d'échéance illisible reçue du serveur : « $bad »"
+                missingKey -> "Le serveur n'a envoyé aucune date d'échéance"
+                else -> return
+            }
+        _state.update { it.copy(error = message) }
     }
 
     private suspend fun fetchFilters(pseudoProjects: List<Pair<Long, String>>): List<SavedFilter> =
@@ -655,6 +672,13 @@ class TodoRepository(
             "/projects/$projectId/users",
             body = JSONObject().put("username", username).put("permission", permission),
         )
+    }
+
+    /** Remplace tout l'état local (restauration d'une sauvegarde), puis tente de resynchroniser. */
+    fun restore(restored: TodoState) {
+        _state.value = restored.copy(syncing = false, error = null, loaded = true)
+        saveNow()
+        flushSoon()
     }
 
     /** Déconnexion : le cache d'un compte ne doit jamais se retrouver chez le suivant. */

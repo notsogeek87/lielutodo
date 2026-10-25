@@ -13,6 +13,7 @@ class LieluApplication :
         super.onCreate()
         container = AppContainer(this)
         container.scheduleAutoBackup()
+        container.start()
     }
 
     // Initialisation à la demande : WorkManager lit ceci au premier WorkManager.getInstance(context), ce qui lui

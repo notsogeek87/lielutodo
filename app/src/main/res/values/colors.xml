@@ -3,4 +3,9 @@
     <!-- Doit suivre `background` du thème Compose (BackgroundLight), sinon un flash apparaît entre
          l'affichage de la fenêtre et la première frame Compose. -->
     <color name="window_background">#FBF8FF</color>
+    <!-- Widgets (RemoteViews, hors Compose) : même palette que Theme.kt. -->
+    <color name="widget_background">#F2FBF8FF</color>
+    <color name="widget_text">#1D1B20</color>
+    <color name="widget_text_secondary">#7A757F</color>
+    <color name="widget_accent">#C9352B</color>
 </resources>

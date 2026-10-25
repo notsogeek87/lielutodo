@@ -67,11 +67,12 @@ fun QuickAddSheet(
     defaultDate: LocalDate?,
     onAdd: (NewTask) -> Unit,
     onDismiss: () -> Unit,
+    initialText: String = "",
 ) {
     val zone = ZoneId.systemDefault()
     val today = LocalDate.now(zone)
     val focus = remember { FocusRequester() }
-    var text by remember { mutableStateOf("") }
+    var text by remember { mutableStateOf(initialText) }
     // Enveloppe : « Aucune date » (null choisi explicitement) doit l'emporter sur la date lue dans le texte.
     var manualDate by remember { mutableStateOf<DateChoice?>(null) }
     var manualPriority by remember { mutableStateOf<Int?>(null) }

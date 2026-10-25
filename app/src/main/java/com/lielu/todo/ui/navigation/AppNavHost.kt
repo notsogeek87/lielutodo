@@ -1,6 +1,7 @@
 package com.lielu.todo.ui.navigation
 
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -40,7 +41,11 @@ object AppDestinations {
 private val idArgument = listOf(navArgument("id") { type = NavType.LongType })
 
 @Composable
-fun AppNavHost(container: AppContainer) {
+fun AppNavHost(
+    container: AppContainer,
+    openTaskId: Long? = null,
+    onTaskOpened: () -> Unit = {},
+) {
     val loggedIn by container.session.loggedIn.collectAsStateWithLifecycle()
     if (!loggedIn) {
         LoginScreen(container.session, container.vikunjaClient, container.todoRepository)
@@ -49,6 +54,14 @@ fun AppNavHost(container: AppContainer) {
 
     val navController = rememberNavController()
     val repository = container.todoRepository
+
+    // Notification de rappel ou ligne de widget : on ouvre la tâche par-dessus l'écran d'accueil.
+    LaunchedEffect(openTaskId) {
+        if (openTaskId != null) {
+            navController.navigate(AppDestinations.task(openTaskId))
+            onTaskOpened()
+        }
+    }
 
     NavHost(navController = navController, startDestination = AppDestinations.HOME) {
         composable(AppDestinations.HOME) {

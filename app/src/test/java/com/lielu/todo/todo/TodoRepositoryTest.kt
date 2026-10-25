@@ -405,4 +405,30 @@ class TodoRepositoryTest {
         )
         dir.deleteRecursively()
     }
+
+    @Test
+    fun backupSectionExportsAndRestoresTheLocalState() =
+        runTest {
+            val server = FakeServer()
+            server.tasks[5] = JSONObject("""{"id":5,"title":"À sauver","project_id":2,"done":false}""")
+            val repo = repo(server)
+            repo.refresh()
+            val section =
+                com.lielu.todo.backup
+                    .TodoBackupSection(repo)
+            val exported = section.export()
+
+            server.online = false
+            repo.deleteTask(5)
+            assertTrue(
+                repo.state.value.tasks
+                    .isEmpty(),
+            )
+            section.restore(exported)
+            assertEquals(
+                listOf("À sauver"),
+                repo.state.value.tasks
+                    .map { it.title },
+            )
+        }
 }

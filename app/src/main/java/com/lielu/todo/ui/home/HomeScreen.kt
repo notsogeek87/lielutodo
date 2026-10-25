@@ -84,6 +84,8 @@ fun HomeScreen(
     var showAdd by remember { mutableStateOf(false) }
     val today = LocalDate.now()
 
+    NotificationPermissionRequest()
+
     // Comme Todoist : on resynchronise à chaque retour au premier plan.
     LifecycleEventEffect(Lifecycle.Event.ON_RESUME) { scope.launch { repository.refresh() } }
 
@@ -280,5 +282,26 @@ internal fun LoadingState() {
             color = MaterialTheme.colorScheme.outline,
             modifier = Modifier.padding(top = 12.dp),
         )
+    }
+}
+
+/** Android 13+ : les rappels ne s'affichent qu'avec cette autorisation, demandée une fois à l'ouverture. */
+@Composable
+private fun NotificationPermissionRequest() {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val launcher =
+        androidx.activity.compose.rememberLauncherForActivityResult(
+            androidx.activity.result.contract.ActivityResultContracts
+                .RequestPermission(),
+        ) {}
+    LaunchedEffect(Unit) {
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU &&
+            androidx.core.content.ContextCompat.checkSelfPermission(
+                context,
+                android.Manifest.permission.POST_NOTIFICATIONS,
+            ) != android.content.pm.PackageManager.PERMISSION_GRANTED
+        ) {
+            launcher.launch(android.Manifest.permission.POST_NOTIFICATIONS)
+        }
     }
 }

@@ -3,7 +3,13 @@ package com.lielu.todo.data.model
 import org.json.JSONArray
 import org.json.JSONObject
 import java.time.Instant
+import java.time.LocalDate
+import java.time.LocalDateTime
+import java.time.LocalTime
 import java.time.OffsetDateTime
+import java.time.ZoneId
+import java.time.ZonedDateTime
+import java.time.format.DateTimeFormatter
 
 /** Vikunja renvoie cette date pour « pas de date ». */
 private const val ZERO_DATE = "0001-01-01T00:00:00Z"
@@ -201,10 +207,53 @@ fun SavedFilter.toJson(): JSONObject =
         .put("query", query)
         .put("include_nulls", includeNulls)
 
-fun parseDate(value: String?): Instant? {
-    if (value.isNullOrBlank() || value.startsWith("0001")) return null
-    return runCatching { OffsetDateTime.parse(value).toInstant() }.getOrNull()
+/**
+ * Dernière date reçue du serveur qu'aucun format connu n'a pu lire (`null` si tout va bien). Lue par le dépôt pour
+ * le signaler à l'utilisateur au lieu d'afficher des tâches sans date sans explication.
+ */
+@Volatile
+var lastUnreadableDate: String? = null
+    private set
+
+private val OFFSET_WITHOUT_COLON: DateTimeFormatter =
+    DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss[.SSSSSSSSS][.SSSSSS][.SSS]xx")
+
+fun resetUnreadableDate() {
+    lastUnreadableDate = null
 }
+
+/** Lit une date du serveur : RFC3339 d'abord, puis les variantes rencontrées ailleurs. `null` = pas de date. */
+fun parseDate(value: String?): Instant? {
+    if (value.isNullOrBlank() || value == "null" || value.startsWith("0001")) return null
+    val zone = ZoneId.systemDefault()
+    val parsed =
+        runCatching { OffsetDateTime.parse(value).toInstant() }.getOrNull()
+            ?: runCatching { Instant.parse(value) }.getOrNull()
+            ?: runCatching { ZonedDateTime.parse(value).toInstant() }.getOrNull()
+            ?: runCatching { OffsetDateTime.parse(value, OFFSET_WITHOUT_COLON).toInstant() }.getOrNull()
+            ?: runCatching { LocalDateTime.parse(value).atZone(zone).toInstant() }.getOrNull()
+            // Date seule : on prend midi, l'heure qui veut dire « pas d'heure » dans l'app.
+            ?: runCatching {
+                LocalDate
+                    .parse(value)
+                    .atTime(LocalTime.NOON)
+                    .atZone(zone)
+                    .toInstant()
+            }.getOrNull()
+            ?: value.toLongOrNull()?.let {
+                if (it >
+                    EPOCH_MILLIS_THRESHOLD
+                ) {
+                    Instant.ofEpochMilli(it)
+                } else {
+                    Instant.ofEpochSecond(it)
+                }
+            }
+    if (parsed == null) lastUnreadableDate = value
+    return parsed
+}
+
+private const val EPOCH_MILLIS_THRESHOLD = 100_000_000_000L
 
 fun labelFromJson(o: JSONObject) = Label(o.getLong("id"), o.optString("title"), o.optString("hex_color"))
 

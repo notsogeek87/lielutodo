@@ -38,12 +38,12 @@ class FileLocalCache(
 
     private fun read(source: File): TodoState? {
         if (!source.exists()) return null
-        return runCatching { parse(JSONObject(source.readText())) }.getOrNull()
+        return runCatching { TodoStateCodec.decode(JSONObject(source.readText())) }.getOrNull()
     }
 
     override fun save(state: TodoState) {
         val tmp = File(file.parentFile, file.name + ".tmp")
-        tmp.writeText(serialize(state).toString())
+        tmp.writeText(TodoStateCodec.encode(state).toString())
         // Ne promouvoir en .bak que ce qui est lisible : un fichier déjà corrompu ne doit pas écraser la copie saine.
         if (file.exists() && read(file) != null) file.copyTo(backup, overwrite = true)
         if (!tmp.renameTo(file)) {
@@ -51,8 +51,11 @@ class FileLocalCache(
             tmp.renameTo(file)
         }
     }
+}
 
-    private fun serialize(state: TodoState): JSONObject =
+/** Passage d'un [TodoState] au JSON du cache et de la sauvegarde, et retour. */
+object TodoStateCodec {
+    fun encode(state: TodoState): JSONObject =
         JSONObject()
             .put("projects", JSONArray(state.projects.map(Project::toJson)))
             .put("labels", JSONArray(state.labels.map(Label::toJson)))
@@ -79,7 +82,7 @@ class FileLocalCache(
             .put("last_sync", state.lastSync)
             .put("ops", JSONArray(state.ops.map(::opToJson)))
 
-    private fun parse(o: JSONObject): TodoState =
+    fun decode(o: JSONObject): TodoState =
         TodoState(
             projects = o.getJSONArray("projects").objects().map(::projectFromJson),
             labels = o.getJSONArray("labels").objects().map(::labelFromJson),
