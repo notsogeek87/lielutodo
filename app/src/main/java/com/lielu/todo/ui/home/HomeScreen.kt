@@ -49,8 +49,10 @@ import com.lielu.todo.ui.common.TaskRow
 import com.lielu.todo.ui.common.dayHeader
 import com.lielu.todo.ui.common.dayLabel
 import com.lielu.todo.ui.common.localDate
+import com.lielu.todo.ui.common.syncSummary
 import com.lielu.todo.ui.common.toggleDone
 import com.lielu.todo.ui.task.QuickAddSheet
+import com.lielu.todo.ui.task.add
 import com.lielu.todo.ui.theme.LocalTodoColors
 import kotlinx.coroutines.launch
 import java.time.LocalDate
@@ -71,6 +73,7 @@ fun HomeScreen(
     onOpenTask: (Long) -> Unit,
     onOpenProject: (Long) -> Unit,
     onOpenLabel: (Long) -> Unit,
+    onOpenFilter: (Long) -> Unit,
     onSettings: () -> Unit,
     onLogout: () -> Unit,
 ) {
@@ -101,7 +104,18 @@ fun HomeScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text(HomeTab.entries[tab].title) },
+                title = {
+                    Column {
+                        Text(HomeTab.entries[tab].title)
+                        syncSummary(state, System.currentTimeMillis())?.let {
+                            Text(
+                                it,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.outline,
+                            )
+                        }
+                    }
+                },
                 actions = {
                     if (state.syncing) {
                         CircularProgressIndicator(
@@ -156,6 +170,7 @@ fun HomeScreen(
                         snackbar = snackbar,
                         onOpenProject = onOpenProject,
                         onOpenLabel = onOpenLabel,
+                        onOpenFilter = onOpenFilter,
                         onSettings = onSettings,
                         onLogout = onLogout,
                     )
@@ -168,9 +183,7 @@ fun HomeScreen(
             state = state,
             defaultProjectId = state.inboxId,
             defaultDate = if (HomeTab.entries[tab] == HomeTab.TODAY) today else null,
-            onAdd = { title, projectId, due, priority, labels ->
-                repository.addTask(title, projectId, due, priority, labels)
-            },
+            onAdd = { repository.add(it) },
             onDismiss = { showAdd = false },
         )
     }

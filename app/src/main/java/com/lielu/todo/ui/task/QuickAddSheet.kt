@@ -17,6 +17,7 @@ import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.CalendarToday
 import androidx.compose.material.icons.filled.Flag
 import androidx.compose.material.icons.filled.Inbox
+import androidx.compose.material.icons.filled.Repeat
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -39,6 +40,7 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import com.lielu.todo.data.model.Label
 import com.lielu.todo.data.todo.QuickAddParser
+import com.lielu.todo.data.todo.TodoRepository
 import com.lielu.todo.data.todo.TodoState
 import com.lielu.todo.ui.common.DatePickerSheet
 import com.lielu.todo.ui.common.LabelsDialog
@@ -63,7 +65,7 @@ fun QuickAddSheet(
     state: TodoState,
     defaultProjectId: Long,
     defaultDate: LocalDate?,
-    onAdd: (title: String, projectId: Long, due: Instant?, priority: Int, labels: List<Label>) -> Unit,
+    onAdd: (NewTask) -> Unit,
     onDismiss: () -> Unit,
 ) {
     val zone = ZoneId.systemDefault()
@@ -100,7 +102,7 @@ fun QuickAddSheet(
             } else {
                 parsed.copy(date = date).dueInstant(LocalDateTime.now(zone), zone)
             }
-        onAdd(title, projectId, due, priority, labels)
+        onAdd(NewTask(title, projectId, due, priority, labels, parsed.repeatAfter, parsed.repeatMode))
         onDismiss()
     }
 
@@ -154,6 +156,13 @@ fun QuickAddSheet(
                         showProject = false
                     }
                 }
+                if (parsed.repeatAfter > 0 || parsed.repeatMode != 0) {
+                    AssistChip(
+                        onClick = {},
+                        label = { Text("Répétée") },
+                        leadingIcon = { Icon(Icons.Filled.Repeat, contentDescription = null) },
+                    )
+                }
                 AssistChip(
                     onClick = { showLabels = true },
                     label = { Text(if (labels.isEmpty()) "Étiquettes" else labels.joinToString { it.title }) },
@@ -200,6 +209,28 @@ fun QuickAddSheet(
         )
     }
 }
+
+/** Tâche à créer, telle que résolue par l'ajout rapide (texte analysé + choix manuels). */
+data class NewTask(
+    val title: String,
+    val projectId: Long,
+    val due: Instant?,
+    val priority: Int,
+    val labels: List<Label>,
+    val repeatAfter: Long = 0,
+    val repeatMode: Int = 0,
+)
+
+fun TodoRepository.add(task: NewTask): Long =
+    addTask(
+        title = task.title,
+        projectId = task.projectId,
+        due = task.due,
+        priority = task.priority,
+        labels = task.labels,
+        repeatAfter = task.repeatAfter,
+        repeatMode = task.repeatMode,
+    )
 
 private data class DateChoice(
     val date: LocalDate?,

@@ -2,6 +2,7 @@ package com.lielu.todo.data.todo
 
 import com.lielu.todo.data.model.Label
 import com.lielu.todo.data.model.Project
+import com.lielu.todo.data.model.Task
 import java.text.Normalizer
 import java.time.DayOfWeek
 import java.time.LocalDate
@@ -17,6 +18,9 @@ data class QuickAdd(
     val priority: Int? = null,
     val projectId: Long? = null,
     val labels: List<Label> = emptyList(),
+    /** Répétition (voir [com.lielu.todo.data.model.Task.repeatAfter]) : « tous les jours », « chaque lundi »… */
+    val repeatAfter: Long = 0,
+    val repeatMode: Int = 0,
 ) {
     /**
      * Échéance à enregistrer. Vikunja n'a qu'un instant, sans « date seule » : sans heure on prend [DATE_ONLY_TIME]
@@ -56,6 +60,9 @@ object QuickAddParser {
         )
 
     // Priorité Todoist p1 (la plus haute) à p4 (aucune) -> priorité Vikunja 4 (urgente) à 0.
+    private const val DAY_SECONDS = 86_400L
+    private const val WEEK_SECONDS = 7 * DAY_SECONDS
+
     private val priorityMap = mapOf(1 to 4, 2 to 3, 3 to 2, 4 to 0)
 
     private val priorityRegex = Regex("""(?<=\s)[pP]([1-4])(?=\s)""")
@@ -72,6 +79,17 @@ object QuickAddParser {
             RegexOption.IGNORE_CASE,
         )
     private val numericDateRegex = Regex("""(?<=\s)(\d{1,2})/(\d{1,2})(?:/(\d{2,4}))?(?=\s)""")
+    private val everyDayRegex = Regex("""(?<=\s)(?:tous\s+les\s+jours|chaque\s+jour)(?=\s)""", RegexOption.IGNORE_CASE)
+    private val everyWeekRegex =
+        Regex("""(?<=\s)(?:toutes\s+les\s+semaines|chaque\s+semaine)(?=\s)""", RegexOption.IGNORE_CASE)
+    private val everyMonthRegex = Regex("""(?<=\s)(?:tous\s+les\s+mois|chaque\s+mois)(?=\s)""", RegexOption.IGNORE_CASE)
+    private val everyNRegex =
+        Regex("""(?<=\s)(?:tous|toutes)\s+les\s+(\d{1,3})\s+(jours|semaines)(?=\s)""", RegexOption.IGNORE_CASE)
+    private val everyWeekdayRegex =
+        Regex(
+            """(?<=\s)chaque\s+(lundi|mardi|mercredi|jeudi|vendredi|samedi|dimanche)(?=\s)""",
+            RegexOption.IGNORE_CASE,
+        )
     private val dayOfMonthRegex = Regex("""(?<=\s)le\s+(\d{1,2})(?:er)?(?=\s)""", RegexOption.IGNORE_CASE)
 
     fun parse(
@@ -119,6 +137,37 @@ object QuickAddParser {
         }
 
         var date: LocalDate? = null
+        var repeatAfter = 0L
+        var repeatMode = 0
+        everyNRegex.find(s)?.let { m ->
+            val unit = if (m.groupValues[2].lowercase() == "semaines") WEEK_SECONDS else DAY_SECONDS
+            repeatAfter = m.groupValues[1].toLong() * unit
+            s = s.removeRange(m.range)
+        }
+        if (repeatAfter == 0L) {
+            everyWeekdayRegex.find(s)?.let { m ->
+                repeatAfter = WEEK_SECONDS
+                val target = weekdays.getValue(m.groupValues[1].lowercase())
+                var days = (target.value - today.dayOfWeek.value + 7) % 7
+                if (days == 0) days = 7
+                date = today.plusDays(days.toLong())
+                s = s.removeRange(m.range)
+            }
+        }
+        if (repeatAfter == 0L) {
+            listOf(everyDayRegex to DAY_SECONDS, everyWeekRegex to WEEK_SECONDS)
+                .firstNotNullOfOrNull { (regex, seconds) -> regex.find(s)?.let { m -> m to seconds } }
+                ?.let { (m, seconds) ->
+                    repeatAfter = seconds
+                    s = s.removeRange(m.range)
+                }
+        }
+        if (repeatAfter == 0L) {
+            everyMonthRegex.find(s)?.let { m ->
+                repeatMode = Task.REPEAT_MONTHLY
+                s = s.removeRange(m.range)
+            }
+        }
 
         fun take(
             regex: Regex,
@@ -168,8 +217,12 @@ object QuickAddParser {
             }.getOrNull()
         }
 
+        // Vikunja ne répète que les tâches qui ont une échéance : sans date, la première occurrence est aujourd'hui.
+        if ((repeatAfter > 0 || repeatMode != 0) && date == null && time == null) date = today
         return QuickAdd(
             title = s.trim().replace(Regex("""\s+"""), " "),
+            repeatAfter = repeatAfter,
+            repeatMode = repeatMode,
             date = date,
             time = time,
             priority = priority,

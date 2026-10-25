@@ -16,6 +16,8 @@ data class Project(
     val isFavorite: Boolean,
     val isArchived: Boolean,
     val position: Double,
+    /** Vue « liste » du projet : c'est elle qui porte l'ordre manuel des tâches ; 0 si inconnue. */
+    val listViewId: Long = 0,
 )
 
 data class Label(
@@ -24,6 +26,14 @@ data class Label(
     val hexColor: String,
 )
 
+data class User(
+    val id: Long,
+    val username: String,
+    val name: String,
+) {
+    val display: String get() = name.ifBlank { username }
+}
+
 data class Comment(
     val id: Long,
     val text: String,
@@ -31,9 +41,48 @@ data class Comment(
     val created: Instant?,
 )
 
+/** Filtre enregistré Vikunja : [query] est sa requête (ex. `due_date < now && done = false`). */
+data class SavedFilter(
+    val id: Long,
+    val title: String,
+    val query: String,
+    val includeNulls: Boolean,
+)
+
+/**
+ * Rappel d'une tâche. Relatif (« 1 h avant l'échéance ») s'il a un [relativeTo], sinon absolu à [at]. Un rappel
+ * relatif suit l'échéance quand elle change, comme côté serveur.
+ */
+data class Reminder(
+    val at: Instant?,
+    val relativePeriod: Long = 0,
+    val relativeTo: String = "",
+) {
+    fun effective(due: Instant?): Instant? =
+        if (relativeTo == RELATIVE_TO_DUE && due != null) due.plusSeconds(relativePeriod) else at
+
+    fun toJson(): JSONObject =
+        if (relativeTo.isNotBlank()) {
+            JSONObject()
+                .put(
+                    "reminder",
+                    ZERO_DATE,
+                ).put("relative_period", relativePeriod)
+                .put("relative_to", relativeTo)
+        } else {
+            JSONObject().put("reminder", at?.toString() ?: ZERO_DATE).put("relative_period", 0).put("relative_to", "")
+        }
+
+    companion object {
+        const val RELATIVE_TO_DUE = "due_date"
+
+        fun beforeDue(seconds: Long) = Reminder(null, -seconds, RELATIVE_TO_DUE)
+    }
+}
+
 /**
  * Une tâche Vikunja. [raw] garde le JSON du serveur : Vikunja remplace la tâche entière à chaque mise à jour,
- * renvoyer seulement nos champs effacerait ceux qu'on ne gère pas (répétition, rappels, pourcentage…).
+ * renvoyer seulement nos champs effacerait ceux qu'on ne gère pas (pourcentage, dates de début/fin…).
  */
 data class Task(
     val id: Long,
@@ -48,7 +97,23 @@ data class Task(
     val position: Double,
     val commentCount: Int,
     val raw: String,
+    val reminders: List<Reminder> = emptyList(),
+    /** Répétition en secondes (0 = aucune) ; [repeatMode] 1 = tous les mois, 2 = depuis la date de complétion. */
+    val repeatAfter: Long = 0,
+    val repeatMode: Int = 0,
+    /** Tâche parente (0 = aucune) : les sous-tâches sont des tâches dont [parentId] pointe vers la parente. */
+    val parentId: Long = 0,
+    val assignees: List<User> = emptyList(),
 ) {
+    val isRecurring: Boolean get() = repeatAfter > 0 || repeatMode == REPEAT_MONTHLY
+
+    /** Instants où la notifier : ses rappels, ou à l'échéance si elle a une heure et aucun rappel explicite. */
+    fun notificationTimes(dueHasTime: Boolean): List<Instant> {
+        val explicit = reminders.mapNotNull { it.effective(dueDate) }
+        if (explicit.isNotEmpty()) return explicit
+        return if (dueHasTime && dueDate != null) listOf(dueDate) else emptyList()
+    }
+
     /** JSON complet (champs du serveur + nos modifications), relu tel quel par [taskFromJson]. */
     fun toJson(): JSONObject {
         val o = JSONObject(raw)
@@ -61,7 +126,20 @@ data class Task(
         o.put("priority", priority)
         o.put("is_favorite", isFavorite)
         o.put("position", position)
+        o.put("repeat_after", repeatAfter)
+        o.put("repeat_mode", repeatMode)
         o.put("labels", JSONArray(labels.map { it.toJson() }))
+        o.put("reminders", JSONArray(reminders.map { it.toJson() }))
+        o.put("assignees", JSONArray(assignees.map { it.toJson() }))
+        val related = o.optJSONObject("related_tasks") ?: JSONObject()
+        if (parentId !=
+            0L
+        ) {
+            related.put("parenttask", JSONArray().put(JSONObject().put("id", parentId)))
+        } else {
+            related.remove("parenttask")
+        }
+        o.put("related_tasks", related)
         return o
     }
 
@@ -72,8 +150,11 @@ data class Task(
         return o
     }
 
-    private companion object {
-        val READ_ONLY_KEYS =
+    companion object {
+        const val REPEAT_MONTHLY = 1
+        const val REPEAT_FROM_COMPLETION = 2
+
+        private val READ_ONLY_KEYS =
             listOf(
                 "labels",
                 "assignees",
@@ -94,6 +175,14 @@ data class Task(
 
 fun Label.toJson(): JSONObject = JSONObject().put("id", id).put("title", title).put("hex_color", hexColor)
 
+fun User.toJson(): JSONObject = JSONObject().put("id", id).put("username", username).put("name", name)
+
+fun Comment.toJson(): JSONObject =
+    JSONObject().put("id", id).put("comment", text).put("author", JSONObject().put("name", author)).put(
+        "created",
+        created?.toString() ?: ZERO_DATE,
+    )
+
 fun Project.toJson(): JSONObject =
     JSONObject()
         .put("id", id)
@@ -103,6 +192,14 @@ fun Project.toJson(): JSONObject =
         .put("is_favorite", isFavorite)
         .put("is_archived", isArchived)
         .put("position", position)
+        .put("list_view_id", listViewId)
+
+fun SavedFilter.toJson(): JSONObject =
+    JSONObject()
+        .put("id", id)
+        .put("title", title)
+        .put("query", query)
+        .put("include_nulls", includeNulls)
 
 fun parseDate(value: String?): Instant? {
     if (value.isNullOrBlank() || value.startsWith("0001")) return null
@@ -111,8 +208,15 @@ fun parseDate(value: String?): Instant? {
 
 fun labelFromJson(o: JSONObject) = Label(o.getLong("id"), o.optString("title"), o.optString("hex_color"))
 
-fun projectFromJson(o: JSONObject) =
-    Project(
+fun userFromJson(o: JSONObject) = User(o.getLong("id"), o.optString("username"), o.optString("name"))
+
+fun projectFromJson(o: JSONObject): Project {
+    val views = o.optJSONArray("views")
+    val listView =
+        (0 until (views?.length() ?: 0))
+            .map { views!!.getJSONObject(it) }
+            .firstOrNull { it.optString("view_kind") == "list" }
+    return Project(
         id = o.getLong("id"),
         title = o.optString("title"),
         parentId = o.optLong("parent_project_id", 0),
@@ -120,10 +224,15 @@ fun projectFromJson(o: JSONObject) =
         isFavorite = o.optBoolean("is_favorite"),
         isArchived = o.optBoolean("is_archived"),
         position = o.optDouble("position", 0.0),
+        listViewId = listView?.optLong("id") ?: o.optLong("list_view_id", 0),
     )
+}
 
 fun taskFromJson(o: JSONObject): Task {
     val labels = o.optJSONArray("labels")
+    val reminders = o.optJSONArray("reminders")
+    val assignees = o.optJSONArray("assignees")
+    val parents = o.optJSONObject("related_tasks")?.optJSONArray("parenttask")
     return Task(
         id = o.getLong("id"),
         projectId = o.optLong("project_id"),
@@ -137,6 +246,15 @@ fun taskFromJson(o: JSONObject): Task {
         position = o.optDouble("position", 0.0),
         commentCount = o.optInt("comment_count"),
         raw = o.toString(),
+        reminders =
+            (0 until (reminders?.length() ?: 0)).map {
+                val r = reminders!!.getJSONObject(it)
+                Reminder(parseDate(r.optString("reminder")), r.optLong("relative_period"), r.optString("relative_to"))
+            },
+        repeatAfter = o.optLong("repeat_after"),
+        repeatMode = o.optInt("repeat_mode"),
+        parentId = if (parents != null && parents.length() > 0) parents.getJSONObject(0).optLong("id") else 0,
+        assignees = (0 until (assignees?.length() ?: 0)).map { userFromJson(assignees!!.getJSONObject(it)) },
     )
 }
 

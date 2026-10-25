@@ -1,6 +1,7 @@
 package com.lielu.todo.ui.home
 
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -11,6 +12,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Label
 import androidx.compose.material.icons.automirrored.filled.Logout
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.FilterList
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.Inbox
 import androidx.compose.material.icons.filled.Settings
@@ -37,7 +39,7 @@ import com.lielu.todo.data.todo.TodoState
 import kotlinx.coroutines.launch
 import java.io.IOException
 
-private enum class Creating { PROJECT, LABEL }
+private enum class Creating { PROJECT, LABEL, FILTER }
 
 @Composable
 fun BrowseTab(
@@ -47,6 +49,7 @@ fun BrowseTab(
     snackbar: SnackbarHostState,
     onOpenProject: (Long) -> Unit,
     onOpenLabel: (Long) -> Unit,
+    onOpenFilter: (Long) -> Unit,
     onSettings: () -> Unit,
     onLogout: () -> Unit,
 ) {
@@ -83,6 +86,16 @@ fun BrowseTab(
                 onClick = { onOpenLabel(label.id) },
             )
         }
+        item { BrowseHeader("Filtres", onAdd = { creating = Creating.FILTER }) }
+        items(state.filters, key = { "f-${it.id}" }) { filter ->
+            val count = state.filterResults[filter.id].orEmpty().count { !it.done }
+            BrowseRow(
+                Icons.Filled.FilterList,
+                filter.title,
+                count.takeIf { it > 0 },
+                onClick = { onOpenFilter(filter.id) },
+            )
+        }
         item { BrowseHeader("Compte", onAdd = null) }
         item {
             Text(
@@ -97,20 +110,33 @@ fun BrowseTab(
     }
 
     creating?.let { kind ->
-        NameDialog(
-            title = if (kind == Creating.PROJECT) "Nouveau projet" else "Nouvelle étiquette",
-            onConfirm = { name ->
-                creating = null
-                scope.launch {
-                    try {
-                        if (kind == Creating.PROJECT) repository.createProject(name) else repository.createLabel(name)
-                    } catch (e: IOException) {
-                        snackbar.showSnackbar("Création impossible : ${e.message}")
+        if (kind == Creating.FILTER) {
+            FilterDialog(
+                onConfirm = { name, query ->
+                    creating = null
+                    scope.launch {
+                        try {
+                            repository.createFilter(name, query)
+                        } catch (e: IOException) {
+                            snackbar.showSnackbar(
+                                "Création impossible (serveur injoignable ou requête refusée) : ${e.message}",
+                            )
+                        }
                     }
-                }
-            },
-            onDismiss = { creating = null },
-        )
+                },
+                onDismiss = { creating = null },
+            )
+        } else {
+            NameDialog(
+                title = if (kind == Creating.PROJECT) "Nouveau projet" else "Nouvelle étiquette",
+                onConfirm = { name ->
+                    creating = null
+                    // Hors ligne aussi : le projet ou l'étiquette existe tout de suite et part au prochain envoi.
+                    if (kind == Creating.PROJECT) repository.createProject(name) else repository.createLabel(name)
+                },
+                onDismiss = { creating = null },
+            )
+        }
     }
 }
 
@@ -177,6 +203,46 @@ private fun BrowseRow(
             )
         }
     }
+}
+
+@Composable
+private fun FilterDialog(
+    onConfirm: (String, String) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    var name by remember { mutableStateOf("") }
+    var query by remember { mutableStateOf("done = false && priority >= 3") }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Nouveau filtre") },
+        text = {
+            Column {
+                OutlinedTextField(
+                    value = name,
+                    onValueChange = { name = it },
+                    singleLine = true,
+                    label = { Text("Nom") },
+                )
+                OutlinedTextField(
+                    value = query,
+                    onValueChange = { query = it },
+                    label = { Text("Requête Vikunja") },
+                    supportingText = {
+                        Text("Ex. : due_date < now && done = false  ·  labels in urgent  ·  priority >= 3")
+                    },
+                    modifier = Modifier.padding(top = 8.dp),
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = { onConfirm(name.trim(), query.trim()) },
+                enabled =
+                    name.isNotBlank() && query.isNotBlank(),
+            ) { Text("Créer") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Annuler") } },
+    )
 }
 
 @Composable
