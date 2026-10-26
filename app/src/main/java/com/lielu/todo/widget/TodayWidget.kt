@@ -115,13 +115,18 @@ private class TodayWidgetFactory(
     private val context: Context,
     private val widgetId: Int,
 ) : RemoteViewsService.RemoteViewsFactory {
+    // Remplacée d'un bloc (jamais modifiée) : le lanceur lit depuis un autre thread que celui qui recharge.
+    @Volatile
     private var items = emptyList<com.lielu.todo.data.model.Task>()
 
     private fun load() {
-        val state =
-            (context.applicationContext as LieluApplication)
-                .container.todoRepository.state.value
-        items = widgetTasks(state.tasks, LocalDate.now(), WidgetConfigStore(context).get(widgetId), state.projects)
+        // En cas d'erreur on garde la liste précédente plutôt que d'afficher un widget vide.
+        runCatching {
+            val state =
+                (context.applicationContext as LieluApplication)
+                    .container.todoRepository.state.value
+            items = widgetTasks(state.tasks, LocalDate.now(), WidgetConfigStore(context).get(widgetId), state.projects)
+        }
     }
 
     override fun onCreate() = load()
@@ -135,7 +140,7 @@ private class TodayWidgetFactory(
     override fun getCount() = items.size
 
     override fun getViewAt(position: Int): RemoteViews {
-        val task = items[position]
+        val task = items.getOrNull(position) ?: return RemoteViews(context.packageName, R.layout.widget_item)
         val views = RemoteViews(context.packageName, R.layout.widget_item)
         val config = WidgetConfigStore(context).get(widgetId)
         views.setTextViewText(R.id.item_title, task.title)
@@ -165,7 +170,7 @@ private class TodayWidgetFactory(
 
     override fun getViewTypeCount() = 1
 
-    override fun getItemId(position: Int) = items[position].id
+    override fun getItemId(position: Int) = items.getOrNull(position)?.id ?: position.toLong()
 
     override fun hasStableIds() = true
 }
@@ -196,8 +201,11 @@ class QuickAddWidgetProvider : AppWidgetProvider() {
 /** Demande aux widgets liste de se redessiner : appelé à chaque changement des tâches. */
 fun refreshWidgets(context: Context) {
     val manager = AppWidgetManager.getInstance(context)
-    val ids = manager.getAppWidgetIds(ComponentName(context, TodayWidgetProvider::class.java))
-    if (ids.isNotEmpty()) manager.notifyAppWidgetViewDataChanged(ids, R.id.widget_list)
+    // Réapplique l'adaptateur en entier (comme une reconfiguration) : un simple « données changées » est perdu
+    // quand le lanceur a redémarré ou détaché la liste, et le widget restait vide jusqu'à une reconfiguration.
+    manager.getAppWidgetIds(ComponentName(context, TodayWidgetProvider::class.java)).forEach {
+        runCatching { updateTodayWidget(context, manager, it) }
+    }
     manager.getAppWidgetIds(ComponentName(context, ProductivityWidgetProvider::class.java)).forEach {
         manager.updateAppWidget(it, productivityViews(context))
     }
