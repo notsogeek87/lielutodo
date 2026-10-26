@@ -89,6 +89,9 @@ private class FakeServer : HttpApi {
                 )
             method == "GET" && path == "/labels" ->
                 ok(JSONArray(listOf(JSONObject().put("id", 10).put("title", "urgent")) + extraLabels).toString())
+            method == "GET" && path == "/projects/2/users" ->
+                ok("""[{"id":7,"username":"marie","name":"Marie","permission":1}]""")
+            method == "GET" && path == "/projects/2/teams" -> ok("""[{"id":3,"name":"Famille","permission":0}]""")
             method == "GET" && path == "/user" -> ok("""{"settings":{"default_project_id":1}}""")
             method == "GET" && path == "/tasks" ->
                 ok(
@@ -309,6 +312,15 @@ class TodoRepositoryTest {
             assertEquals(1L, s.inboxId)
             assertEquals(listOf("Existante"), s.tasks.map { it.title })
             assertTrue(s.loaded)
+        }
+
+    @Test
+    fun projectAccessListsUsersAndTeamsWithTheirRights() =
+        runTest {
+            val access = repo(FakeServer()).projectAccess(2)
+            assertEquals(listOf("Marie", "Famille"), access.map { it.name })
+            assertEquals(listOf("Lecture et écriture", "Lecture seule"), access.map { it.rightsLabel })
+            assertTrue(access[1].isTeam)
         }
 
     @Test
