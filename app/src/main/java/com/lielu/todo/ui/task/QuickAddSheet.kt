@@ -49,6 +49,7 @@ import com.lielu.todo.ui.common.DatePickerSheet
 import com.lielu.todo.ui.common.LabelsDialog
 import com.lielu.todo.ui.common.PriorityMenu
 import com.lielu.todo.ui.common.ProjectMenu
+import com.lielu.todo.ui.common.TimePickerDialog
 import com.lielu.todo.ui.common.borderlessFieldColors
 import com.lielu.todo.ui.common.dayLabel
 import com.lielu.todo.ui.common.priorityName
@@ -57,6 +58,7 @@ import com.lielu.todo.ui.theme.forPriority
 import java.time.Instant
 import java.time.LocalDate
 import java.time.LocalDateTime
+import java.time.LocalTime
 import java.time.ZoneId
 
 /**
@@ -79,6 +81,8 @@ fun QuickAddSheet(
     var text by remember { mutableStateOf(initialText) }
     // Enveloppe : « Aucune date » (null choisi explicitement) doit l'emporter sur la date lue dans le texte.
     var manualDate by remember { mutableStateOf<DateChoice?>(null) }
+    var pendingDate by remember { mutableStateOf<LocalDate?>(null) }
+    var showTime by remember { mutableStateOf(false) }
     var manualPriority by remember { mutableStateOf<Int?>(null) }
     var manualProject by remember { mutableStateOf<Long?>(null) }
     var manualLabels by remember { mutableStateOf<List<Label>?>(null) }
@@ -90,6 +94,9 @@ fun QuickAddSheet(
     val parsed =
         remember(text, state.projects, state.labels) { QuickAddParser.parse(text, today, state.projects, state.labels) }
     val date = manualDate.let { if (it != null) it.date else parsed.date ?: defaultDate }
+
+    // Choix manuel de la pastille : « Sans heure » (null) l'emporte sur l'heure lue dans le texte.
+    val time = manualDate.let { if (it != null) it.time else parsed.time }
     val projectId = manualProject ?: parsed.projectId ?: defaultProjectId.takeIf { it != 0L } ?: state.inboxId
     val priority = manualPriority ?: parsed.priority ?: 0
     val labels = manualLabels ?: parsed.labels
@@ -105,7 +112,7 @@ fun QuickAddSheet(
             ) {
                 null
             } else {
-                parsed.copy(date = date).dueInstant(LocalDateTime.now(zone), zone)
+                parsed.copy(date = date, time = time).dueInstant(LocalDateTime.now(zone), zone)
             }
         onAdd(NewTask(title, projectId, due, priority, labels, parsed.repeatAfter, parsed.repeatMode))
         onDismiss()
@@ -137,7 +144,13 @@ fun QuickAddSheet(
                 Box {
                     QuickChip(
                         onClick = { showDate = true },
-                        label = { Text(date?.let { dayLabel(it, today) } ?: "Date") },
+                        label = {
+                            Text(
+                                date?.let { d ->
+                                    dayLabel(d, today) + (time?.let { " %02d:%02d".format(it.hour, it.minute) } ?: "")
+                                } ?: "Date",
+                            )
+                        },
                         leadingIcon = { Icon(Icons.Filled.CalendarToday, contentDescription = null) },
                     )
                 }
@@ -211,10 +224,30 @@ fun QuickAddSheet(
         DatePickerSheet(
             initial = date,
             onPick = {
-                manualDate = DateChoice(it)
                 showDate = false
+                if (it == null) {
+                    manualDate = DateChoice(null)
+                } else {
+                    // Le jour, puis l'heure tout de suite après.
+                    pendingDate = it
+                    showTime = true
+                }
             },
             onDismiss = { showDate = false },
+        )
+    }
+    if (showTime) {
+        TimePickerDialog(
+            initial = time ?: LocalTime.of(9, 0),
+            onPick = {
+                manualDate = DateChoice(pendingDate, it)
+                showTime = false
+            },
+            onDismiss = { showTime = false },
+            onNoTime = {
+                manualDate = DateChoice(pendingDate)
+                showTime = false
+            },
         )
     }
     if (showLabels) {
@@ -254,6 +287,7 @@ fun TodoRepository.add(task: NewTask): Long =
 
 private data class DateChoice(
     val date: LocalDate?,
+    val time: LocalTime? = null,
 )
 
 /** Pastille d'option de Todoist : fond discret, coins de 8 dp, icône puis libellé. */

@@ -265,12 +265,12 @@ fun TaskDetailScreen(
             DetailRow(Icons.Filled.CalendarToday, planned?.let { dueLabel(it, today) } ?: "Date et heure") {
                 dialog = Dialog.DATE
             }
-            // Ce rappel-là est déjà la date affichée au-dessus : on ne le répète pas.
-            val extraReminders = task.reminders.filterNot { it.isStandIn(task) }
+            // Le rappel qui tombe à la date affichée au-dessus n'est pas répété ici.
+            val extraReminders = task.reminders.filterNot { it.isRedundant(task) }
             DetailRow(
                 Icons.Filled.Alarm,
                 if (extraReminders.isEmpty()) {
-                    "Rappels"
+                    if (task.reminders.isEmpty()) "Rappels" else "Notification à l'heure"
                 } else {
                     extraReminders.joinToString { reminderLabel(it, due, today) }
                 },
@@ -475,7 +475,7 @@ fun TaskDetailScreen(
                     if (date == null) {
                         dialog = null
                         // « Aucune date » efface aussi le rappel qui tenait lieu de date, et ceux liés à l'échéance.
-                        val kept = task.reminders.filterNot { it.isStandIn(task) || it.relativeTo.isNotBlank() }
+                        val kept = task.reminders.filterNot { it.isRedundant(task) || it.relativeTo.isNotBlank() }
                         repository.updateTask(task.copy(dueDate = null, reminders = kept))
                     } else {
                         // Une seule date à modifier : le jour, puis l'heure juste après.
@@ -497,7 +497,7 @@ fun TaskDetailScreen(
                 val due = date.atTime(time).atZone(zone).toInstant()
                 val atDue = { r: Reminder -> r.relativeTo == Reminder.RELATIVE_TO_DUE && r.relativePeriod == 0L }
                 // Un rappel qui tenait lieu de date devient l'échéance : on ne garde pas l'ancien en double.
-                val others = task.reminders.filterNot { it.isStandIn(task) }
+                val others = task.reminders.filterNot { it.isRedundant(task) }
                 // Avec une heure, la notification tombe à l'échéance sans autre geste ; sans heure, on la retire.
                 val reminders =
                     when {
@@ -601,9 +601,14 @@ fun TaskDetailScreen(
 
 private enum class Dialog { DATE, DUE_TIME, LABELS, REPEAT, REMINDERS, REMINDER_DATE, REMINDER_TIME, ASSIGNEES }
 
-/** Rappel absolu d'une tâche sans échéance : c'est lui que la ligne « Date et heure » affiche comme date. */
-private fun Reminder.isStandIn(task: Task): Boolean =
-    task.dueDate == null && relativeTo.isBlank() && at != null && at == task.plannedAt
+/**
+ * Rappel qui tombe exactement à la date affichée (échéance, ou rappel tenant lieu de date) : c'est la notification
+ * de cette date, pas une seconde date à montrer.
+ */
+private fun Reminder.isRedundant(task: Task): Boolean {
+    val instant = effective(task.dueDate)
+    return instant != null && instant == task.plannedAt
+}
 
 @Composable
 private fun SectionTitle(text: String) {
