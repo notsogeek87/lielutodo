@@ -14,7 +14,7 @@ serveur (`https://task.lielu.eu`). Site statique : **aucune étape de build**, J
 
 ```
 node web/dev/fake-server.mjs 5173   # faux serveur Vikunja + site ; connexion demo / demo
-node --test web/test/               # tests (analyseur d'ajout rapide, dates)
+node --test web/test/*.test.mjs               # tests (analyseur d'ajout rapide, dates)
 ```
 
 ## Déployer (Vercel)

@@ -149,5 +149,5 @@ rester lisible ET modifiable hors ligne.
 Même serveur Vikunja, même logique « local d'abord » que l'APK, en site statique sans build (ES modules, voir
 `web/README.md`). `js/store.js` = `TodoRepository`, `js/parser.js` = `QuickAddParser` (port fidèle : toute évolution de
 l'un se répercute sur l'autre), `js/model.js` = `Models.kt`. Déployée sur Vercel (Root Directory `web`, réécriture
-`/vk/*` -> `task.lielu.eu`). Tests : `node --test web/test/` ; faux serveur : `web/dev/fake-server.mjs`.
+`/vk/*` -> `task.lielu.eu`). Tests : `node --test web/test/*.test.mjs` ; faux serveur : `web/dev/fake-server.mjs`.
 Un nouveau type d'écriture se branche dans `store.js` (action + `apply`) ET dans le faux serveur.
