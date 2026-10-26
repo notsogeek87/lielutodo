@@ -97,8 +97,7 @@ valeur par défaut (`optXxx`/`has(...)`) pour que les anciens fichiers restent l
 export → modification → import, comme `BackupManagerTest`. Avec Room : `exportSchema = true`, une
 `Migration` par version (vérifié par `verify.sh`), et la règle `room { schemaDirectory(...) }` par flavor pour que
 les tâches KSP de `staging`/`production` n'écrivent pas en parallèle dans le même dossier. Les règles
-Auto Backup Android (`res/xml/backup_rules.xml`, `data_extraction_rules.xml`) incluent déjà `database/` et
-`datastore/`.
+Auto Backup Android (`res/xml/backup_rules.xml`, `data_extraction_rules.xml`) incluent `database/`, `datastore/`, `todo-cache.json`(+`.bak`) et `attachments/pending/` (jamais le jeton de session).
 
 ### Mise à jour automatique
 

@@ -2,4 +2,9 @@
 <full-backup-content>
     <include domain="database" path="." />
     <include domain="file" path="datastore/" />
+    <!-- Tâches en cache (source de vérité hors ligne), sa copie de secours et les pièces jointes pas encore envoyées.
+         Le jeton de session (SharedPreferences) reste volontairement exclu. -->
+    <include domain="file" path="todo-cache.json" />
+    <include domain="file" path="todo-cache.json.bak" />
+    <include domain="file" path="attachments/pending/" />
 </full-backup-content>
