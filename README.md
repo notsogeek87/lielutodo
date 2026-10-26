@@ -1,8 +1,18 @@
 # LieluTodo
 
-Dépôt **modèle** pour toute nouvelle app Android native (Kotlin, Jetpack Compose) : à chaque création de
-dépôt, on part d'ici pour obtenir tout de suite la même configuration. L'app livrée n'affiche qu'une page
-**INIT** ; tout ce qui l'entoure est déjà en place.
+Client **Vikunja « façon Todoist »** (Android natif Kotlin/Compose + version web) pour le serveur
+`https://task.lielu.eu`. Local d'abord : tout reste lisible et modifiable hors ligne, les écritures sont mises en
+file puis renvoyées. Ajout rapide en langage naturel, rappels, widget, sauvegarde automatique, mise à jour depuis
+GitHub.
+
+## Documentation
+
+Toute la documentation est dans [`docs/`](docs/README.md) : architecture, API/syntaxes, guides, legacy.
+Version web : [`web/README.md`](web/README.md).
+
+> Le dépôt est issu du modèle `lieluinit`. Le reste de ce README décrit l'outillage hérité de ce modèle
+> (CI, releases, signature, sauvegarde). L'ancienne version complète est dans
+> [`docs/legacy/readme-modele-lieluinit.md`](docs/legacy/readme-modele-lieluinit.md).
 
 ## Ce que le modèle fournit
 
@@ -15,7 +25,7 @@ dépôt, on part d'ici pour obtenir tout de suite la même configuration. L'app 
 | **Restauration automatique** | Sauvegarde Android (Auto Backup) activée pour la base et le DataStore ; invitation « Restaurer un fichier » au premier lancement ; *Restaurer la dernière sauvegarde* en un geste. |
 | **Garde-fous** | `scripts/verify.sh` + hook `pre-push` (ktlint, conflits, version catalog, Gradle), `scripts/ci-status.sh` pour attendre la CI. |
 
-## Créer une nouvelle app depuis ce modèle
+## Créer une nouvelle app depuis le modèle
 
 1. Créer le dépôt depuis ce modèle (sur GitHub : **Use this template**, ou copier les fichiers).
 2. Dans le nouveau dépôt :
@@ -63,10 +73,10 @@ Sans Android Studio (conteneur, session web) : `scripts/setup-android-sdk.sh` in
 
 ## Structure
 
-- `app/src/main/java/com/lielu/app/backup` — format de sauvegarde, sections, export/import, sauvegarde auto.
-- `app/src/main/java/com/lielu/app/data/settings` — réglages (DataStore).
-- `app/src/main/java/com/lielu/app/work` — travail périodique WorkManager.
-- `app/src/main/java/com/lielu/app/ui` — écrans Compose : `init/` (page INIT), `settings/`, `update/`, thème, navigation.
+- `app/src/main/java/com/lielu/todo/backup` — format de sauvegarde, sections, export/import, sauvegarde auto.
+- `app/src/main/java/com/lielu/todo/data/settings` — réglages (DataStore).
+- `app/src/main/java/com/lielu/todo/work` — travail périodique WorkManager.
+- `app/src/main/java/com/lielu/todo/ui` — écrans Compose : `init/` (page INIT), `settings/`, `update/`, thème, navigation.
 - `libs/lielugit-maven` — dépôt Maven local de `lielugit-updater` (aucun jeton nécessaire).
 
 Compatibilité : `minSdk` 26 (Android 8.0), `targetSdk`/`compileSdk` 35.
