@@ -15,6 +15,8 @@ class WidgetConfigStore(
                     ?: WidgetPeriod.OVERDUE_TODAY,
             projectId = prefs.getLong("project_$widgetId", 0),
             includeSubProjects = prefs.getBoolean("sub_$widgetId", true),
+            fontPercent = prefs.getInt("font_$widgetId", DEFAULT_FONT_PERCENT),
+            opacityPercent = prefs.getInt("opacity_$widgetId", DEFAULT_OPACITY_PERCENT),
         )
 
     fun set(
@@ -26,13 +28,20 @@ class WidgetConfigStore(
             .putString("period_$widgetId", config.period.name)
             .putLong("project_$widgetId", config.projectId)
             .putBoolean("sub_$widgetId", config.includeSubProjects)
+            .putInt("font_$widgetId", config.fontPercent)
+            .putInt("opacity_$widgetId", config.opacityPercent)
             .apply()
     }
 
     fun remove(widgetIds: IntArray) {
         val editor = prefs.edit()
         widgetIds.forEach {
-            editor.remove("period_$it").remove("project_$it").remove("sub_$it")
+            editor
+                .remove("period_$it")
+                .remove("project_$it")
+                .remove("sub_$it")
+                .remove("font_$it")
+                .remove("opacity_$it")
         }
         editor.apply()
     }

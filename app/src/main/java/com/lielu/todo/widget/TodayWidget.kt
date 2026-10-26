@@ -7,6 +7,7 @@ import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import android.util.TypedValue
 import android.widget.RemoteViews
 import android.widget.RemoteViewsService
 import com.lielu.todo.LieluApplication
@@ -49,6 +50,9 @@ fun updateTodayWidget(
             .firstOrNull { it.id == config.projectId }
             ?.title
     views.setTextViewText(R.id.widget_title, projectTitle ?: config.period.title)
+    views.setTextViewTextSize(R.id.widget_title, TypedValue.COMPLEX_UNIT_SP, scaled(TITLE_SP, config))
+    views.setTextViewTextSize(R.id.widget_empty, TypedValue.COMPLEX_UNIT_SP, scaled(EMPTY_SP, config))
+    views.setInt(R.id.widget_bg, "setImageAlpha", config.opacityPercent * MAX_ALPHA / PERCENT)
     val adapter =
         Intent(context, TodayWidgetService::class.java).apply {
             putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, id)
@@ -87,6 +91,18 @@ fun updateTodayWidget(
     manager.notifyAppWidgetViewDataChanged(id, R.id.widget_list)
 }
 
+private const val TITLE_SP = 16f
+private const val EMPTY_SP = 14f
+private const val ITEM_SP = 14f
+private const val DUE_SP = 12f
+private const val MAX_ALPHA = 255
+private const val PERCENT = 100
+
+private fun scaled(
+    sp: Float,
+    config: WidgetConfig,
+): Float = sp * config.fontPercent / PERCENT
+
 class TodayWidgetService : RemoteViewsService() {
     override fun onGetViewFactory(intent: Intent): RemoteViewsFactory =
         TodayWidgetFactory(
@@ -121,7 +137,10 @@ private class TodayWidgetFactory(
     override fun getViewAt(position: Int): RemoteViews {
         val task = items[position]
         val views = RemoteViews(context.packageName, R.layout.widget_item)
+        val config = WidgetConfigStore(context).get(widgetId)
         views.setTextViewText(R.id.item_title, task.title)
+        views.setTextViewTextSize(R.id.item_title, TypedValue.COMPLEX_UNIT_SP, scaled(ITEM_SP, config))
+        views.setTextViewTextSize(R.id.item_due, TypedValue.COMPLEX_UNIT_SP, scaled(DUE_SP, config))
         views.setTextViewText(R.id.item_due, task.dueDate?.let { dueLabel(it, LocalDate.now()) }.orEmpty())
         views.setOnClickFillInIntent(
             R.id.item_check,
