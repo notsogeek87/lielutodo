@@ -511,7 +511,6 @@ fun TaskDetailScreen(
                 initial = current?.takeIf { it != QuickAdd.DATE_ONLY_TIME } ?: LocalTime.of(9, 0),
                 onPick = { saveDue(it, withTime = true) },
                 onDismiss = { dialog = null },
-                onNoTime = { saveDue(QuickAdd.DATE_ONLY_TIME, withTime = false) },
             )
         }
         Dialog.LABELS ->

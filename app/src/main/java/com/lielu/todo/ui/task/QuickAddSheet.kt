@@ -49,6 +49,7 @@ import com.lielu.todo.ui.common.DatePickerSheet
 import com.lielu.todo.ui.common.LabelsDialog
 import com.lielu.todo.ui.common.PriorityMenu
 import com.lielu.todo.ui.common.ProjectMenu
+import com.lielu.todo.ui.common.TimePickerDialog
 import com.lielu.todo.ui.common.borderlessFieldColors
 import com.lielu.todo.ui.common.dayLabel
 import com.lielu.todo.ui.common.priorityName
@@ -57,6 +58,7 @@ import com.lielu.todo.ui.theme.forPriority
 import java.time.Instant
 import java.time.LocalDate
 import java.time.LocalDateTime
+import java.time.LocalTime
 import java.time.ZoneId
 
 /**
@@ -82,6 +84,10 @@ fun QuickAddSheet(
     var manualPriority by remember { mutableStateOf<Int?>(null) }
     var manualProject by remember { mutableStateOf<Long?>(null) }
     var manualLabels by remember { mutableStateOf<List<Label>?>(null) }
+    // L'heure est obligatoire dès qu'il y a une date : choisie après la date, ou demandée à l'envoi.
+    var manualTime by remember { mutableStateOf<LocalTime?>(null) }
+    var showTime by remember { mutableStateOf(false) }
+    var submitAfterTime by remember { mutableStateOf(false) }
     var showDate by remember { mutableStateOf(false) }
     var showPriority by remember { mutableStateOf(false) }
     var showProject by remember { mutableStateOf(false) }
@@ -90,13 +96,14 @@ fun QuickAddSheet(
     val parsed =
         remember(text, state.projects, state.labels) { QuickAddParser.parse(text, today, state.projects, state.labels) }
     val date = manualDate.let { if (it != null) it.date else parsed.date ?: defaultDate }
+    val time = manualTime ?: parsed.time
     val projectId = manualProject ?: parsed.projectId ?: defaultProjectId.takeIf { it != 0L } ?: state.inboxId
     val priority = manualPriority ?: parsed.priority ?: 0
     val labels = manualLabels ?: parsed.labels
     val project = state.projects.firstOrNull { it.id == projectId }
     val colors = LocalTodoColors.current
 
-    fun submit() {
+    fun submitWith(chosen: LocalTime?) {
         val title = parsed.title.trim()
         if (title.isEmpty()) return
         val due =
@@ -105,10 +112,20 @@ fun QuickAddSheet(
             ) {
                 null
             } else {
-                parsed.copy(date = date).dueInstant(LocalDateTime.now(zone), zone)
+                parsed.copy(date = date, time = chosen).dueInstant(LocalDateTime.now(zone), zone)
             }
         onAdd(NewTask(title, projectId, due, priority, labels, parsed.repeatAfter, parsed.repeatMode))
         onDismiss()
+    }
+
+    fun submit() {
+        if (parsed.title.trim().isEmpty()) return
+        if (date != null && time == null) {
+            submitAfterTime = true
+            showTime = true
+            return
+        }
+        submitWith(time)
     }
 
     ModalBottomSheet(
@@ -137,7 +154,13 @@ fun QuickAddSheet(
                 Box {
                     QuickChip(
                         onClick = { showDate = true },
-                        label = { Text(date?.let { dayLabel(it, today) } ?: "Date") },
+                        label = {
+                            Text(
+                                date?.let { d ->
+                                    dayLabel(d, today) + (time?.let { " $it" } ?: "")
+                                } ?: "Date",
+                            )
+                        },
                         leadingIcon = { Icon(Icons.Filled.CalendarToday, contentDescription = null) },
                     )
                 }
@@ -212,9 +235,29 @@ fun QuickAddSheet(
             initial = date,
             onPick = {
                 manualDate = DateChoice(it)
+                manualTime = null
                 showDate = false
+                showTime = it != null
+                submitAfterTime = false
             },
             onDismiss = { showDate = false },
+        )
+    }
+    if (showTime) {
+        TimePickerDialog(
+            initial = time ?: LocalTime.of(9, 0),
+            onPick = {
+                manualTime = it
+                showTime = false
+                if (submitAfterTime) {
+                    submitAfterTime = false
+                    submitWith(it)
+                }
+            },
+            onDismiss = {
+                showTime = false
+                submitAfterTime = false
+            },
         )
     }
     if (showLabels) {
