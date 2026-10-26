@@ -58,7 +58,7 @@ fun LoginScreen(
                 val token = client.login(url, username.trim(), password, totp)
                 // Un autre compte ne doit pas voir le cache du précédent.
                 if (url != session.baseUrl || username.trim() != session.username) repository.reset()
-                session.save(url, token, username.trim())
+                session.save(url, token, username.trim(), password.takeIf { totp.isBlank() })
                 repository.refresh()
             } catch (e: ApiException) {
                 if (e.code == HTTP_PRECONDITION_FAILED) needsTotp = true
