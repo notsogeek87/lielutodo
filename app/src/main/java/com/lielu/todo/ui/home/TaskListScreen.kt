@@ -12,6 +12,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.MoreVert
@@ -46,6 +47,7 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -326,8 +328,8 @@ fun TaskListScreen(
                 showShare = false
                 scope.launch {
                     try {
-                        repository.shareProject(projectId, username, permission)
-                        snackbar.showSnackbar("Projet partagé avec $username")
+                        val shared = repository.shareProject(projectId, username, permission)
+                        snackbar.showSnackbar("Projet partagé avec $shared")
                     } catch (e: IOException) {
                         snackbar.showSnackbar("Partage impossible : ${e.message}")
                     }
@@ -425,7 +427,12 @@ private fun ShareDialog(
                 OutlinedTextField(
                     value = username,
                     onValueChange = { username = it },
-                    label = { Text("Nom d'utilisateur") },
+                    label = { Text("Adresse e-mail ou pseudo") },
+                    placeholder = { Text("prenom@exemple.com") },
+                    supportingText = {
+                        Text("L'adresse e-mail est recommandée. Le pseudo Vikunja fonctionne aussi.")
+                    },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth(),
                 )
