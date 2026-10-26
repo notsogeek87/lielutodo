@@ -95,21 +95,43 @@ fun HomeScreen(
     val state by repository.state.collectAsStateWithLifecycle()
     val scope = rememberCoroutineScope()
     val snackbar = remember { SnackbarHostState() }
-    var tab by rememberSaveable { mutableIntStateOf(HomeTab.TODAY.ordinal) }
+    var tab by rememberSaveable { mutableIntStateOf(HomeTab.INBOX.ordinal) }
     var showAdd by remember { mutableStateOf(false) }
     // 0 = tous les projets ; sinon Aujourd'hui et Prochainement n'affichent que les tâches de ce projet.
     var projectFilter by rememberSaveable { mutableLongStateOf(0L) }
+    // Boîte de réception : 0 = la boîte elle-même (défaut), ALL_PROJECTS = toutes les tâches, sinon un projet.
+    var inboxFilter by rememberSaveable { mutableLongStateOf(0L) }
     val today = LocalDate.now()
     // Un projet supprimé ou archivé ailleurs ne doit pas laisser un filtre fantôme qui vide les listes.
     val activeFilter = projectFilter.takeIf { id -> state.projects.any { it.id == id } } ?: 0L
     val visible =
         if (activeFilter == 0L) state else state.copy(tasks = state.tasks.filter { it.projectId == activeFilter })
     val filterTitle = state.projects.firstOrNull { it.id == activeFilter }?.title
+    val activeInbox = inboxFilter.takeIf { id -> id == ALL_PROJECTS || state.projects.any { it.id == id } } ?: 0L
     val filterable = HomeTab.entries[tab] == HomeTab.TODAY || HomeTab.entries[tab] == HomeTab.UPCOMING
     val titleActions: @Composable () -> Unit = {
         IconButton(onClick = onSearch) { Icon(Icons.Filled.Search, contentDescription = "Rechercher") }
-        if (filterable) {
-            ProjectFilterButton(state, activeFilter, onPick = { projectFilter = it })
+        when (HomeTab.entries[tab]) {
+            HomeTab.INBOX ->
+                ProjectFilterButton(
+                    options =
+                        listOf(Triple(0L, "Boîte de réception", 0), Triple(ALL_PROJECTS, "Tous les projets", 0)) +
+                            orderedProjects(state.projects.filter { it.id != state.inboxId })
+                                .map { (p, depth) -> Triple(p.id, p.title, depth) },
+                    active = activeInbox,
+                    default = 0L,
+                    onPick = { inboxFilter = it },
+                )
+            HomeTab.TODAY, HomeTab.UPCOMING ->
+                ProjectFilterButton(
+                    options =
+                        listOf(Triple(0L, "Tous les projets", 0)) +
+                            orderedProjects(state.projects).map { (p, depth) -> Triple(p.id, p.title, depth) },
+                    active = activeFilter,
+                    default = 0L,
+                    onPick = { projectFilter = it },
+                )
+            HomeTab.BROWSE -> Unit
         }
     }
 
@@ -173,7 +195,7 @@ fun HomeScreen(
         ) {
             val onToggle: (Task, Boolean) -> Unit = { task, done -> scope.toggleDone(repository, snackbar, task, done) }
             when (HomeTab.entries[tab]) {
-                HomeTab.INBOX -> InboxTab(state, today, onToggle, onOpenTask, titleActions)
+                HomeTab.INBOX -> InboxTab(state, today, activeInbox, onToggle, onOpenTask, titleActions)
                 HomeTab.TODAY ->
                     TodayTab(visible, today, onToggle, onOpenTask, titleActions, filterTitle, onReschedule = {
                         val moved = repository.rescheduleOverdue(today)
@@ -202,7 +224,12 @@ fun HomeScreen(
     if (showAdd) {
         QuickAddSheet(
             state = state,
-            defaultProjectId = if (filterable && activeFilter != 0L) activeFilter else state.inboxId,
+            defaultProjectId =
+                when {
+                    HomeTab.entries[tab] == HomeTab.INBOX && activeInbox > 0 -> activeInbox
+                    filterable && activeFilter != 0L -> activeFilter
+                    else -> state.inboxId
+                },
             defaultDate = if (HomeTab.entries[tab] == HomeTab.TODAY) today else null,
             onAdd = { repository.add(it) },
             onDismiss = { showAdd = false },
@@ -316,6 +343,7 @@ private fun UpcomingTab(
 private fun InboxTab(
     state: TodoState,
     today: LocalDate,
+    filter: Long,
     onToggle: (Task, Boolean) -> Unit,
     onOpenTask: (Long) -> Unit,
     actions: @Composable () -> Unit,
@@ -324,17 +352,47 @@ private fun InboxTab(
         LoadingState()
         return
     }
-    val tasks = state.tasks.filter { !it.done && it.projectId == state.inboxId }.sortedBy { it.position }
+    val tasks =
+        state.tasks
+            .filter {
+                !it.done &&
+                    when (filter) {
+                        0L -> it.projectId == state.inboxId
+                        ALL_PROJECTS -> true
+                        else -> it.projectId == filter
+                    }
+            }.sortedWith(compareBy<Task> { it.projectId != state.inboxId }.thenBy { it.position }.thenBy { it.id })
+    val projects = state.projects.associate { it.id to it.title }
+    val scope =
+        when (filter) {
+            0L -> null
+            ALL_PROJECTS -> "Tous les projets"
+            else -> projects[filter]?.let { "Projet : $it" }
+        }
     LazyColumn(modifier = Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 96.dp)) {
         item {
+            val count = if (tasks.isEmpty()) null else "${tasks.size} tâche${if (tasks.size > 1) "s" else ""}"
             ScreenTitle(
                 "Boîte de réception",
-                if (tasks.isEmpty()) null else "${tasks.size} tâche${if (tasks.size > 1) "s" else ""}",
+                listOfNotNull(count, scope).joinToString(" · ").ifEmpty { null },
                 actions = actions,
             )
         }
         items(tasks, key = { it.id }) {
-            TaskRow(it, today, null, { d -> onToggle(it, d) }, { onOpenTask(it.id) })
+            // Hors de la boîte elle-même, on rappelle le projet de chaque tâche.
+            TaskRow(
+                it,
+                today,
+                if (filter ==
+                    0L
+                ) {
+                    null
+                } else {
+                    projects[it.projectId]
+                },
+                { d -> onToggle(it, d) },
+                { onOpenTask(it.id) },
+            )
         }
         if (tasks.isEmpty()) item { EmptyState("Votre boîte de réception est vide.") }
     }
@@ -378,11 +436,18 @@ private fun NotificationPermissionRequest() {
     }
 }
 
-/** Filtre par projet : menu des projets (arborescence), « Tous les projets » remet à zéro. */
+/** Valeur de filtre « tous les projets » de la boîte de réception (les ids de projets sont positifs). */
+private const val ALL_PROJECTS = -1L
+
+/**
+ * Filtre par projet : menu d'options (valeur, libellé, profondeur d'indentation). Le bouton est coloré quand le
+ * filtre actif n'est pas la valeur par défaut [default].
+ */
 @Composable
 private fun ProjectFilterButton(
-    state: TodoState,
+    options: List<Triple<Long, String, Int>>,
     active: Long,
+    default: Long,
     onPick: (Long) -> Unit,
 ) {
     var open by remember { mutableStateOf(false) }
@@ -392,9 +457,7 @@ private fun ProjectFilterButton(
                 Icons.Filled.FilterList,
                 contentDescription = "Filtrer par projet",
                 tint =
-                    if (active !=
-                        0L
-                    ) {
+                    if (active != default) {
                         MaterialTheme.colorScheme.primary
                     } else {
                         MaterialTheme.colorScheme.onSurfaceVariant
@@ -402,20 +465,12 @@ private fun ProjectFilterButton(
             )
         }
         DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
-            DropdownMenuItem(
-                text = { Text("Tous les projets") },
-                leadingIcon = { if (active == 0L) Icon(Icons.Filled.Check, contentDescription = null) },
-                onClick = {
-                    onPick(0L)
-                    open = false
-                },
-            )
-            orderedProjects(state.projects).forEach { (project, depth) ->
+            options.forEach { (value, label, depth) ->
                 DropdownMenuItem(
-                    text = { Text("  ".repeat(depth) + project.title) },
-                    leadingIcon = { if (active == project.id) Icon(Icons.Filled.Check, contentDescription = null) },
+                    text = { Text("  ".repeat(depth) + label) },
+                    leadingIcon = { if (active == value) Icon(Icons.Filled.Check, contentDescription = null) },
                     onClick = {
-                        onPick(project.id)
+                        onPick(value)
                         open = false
                     },
                 )
