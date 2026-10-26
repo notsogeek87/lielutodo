@@ -19,14 +19,21 @@ class VikunjaClient(
         path: String,
         query: Map<String, String>,
         body: JSONObject?,
-    ): ApiResponse {
+    ): ApiResponse = authorized { token -> execute(session.baseUrl, token, method, path, query, body) }
+
+    /**
+     * Lance [block] avec le jeton ; s'il est refusé (401), se reconnecte en silence et recommence une fois. Vaut
+     * pour TOUS les appels, fichiers compris : sinon un jeton expiré pendant l'envoi d'une pièce jointe
+     * déconnecterait l'utilisateur.
+     */
+    private suspend fun <T> authorized(block: suspend (token: String?) -> T): T {
         val sentToken = session.token
         try {
-            return execute(session.baseUrl, sentToken, method, path, query, body)
+            return block(sentToken)
         } catch (e: ApiException) {
             if (e.code != HTTP_UNAUTHORIZED || sentToken == null || !reauthenticate(sentToken)) throw e
         }
-        return execute(session.baseUrl, session.token, method, path, query, body)
+        return block(session.token)
     }
 
     private val reauthLock = Mutex()
@@ -54,6 +61,14 @@ class VikunjaClient(
         fileName: String,
         mime: String,
         bytes: ByteArray,
+    ): ApiResponse = authorized { token -> upload(token, path, fileName, mime, bytes) }
+
+    private suspend fun upload(
+        token: String?,
+        path: String,
+        fileName: String,
+        mime: String,
+        bytes: ByteArray,
     ): ApiResponse =
         withContext(Dispatchers.IO) {
             val boundary = "----lielutodo" + System.nanoTime()
@@ -72,7 +87,7 @@ class VikunjaClient(
                 // Un envoi de fichier peut être long : bien plus que les appels JSON.
                 connection.readTimeout = UPLOAD_TIMEOUT_MS
                 connection.setRequestProperty("Accept", "application/json")
-                session.token?.let { connection.setRequestProperty("Authorization", "Bearer $it") }
+                token?.let { connection.setRequestProperty("Authorization", "Bearer $it") }
                 connection.setRequestProperty("Content-Type", "multipart/form-data; boundary=$boundary")
                 connection.doOutput = true
                 connection.setFixedLengthStreamingMode(headBytes.size + bytes.size + tailBytes.size)
@@ -91,13 +106,18 @@ class VikunjaClient(
             }
         }
 
-    override suspend fun download(path: String): ByteArray =
+    override suspend fun download(path: String): ByteArray = authorized { token -> download(token, path) }
+
+    private suspend fun download(
+        token: String?,
+        path: String,
+    ): ByteArray =
         withContext(Dispatchers.IO) {
             val connection = URL("${session.baseUrl}/api/v1$path").openConnection() as HttpURLConnection
             try {
                 connection.connectTimeout = CONNECT_TIMEOUT_MS
                 connection.readTimeout = UPLOAD_TIMEOUT_MS
-                session.token?.let { connection.setRequestProperty("Authorization", "Bearer $it") }
+                token?.let { connection.setRequestProperty("Authorization", "Bearer $it") }
                 val code = connection.responseCode
                 if (code >= HTTP_ERROR) {
                     val text =
