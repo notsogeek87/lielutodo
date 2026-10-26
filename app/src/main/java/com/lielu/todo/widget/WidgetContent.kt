@@ -22,7 +22,14 @@ data class WidgetConfig(
     val period: WidgetPeriod = WidgetPeriod.OVERDUE_TODAY,
     val projectId: Long = 0,
     val includeSubProjects: Boolean = true,
+    /** Taille du texte en % de la taille normale. */
+    val fontPercent: Int = DEFAULT_FONT_PERCENT,
+    /** Opacité du fond en % (0 = fond invisible). */
+    val opacityPercent: Int = DEFAULT_OPACITY_PERCENT,
 )
+
+const val DEFAULT_FONT_PERCENT = 100
+const val DEFAULT_OPACITY_PERCENT = 100
 
 /** Tâches du widget : filtrées selon [config], triées par échéance (sans date en dernier) puis priorité. */
 fun widgetTasks(
