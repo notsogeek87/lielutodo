@@ -13,6 +13,7 @@ import com.lielu.todo.LieluApplication
 import com.lielu.todo.MainActivity
 import com.lielu.todo.QuickAddActivity
 import com.lielu.todo.R
+import com.lielu.todo.data.todo.productivity
 import com.lielu.todo.ui.common.dueLabel
 import java.time.LocalDate
 
@@ -149,4 +150,36 @@ fun refreshWidgets(context: Context) {
     val manager = AppWidgetManager.getInstance(context)
     val ids = manager.getAppWidgetIds(ComponentName(context, TodayWidgetProvider::class.java))
     if (ids.isNotEmpty()) manager.notifyAppWidgetViewDataChanged(ids, R.id.widget_list)
+    manager.getAppWidgetIds(ComponentName(context, ProductivityWidgetProvider::class.java)).forEach {
+        manager.updateAppWidget(it, productivityViews(context))
+    }
+}
+
+/** Widget productivité : tâches terminées aujourd'hui et sur 7 jours, calculées sur le cache local. */
+class ProductivityWidgetProvider : AppWidgetProvider() {
+    override fun onUpdate(
+        context: Context,
+        manager: AppWidgetManager,
+        appWidgetIds: IntArray,
+    ) {
+        appWidgetIds.forEach { manager.updateAppWidget(it, productivityViews(context)) }
+    }
+}
+
+private fun productivityViews(context: Context): RemoteViews {
+    val repository = (context.applicationContext as LieluApplication).container.todoRepository
+    val stats = productivity(repository.state.value.tasks, LocalDate.now())
+    val views = RemoteViews(context.packageName, R.layout.widget_productivity)
+    views.setTextViewText(R.id.productivity_today, stats.today.toString())
+    views.setTextViewText(R.id.productivity_week, "${stats.week} cette semaine · série de ${stats.streak} j")
+    views.setOnClickPendingIntent(
+        R.id.productivity_root,
+        PendingIntent.getActivity(
+            context,
+            4,
+            Intent(context, MainActivity::class.java),
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+        ),
+    )
+    return views
 }

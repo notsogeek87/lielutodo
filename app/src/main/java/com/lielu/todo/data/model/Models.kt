@@ -138,6 +138,9 @@ data class Task(
     /** Tâche parente (0 = aucune) : les sous-tâches sont des tâches dont [parentId] pointe vers la parente. */
     val parentId: Long = 0,
     val assignees: List<User> = emptyList(),
+    /** Date de complétion et de création (pour la productivité et l'activité) ; `null` si inconnue. */
+    val doneAt: Instant? = null,
+    val createdAt: Instant? = null,
 ) {
     val isRecurring: Boolean get() = repeatAfter > 0 || repeatMode == REPEAT_MONTHLY
 
@@ -160,6 +163,7 @@ data class Task(
         o.put("priority", priority)
         o.put("is_favorite", isFavorite)
         o.put("position", position)
+        o.put("done_at", doneAt?.toString() ?: ZERO_DATE)
         o.put("repeat_after", repeatAfter)
         o.put("repeat_mode", repeatMode)
         o.put("labels", JSONArray(labels.map { it.toJson() }))
@@ -333,6 +337,8 @@ fun taskFromJson(o: JSONObject): Task {
         repeatMode = o.optInt("repeat_mode"),
         parentId = if (parents != null && parents.length() > 0) parents.getJSONObject(0).optLong("id") else 0,
         assignees = (0 until (assignees?.length() ?: 0)).map { userFromJson(assignees!!.getJSONObject(it)) },
+        doneAt = parseDate(o.optString("done_at")),
+        createdAt = parseDate(o.optString("created")),
     )
 }
 

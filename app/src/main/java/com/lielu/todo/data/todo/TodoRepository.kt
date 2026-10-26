@@ -148,7 +148,7 @@ class TodoRepository(
         done: Boolean,
     ) {
         val task = task(id) ?: return
-        updateTask(task.copy(done = done))
+        updateTask(task.copy(done = done, doneAt = if (done) Instant.ofEpochMilli(clock()) else null))
         if (done && !task.done) onCompleted()
     }
 

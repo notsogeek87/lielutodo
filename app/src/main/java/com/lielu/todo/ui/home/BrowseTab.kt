@@ -1,7 +1,8 @@
 package com.lielu.todo.ui.home
 
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
@@ -20,7 +21,10 @@ import androidx.compose.material.icons.automirrored.outlined.Logout
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
+import androidx.compose.material.icons.outlined.BarChart
 import androidx.compose.material.icons.outlined.FilterList
+import androidx.compose.material.icons.outlined.Notifications
+import androidx.compose.material.icons.outlined.Palette
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.outlined.StarOutline
 import androidx.compose.material3.AlertDialog
@@ -46,14 +50,21 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.lielu.todo.data.model.Label
 import com.lielu.todo.data.model.Project
+import com.lielu.todo.data.model.SavedFilter
+import com.lielu.todo.data.settings.AppPrefs
+import com.lielu.todo.data.settings.LauncherIcon
 import com.lielu.todo.data.todo.TodoRepository
 import com.lielu.todo.data.todo.TodoState
 import com.lielu.todo.reminder.ReminderScheduler
+import com.lielu.todo.ui.deviceHasSecureLock
+import com.lielu.todo.ui.theme.ProjectPalette
 import com.lielu.todo.ui.theme.parseHexColor
 import kotlinx.coroutines.launch
 import java.io.IOException
@@ -72,11 +83,18 @@ fun BrowseTab(
     onOpenFilter: (Long) -> Unit,
     onOpenFavorites: () -> Unit,
     reminderScheduler: ReminderScheduler,
+    prefs: AppPrefs,
+    onOpenNotifications: () -> Unit,
+    onOpenActivity: () -> Unit,
     onSettings: () -> Unit,
     onLogout: () -> Unit,
 ) {
     val scope = rememberCoroutineScope()
     var creating by remember { mutableStateOf<Creating?>(null) }
+    var managingLabel by remember { mutableStateOf<Label?>(null) }
+    var managingFilter by remember { mutableStateOf<SavedFilter?>(null) }
+    var showIcons by remember { mutableStateOf(false) }
+    val context = LocalContext.current
     var projectsOpen by rememberSaveable { mutableStateOf(true) }
     var labelsOpen by rememberSaveable { mutableStateOf(true) }
     var filtersOpen by rememberSaveable { mutableStateOf(true) }
@@ -99,6 +117,13 @@ fun BrowseTab(
                     count = favorites.takeIf { it > 0 },
                     onClick = onOpenFavorites,
                 )
+                BrowseRow(
+                    Icons.Outlined.Notifications,
+                    "Notifications",
+                    count = state.unreadNotifications.takeIf { it > 0 },
+                    onClick = onOpenNotifications,
+                )
+                BrowseRow(Icons.Outlined.BarChart, "Productivité et activité", onClick = onOpenActivity)
                 BrowseRow(Icons.Outlined.Settings, "Paramètres et sauvegarde", onClick = onSettings)
                 BrowseRow(Icons.AutoMirrored.Outlined.Logout, "Se déconnecter", onClick = onLogout)
             }
@@ -162,6 +187,7 @@ fun BrowseTab(
                             count = count.takeIf { it > 0 },
                             iconColor = parseHexColor(label.hexColor, muted),
                             onClick = { onOpenLabel(label.id) },
+                            onLongClick = { managingLabel = label },
                         )
                     }
                 }
@@ -193,6 +219,7 @@ fun BrowseTab(
                             filter.title,
                             count = count.takeIf { it > 0 },
                             onClick = { onOpenFilter(filter.id) },
+                            onLongClick = { managingFilter = filter },
                         )
                     }
                 }
@@ -221,6 +248,32 @@ fun BrowseTab(
             }
         }
         item {
+            var lock by remember { mutableStateOf(prefs.lockEnabled) }
+            var sound by remember { mutableStateOf(prefs.completionSound) }
+            BrowseCard {
+                SwitchRow("Verrouiller l'app (code ou empreinte)", lock) { wanted ->
+                    if (wanted && !deviceHasSecureLock(context)) {
+                        scope.launch {
+                            snackbar.showSnackbar(
+                                "Définissez d'abord un verrouillage d'écran sur l'appareil.",
+                            )
+                        }
+                    } else {
+                        lock = wanted
+                        prefs.lockEnabled = wanted
+                    }
+                }
+                SwitchRow("Son à la fin d'une tâche", sound) {
+                    sound = it
+                    prefs.completionSound = it
+                }
+                BrowseRow(Icons.Outlined.Palette, "Icône de l'app : ${prefs.launcherIcon.label}", onClick = {
+                    showIcons =
+                        true
+                })
+            }
+        }
+        item {
             Text(
                 serverLabel,
                 style = MaterialTheme.typography.bodySmall,
@@ -230,6 +283,70 @@ fun BrowseTab(
         }
     }
 
+    managingLabel?.let { label ->
+        LabelManageDialog(
+            label = label,
+            onSave = { title, hex ->
+                repository.updateLabel(label.id, title, hex)
+                managingLabel = null
+            },
+            onDelete = {
+                repository.deleteLabel(label.id)
+                managingLabel = null
+            },
+            onDismiss = { managingLabel = null },
+        )
+    }
+    managingFilter?.let { filter ->
+        FilterManageDialog(
+            filter = filter,
+            onSave = { title, query ->
+                managingFilter = null
+                scope.launch {
+                    try {
+                        repository.updateFilter(filter.id, title, query)
+                    } catch (e: IOException) {
+                        snackbar.showSnackbar(
+                            "Modification impossible (serveur injoignable ou requête refusée) : ${e.message}",
+                        )
+                    }
+                }
+            },
+            onDelete = {
+                managingFilter = null
+                scope.launch {
+                    try {
+                        repository.deleteFilter(filter.id)
+                    } catch (e: IOException) {
+                        snackbar.showSnackbar("Suppression impossible (serveur injoignable) : ${e.message}")
+                    }
+                }
+            },
+            onDismiss = { managingFilter = null },
+        )
+    }
+    if (showIcons) {
+        AlertDialog(
+            onDismissRequest = { showIcons = false },
+            title = { Text("Icône de l'app") },
+            text = {
+                Column {
+                    LauncherIcon.entries.forEach { icon ->
+                        TextButton(onClick = {
+                            prefs.launcherIcon = icon
+                            showIcons = false
+                        }) { Text(icon.label + if (icon == prefs.launcherIcon) "  ✓" else "") }
+                    }
+                    Text(
+                        "Le lanceur peut mettre quelques secondes à afficher la nouvelle icône.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.outline,
+                    )
+                }
+            },
+            confirmButton = { TextButton(onClick = { showIcons = false }) { Text("Fermer") } },
+        )
+    }
     creating?.let { kind ->
         if (kind == Creating.FILTER) {
             FilterDialog(
@@ -349,6 +466,7 @@ private fun BrowseHeader(
 }
 
 /** Ligne de carte. Sans [icon], le repère « # » des projets Todoist est dessiné dans [iconColor]. */
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun BrowseRow(
     icon: ImageVector?,
@@ -356,13 +474,14 @@ private fun BrowseRow(
     count: Int? = null,
     indent: Int = 0,
     iconColor: Color = MaterialTheme.colorScheme.onSurfaceVariant,
+    onLongClick: (() -> Unit)? = null,
     onClick: () -> Unit,
 ) {
     Row(
         modifier =
             Modifier
                 .fillMaxWidth()
-                .clickable(onClick = onClick)
+                .combinedClickable(onClick = onClick, onLongClick = onLongClick)
                 .padding(start = 16.dp + 20.dp * indent, end = 16.dp, top = 14.dp, bottom = 14.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -470,3 +589,150 @@ internal fun hexColor(hex: String): androidx.compose.ui.graphics.Color? =
             0xFF000000 or it,
         )
     }
+
+@Composable
+private fun SwitchRow(
+    label: String,
+    checked: Boolean,
+    onChange: (Boolean) -> Unit,
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(label, modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodyLarge)
+        Switch(checked = checked, onCheckedChange = onChange)
+    }
+}
+
+/** Renommer, recolorer ou supprimer une étiquette (appui long sur sa ligne) ; marche aussi hors ligne. */
+@Composable
+private fun LabelManageDialog(
+    label: Label,
+    onSave: (String, String) -> Unit,
+    onDelete: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    var title by remember { mutableStateOf(label.title) }
+    var hex by remember { mutableStateOf(label.hexColor) }
+    var confirmDelete by remember { mutableStateOf(false) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(if (confirmDelete) "Supprimer « ${label.title} » ?" else "Étiquette") },
+        text = {
+            if (confirmDelete) {
+                Text("Elle sera retirée de toutes les tâches qui la portent.")
+            } else {
+                Column {
+                    OutlinedTextField(
+                        value = title,
+                        onValueChange = { title = it },
+                        singleLine = true,
+                        label = { Text("Nom") },
+                    )
+                    Row(modifier = Modifier.padding(top = 8.dp)) {
+                        ProjectPalette.take(5).forEach { color ->
+                            TextButton(onClick = { hex = color }) {
+                                Text(
+                                    if (hex ==
+                                        color
+                                    ) {
+                                        "◉"
+                                    } else {
+                                        "●"
+                                    },
+                                    color = parseHexColor(color, MaterialTheme.colorScheme.outline),
+                                )
+                            }
+                        }
+                    }
+                    Row {
+                        ProjectPalette.drop(5).forEach { color ->
+                            TextButton(onClick = { hex = color }) {
+                                Text(
+                                    if (hex ==
+                                        color
+                                    ) {
+                                        "◉"
+                                    } else {
+                                        "●"
+                                    },
+                                    color = parseHexColor(color, MaterialTheme.colorScheme.outline),
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            if (confirmDelete) {
+                TextButton(onClick = onDelete) { Text("Supprimer") }
+            } else {
+                TextButton(
+                    onClick = { onSave(title.trim(), hex) },
+                    enabled = title.isNotBlank(),
+                ) { Text("Enregistrer") }
+            }
+        },
+        dismissButton = {
+            Row {
+                if (!confirmDelete) TextButton(onClick = { confirmDelete = true }) { Text("Supprimer") }
+                TextButton(onClick = onDismiss) { Text("Annuler") }
+            }
+        },
+    )
+}
+
+/** Modifier ou supprimer un filtre enregistré (en ligne : le serveur valide la requête). */
+@Composable
+private fun FilterManageDialog(
+    filter: SavedFilter,
+    onSave: (String, String) -> Unit,
+    onDelete: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    var title by remember { mutableStateOf(filter.title) }
+    var query by remember { mutableStateOf(filter.query) }
+    var confirmDelete by remember { mutableStateOf(false) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(if (confirmDelete) "Supprimer « ${filter.title} » ?" else "Filtre") },
+        text = {
+            if (confirmDelete) {
+                Text("Les tâches ne sont pas touchées, seul le filtre disparaît.")
+            } else {
+                Column {
+                    OutlinedTextField(
+                        value = title,
+                        onValueChange = { title = it },
+                        singleLine = true,
+                        label = { Text("Nom") },
+                    )
+                    OutlinedTextField(
+                        value = query,
+                        onValueChange = { query = it },
+                        label = { Text("Requête Vikunja") },
+                        modifier = Modifier.padding(top = 8.dp),
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            if (confirmDelete) {
+                TextButton(onClick = onDelete) { Text("Supprimer") }
+            } else {
+                TextButton(
+                    onClick = { onSave(title.trim(), query.trim()) },
+                    enabled = title.isNotBlank() && query.isNotBlank(),
+                ) { Text("Enregistrer") }
+            }
+        },
+        dismissButton = {
+            Row {
+                if (!confirmDelete) TextButton(onClick = { confirmDelete = true }) { Text("Supprimer") }
+                TextButton(onClick = onDismiss) { Text("Annuler") }
+            }
+        },
+    )
+}

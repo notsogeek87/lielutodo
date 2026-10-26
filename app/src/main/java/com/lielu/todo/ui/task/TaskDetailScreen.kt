@@ -14,6 +14,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Label
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Alarm
+import androidx.compose.material.icons.filled.AttachFile
 import androidx.compose.material.icons.filled.CalendarToday
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
@@ -71,6 +72,7 @@ import com.lielu.todo.ui.common.reminderLabel
 import com.lielu.todo.ui.common.repeatLabel
 import com.lielu.todo.ui.theme.LocalTodoColors
 import com.lielu.todo.ui.theme.forPriority
+import kotlinx.coroutines.launch
 import java.io.IOException
 import java.time.LocalDate
 import java.time.LocalTime
@@ -102,6 +104,34 @@ fun TaskDetailScreen(
     var showProject by remember { mutableStateOf(false) }
     var commentNote by remember { mutableStateOf<String?>(null) }
     var newComment by remember { mutableStateOf("") }
+    var editingComment by remember { mutableStateOf<com.lielu.todo.data.model.Comment?>(null) }
+    var editText by remember { mutableStateOf("") }
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val detailScope = androidx.compose.runtime.rememberCoroutineScope()
+    val snackbar = remember { androidx.compose.material3.SnackbarHostState() }
+    val attachments = state.attachments[task.id].orEmpty()
+
+    fun attach(uri: android.net.Uri?) {
+        if (uri == null) return
+        val picked = readPickedFile(context, uri)
+        if (picked == null) {
+            detailScope.launch { snackbar.showSnackbar("Impossible de lire ce fichier, ou il dépasse 20 Mo.") }
+        } else {
+            repository.addAttachment(task.id, picked.name, picked.mime, picked.bytes)
+        }
+    }
+
+    val pickFile =
+        androidx.activity.compose.rememberLauncherForActivityResult(
+            androidx.activity.result.contract.ActivityResultContracts
+                .GetContent(),
+        ) { attach(it) }
+    var cameraUri by remember { mutableStateOf<android.net.Uri?>(null) }
+    val takePhoto =
+        androidx.activity.compose.rememberLauncherForActivityResult(
+            androidx.activity.result.contract.ActivityResultContracts
+                .TakePicture(),
+        ) { saved -> if (saved) attach(cameraUri) }
     var newSubtask by remember { mutableStateOf("") }
     var usersLoading by remember { mutableStateOf(false) }
     val today = LocalDate.now()
@@ -130,6 +160,13 @@ fun TaskDetailScreen(
     // Les commentaires déjà vus restent lisibles hors ligne ; on les rafraîchit quand le serveur répond.
     LaunchedEffect(task.id) {
         try {
+            repository.refreshAttachments(task.id)
+        } catch (e: IOException) {
+            // Hors ligne : la liste en cache reste affichée.
+        }
+    }
+    LaunchedEffect(task.id) {
+        try {
             repository.refreshComments(task.id)
             commentNote = null
         } catch (e: IOException) {
@@ -146,6 +183,7 @@ fun TaskDetailScreen(
     fun withDefaultDue() = task.dueDate ?: today.atTime(QuickAdd.DATE_ONLY_TIME).atZone(zone).toInstant()
 
     Scaffold(
+        snackbarHost = { androidx.compose.material3.SnackbarHost(snackbar) },
         topBar = {
             TopAppBar(
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background),
@@ -301,6 +339,57 @@ fun TaskDetailScreen(
             }
 
             HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
+            SectionTitle("Pièces jointes")
+            attachments.forEach { a ->
+                Row(
+                    modifier =
+                        Modifier
+                            .fillMaxWidth()
+                            .clickable {
+                                detailScope.launch {
+                                    try {
+                                        openFile(context, repository.openAttachment(task.id, a), a.mime)
+                                    } catch (e: IOException) {
+                                        snackbar.showSnackbar(
+                                            "Fichier indisponible hors ligne : ouvrez-le une fois en ligne.",
+                                        )
+                                    } catch (e: android.content.ActivityNotFoundException) {
+                                        snackbar.showSnackbar("Aucune application pour ouvrir ce type de fichier.")
+                                    }
+                                }
+                            }.padding(start = 16.dp, end = 4.dp, top = 4.dp, bottom = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Icon(
+                        Icons.Filled.AttachFile,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Column(modifier = Modifier.weight(1f).padding(horizontal = 12.dp)) {
+                        Text(a.name, style = MaterialTheme.typography.bodyLarge)
+                        Text(
+                            humanSize(a.size) + if (a.id < 0) " · en attente d'envoi" else "",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.outline,
+                        )
+                    }
+                    IconButton(onClick = { repository.deleteAttachment(task.id, a) }) {
+                        Icon(Icons.Filled.Delete, contentDescription = "Supprimer la pièce jointe")
+                    }
+                }
+            }
+            Row(modifier = Modifier.padding(horizontal = 8.dp)) {
+                androidx.compose.material3.TextButton(
+                    onClick = { pickFile.launch("*/*") },
+                ) { Text("Ajouter un fichier") }
+                androidx.compose.material3.TextButton(onClick = {
+                    val uri = newCameraUri(context)
+                    cameraUri = uri
+                    takePhoto.launch(uri)
+                }) { Text("Prendre une photo") }
+            }
+
+            HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
             SectionTitle("Commentaires")
             commentNote?.let {
                 Text(
@@ -319,6 +408,15 @@ fun TaskDetailScreen(
                     )
                     // Vikunja stocke les commentaires en HTML ; on affiche le texte sans les balises.
                     Text(stripHtml(c.text), style = MaterialTheme.typography.bodyMedium)
+                    Row {
+                        androidx.compose.material3.TextButton(onClick = {
+                            editText = stripHtml(c.text)
+                            editingComment = c
+                        }) { Text("Modifier") }
+                        androidx.compose.material3.TextButton(onClick = { repository.deleteComment(task.id, c) }) {
+                            Text("Supprimer")
+                        }
+                    }
                 }
             }
             Row(
@@ -341,6 +439,32 @@ fun TaskDetailScreen(
                 ) { Icon(Icons.AutoMirrored.Filled.Send, contentDescription = "Envoyer le commentaire") }
             }
         }
+    }
+
+    editingComment?.let { c ->
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { editingComment = null },
+            title = { Text("Modifier le commentaire") },
+            text = {
+                OutlinedTextField(
+                    value = editText,
+                    onValueChange = { editText = it },
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            },
+            confirmButton = {
+                androidx.compose.material3.TextButton(
+                    enabled = editText.isNotBlank(),
+                    onClick = {
+                        repository.editComment(task.id, c, editText.trim())
+                        editingComment = null
+                    },
+                ) { Text("Enregistrer") }
+            },
+            dismissButton = {
+                androidx.compose.material3.TextButton(onClick = { editingComment = null }) { Text("Annuler") }
+            },
+        )
     }
 
     when (dialog) {
@@ -477,3 +601,59 @@ private fun stripHtml(html: String): String =
         .replace("&lt;", "<")
         .replace("&gt;", ">")
         .trim()
+
+private class PickedFile(
+    val name: String,
+    val mime: String,
+    val bytes: ByteArray,
+)
+
+/** Vikunja refuse au-delà de 20 Mo par fichier : on le dit tout de suite plutôt qu'après un envoi raté. */
+private const val MAX_ATTACHMENT_BYTES = 20 * 1024 * 1024
+
+private fun readPickedFile(
+    context: android.content.Context,
+    uri: android.net.Uri,
+): PickedFile? =
+    runCatching {
+        val resolver = context.contentResolver
+        val name =
+            resolver.query(uri, arrayOf(android.provider.OpenableColumns.DISPLAY_NAME), null, null, null)?.use {
+                if (it.moveToFirst()) it.getString(0) else null
+            } ?: uri.lastPathSegment ?: "fichier"
+        val bytes = resolver.openInputStream(uri)?.use { it.readBytes() } ?: return null
+        if (bytes.size > MAX_ATTACHMENT_BYTES) return null
+        PickedFile(name, resolver.getType(uri) ?: "application/octet-stream", bytes)
+    }.getOrNull()
+
+private fun newCameraUri(context: android.content.Context): android.net.Uri {
+    val dir = java.io.File(context.cacheDir, "camera").also { it.mkdirs() }
+    val file = java.io.File(dir, "photo-${System.currentTimeMillis()}.jpg")
+    return androidx.core.content.FileProvider
+        .getUriForFile(context, "${context.packageName}.files", file)
+}
+
+private fun openFile(
+    context: android.content.Context,
+    file: java.io.File,
+    mime: String,
+) {
+    val uri =
+        androidx.core.content.FileProvider
+            .getUriForFile(context, "${context.packageName}.files", file)
+    context.startActivity(
+        android.content
+            .Intent(android.content.Intent.ACTION_VIEW)
+            .setDataAndType(uri, mime.ifBlank { "*/*" })
+            .addFlags(
+                android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION or android.content.Intent.FLAG_ACTIVITY_NEW_TASK,
+            ),
+    )
+}
+
+private fun humanSize(bytes: Long): String =
+    when {
+        bytes >= 1024 * 1024 -> "%.1f Mo".format(bytes / 1024.0 / 1024.0)
+        bytes >= 1024 -> "${bytes / 1024} Ko"
+        else -> "$bytes o"
+    }

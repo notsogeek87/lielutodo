@@ -12,12 +12,14 @@ import com.lielu.todo.backup.SettingsBackupSection
 import com.lielu.todo.backup.TodoBackupSection
 import com.lielu.todo.data.api.SessionStore
 import com.lielu.todo.data.api.VikunjaClient
+import com.lielu.todo.data.settings.AppPrefs
 import com.lielu.todo.data.settings.SettingsRepository
 import com.lielu.todo.data.settings.SettingsRepositoryImpl
 import com.lielu.todo.data.settings.settingsDataStore
 import com.lielu.todo.data.todo.DiskAttachmentFiles
 import com.lielu.todo.data.todo.FileLocalCache
 import com.lielu.todo.data.todo.TodoRepository
+import com.lielu.todo.reminder.CollaborationNotifier
 import com.lielu.todo.reminder.ReminderScheduler
 import com.lielu.todo.reminder.planReminders
 import com.lielu.todo.widget.refreshWidgets
@@ -54,6 +56,9 @@ class AppContainer(
     /** Serveur Vikunja + jeton. Les tâches elles-mêmes vivent sur le serveur : voir [todoRepository]. */
     val session = SessionStore(appContext)
 
+    /** Verrou, son de complétion et icône d'app : réglages propres à cet appareil. */
+    val prefs = AppPrefs(appContext)
+
     val vikunjaClient = VikunjaClient(session)
 
     /** Tâches, projets et étiquettes : copie locale + file d'écritures, resynchronisée avec le serveur. */
@@ -63,6 +68,7 @@ class AppContainer(
             cache = FileLocalCache(File(appContext.filesDir, "todo-cache.json")),
             files = DiskAttachmentFiles(File(appContext.filesDir, "attachments")),
             scope = applicationScope,
+            onCompleted = { prefs.playCompletionSound() },
             onAuthExpired = {
                 session.clear()
             },
@@ -93,6 +99,8 @@ class AppContainer(
     val autoBackupScheduler = AutoBackupScheduler(appContext)
 
     val reminderScheduler = ReminderScheduler(appContext)
+
+    private val collaborationNotifier = CollaborationNotifier(appContext)
 
     // WorkManager n'accepte qu'une fabrique : on les enchaîne (sauvegarde automatique, synchronisation).
     val workerFactory =
@@ -144,6 +152,12 @@ class AppContainer(
     fun start() {
         SyncWorker.schedule(appContext)
         reminderScheduler.scheduleDaily()
+        applicationScope.launch {
+            todoRepository.state
+                .map { it.notifications }
+                .distinctUntilChanged()
+                .collect { runCatching { collaborationNotifier.onNotifications(it) } }
+        }
         applicationScope.launch {
             todoRepository.state
                 .map { it.tasks }

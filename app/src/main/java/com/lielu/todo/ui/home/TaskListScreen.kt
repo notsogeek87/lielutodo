@@ -12,6 +12,8 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.MoreVert
@@ -79,6 +81,7 @@ fun TaskListScreen(
     target: ListTarget,
     onOpenTask: (Long) -> Unit,
     onBack: () -> Unit,
+    onOpenKanban: (Long) -> Unit = {},
 ) {
     val state by repository.state.collectAsStateWithLifecycle()
     val scope = rememberCoroutineScope()
@@ -162,6 +165,10 @@ fun TaskListScreen(
                                 listOf(
                                     "Renommer" to ProjectDialog.RENAME,
                                     "Couleur" to ProjectDialog.COLOR,
+                                    "Déplacer dans…" to ProjectDialog.MOVE,
+                                    "Monter" to ProjectDialog.UP,
+                                    "Descendre" to ProjectDialog.DOWN,
+                                    "Vue Kanban" to ProjectDialog.KANBAN,
                                     "Archiver" to ProjectDialog.ARCHIVE,
                                     "Supprimer" to ProjectDialog.DELETE,
                                 ).forEach { (label, kind) ->
@@ -169,7 +176,24 @@ fun TaskListScreen(
                                         text = { Text(label) },
                                         onClick = {
                                             showMenu = false
-                                            projectDialog = kind
+                                            when (kind) {
+                                                ProjectDialog.KANBAN -> onOpenKanban(projectId)
+                                                ProjectDialog.UP, ProjectDialog.DOWN ->
+                                                    scope.launch {
+                                                        try {
+                                                            repository.moveProjectOrder(
+                                                                projectId,
+                                                                up =
+                                                                    kind == ProjectDialog.UP,
+                                                            )
+                                                        } catch (e: IOException) {
+                                                            snackbar.showSnackbar(
+                                                                "Action impossible (serveur injoignable) : ${e.message}",
+                                                            )
+                                                        }
+                                                    }
+                                                else -> projectDialog = kind
+                                            }
                                         },
                                     )
                                 }
@@ -296,6 +320,8 @@ fun TaskListScreen(
         ProjectActionDialog(
             kind = projectDialog!!,
             projectTitle = currentProject.title,
+            projectId = projectId,
+            projects = state.projects,
             onDismiss = { projectDialog = null },
             onConfirm = { kind, value ->
                 projectDialog = null
@@ -312,6 +338,9 @@ fun TaskListScreen(
                                 repository.deleteProject(projectId)
                                 onBack()
                             }
+                            ProjectDialog.MOVE -> repository.moveProject(projectId, value.toLongOrNull() ?: 0L)
+                            // Actions directes du menu : elles n'ouvrent jamais de boîte de dialogue.
+                            ProjectDialog.UP, ProjectDialog.DOWN, ProjectDialog.KANBAN -> Unit
                         }
                     } catch (e: IOException) {
                         snackbar.showSnackbar("Action impossible (serveur injoignable ou refus) : ${e.message}")
@@ -448,12 +477,14 @@ private fun ShareDialog(
     )
 }
 
-private enum class ProjectDialog { RENAME, COLOR, ARCHIVE, DELETE }
+private enum class ProjectDialog { RENAME, COLOR, MOVE, UP, DOWN, KANBAN, ARCHIVE, DELETE }
 
 @Composable
 private fun ProjectActionDialog(
     kind: ProjectDialog,
     projectTitle: String,
+    projectId: Long,
+    projects: List<com.lielu.todo.data.model.Project>,
     onDismiss: () -> Unit,
     onConfirm: (ProjectDialog, String) -> Unit,
 ) {
@@ -465,6 +496,8 @@ private fun ProjectActionDialog(
                 when (kind) {
                     ProjectDialog.RENAME -> "Renommer le projet"
                     ProjectDialog.COLOR -> "Couleur du projet"
+                    ProjectDialog.MOVE -> "Déplacer « $projectTitle » dans…"
+                    ProjectDialog.UP, ProjectDialog.DOWN, ProjectDialog.KANBAN -> ""
                     ProjectDialog.ARCHIVE -> "Archiver « $projectTitle » ?"
                     ProjectDialog.DELETE -> "Supprimer « $projectTitle » ?"
                 },
@@ -491,13 +524,25 @@ private fun ProjectActionDialog(
                             }
                         }
                     }
+                ProjectDialog.MOVE -> {
+                    // Un projet ne peut pas devenir le sous-projet de l'un de ses propres descendants.
+                    val blocked = mutableSetOf(projectId)
+                    repeat(projects.size) { projects.filter { it.parentId in blocked }.forEach { blocked += it.id } }
+                    Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
+                        TextButton(onClick = { onConfirm(kind, "0") }) { Text("(Racine, sans parent)") }
+                        projects.filter { it.id !in blocked }.forEach { target ->
+                            TextButton(onClick = { onConfirm(kind, target.id.toString()) }) { Text(target.title) }
+                        }
+                    }
+                }
+                ProjectDialog.UP, ProjectDialog.DOWN, ProjectDialog.KANBAN -> Unit
                 ProjectDialog.ARCHIVE -> Text("Le projet disparaît de la liste mais ses tâches sont conservées.")
                 ProjectDialog.DELETE ->
                     Text("Le projet et TOUTES ses tâches seront supprimés du serveur. Cette action est définitive.")
             }
         },
         confirmButton = {
-            if (kind != ProjectDialog.COLOR) {
+            if (kind != ProjectDialog.COLOR && kind != ProjectDialog.MOVE) {
                 TextButton(
                     onClick = { onConfirm(kind, name.trim()) },
                     enabled = kind != ProjectDialog.RENAME || name.isNotBlank(),

@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<paths>
+    <!-- Pièces jointes téléchargées : partagées en lecture avec la visionneuse de l'utilisateur. -->
+    <files-path name="attachments" path="attachments/downloaded/" />
+    <!-- Photo prise depuis l'app avant d'être jointe à une tâche. -->
+    <cache-path name="camera" path="camera/" />
+</paths>
