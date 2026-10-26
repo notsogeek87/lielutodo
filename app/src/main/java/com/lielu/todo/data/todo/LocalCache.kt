@@ -35,8 +35,14 @@ interface LocalCache {
  */
 class FileLocalCache(
     private val file: File,
+    private val clock: () -> Long = System::currentTimeMillis,
 ) : LocalCache {
     private val backup = File(file.parentFile, file.name + ".bak")
+
+    // Le fichier principal est-il lisible ? Inconnu au démarrage (vérifié une fois), puis vrai après chaque écriture :
+    // c'est nous qui venons de l'écrire. Évite de relire et d'analyser tout le cache à chaque enregistrement.
+    private var fileValid: Boolean? = null
+    private var backedUpAt = 0L
 
     override fun load(): TodoState? = read(file) ?: read(backup)
 
@@ -45,15 +51,29 @@ class FileLocalCache(
         return runCatching { TodoStateCodec.decode(JSONObject(source.readText())) }.getOrNull()
     }
 
+    @Synchronized
     override fun save(state: TodoState) {
         val tmp = File(file.parentFile, file.name + ".tmp")
         tmp.writeText(TodoStateCodec.encode(state).toString())
-        // Ne promouvoir en .bak que ce qui est lisible : un fichier déjà corrompu ne doit pas écraser la copie saine.
-        if (file.exists() && read(file) != null) file.copyTo(backup, overwrite = true)
+        // La copie de secours suit au plus toutes les [BACKUP_EVERY_MS] (l'écriture principale est déjà atomique),
+        // et ne promeut que ce qui est lisible : un fichier déjà corrompu ne doit pas écraser la copie saine.
+        val now = clock()
+        if (file.exists() && (now - backedUpAt >= BACKUP_EVERY_MS || !backup.exists())) {
+            val valid = fileValid ?: (read(file) != null)
+            if (valid) {
+                file.copyTo(backup, overwrite = true)
+                backedUpAt = now
+            }
+        }
         if (!tmp.renameTo(file)) {
             file.delete()
             tmp.renameTo(file)
         }
+        fileValid = true
+    }
+
+    private companion object {
+        const val BACKUP_EVERY_MS = 60_000L
     }
 }
 

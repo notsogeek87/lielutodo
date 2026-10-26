@@ -587,6 +587,45 @@ class TodoRepositoryTest {
     }
 
     @Test
+    fun aCacheFoundCorruptedAtStartupIsNeverPromotedToBackup() {
+        val dir = createTempDir()
+        val file = java.io.File(dir, "cache.json")
+        val task = { title: String ->
+            TodoState(
+                tasks =
+                    listOf(
+                        com.lielu.todo.data.model
+                            .taskFromJson(JSONObject("""{"id":1,"title":"$title","project_id":2}""")),
+                    ),
+                loaded = true,
+            )
+        }
+        var now = 0L
+        val first =
+            com.lielu.todo.data.todo
+                .FileLocalCache(file) { now }
+        first.save(task("Gardée"))
+        first.save(task("Gardée"))
+        file.writeText("{ pas du json")
+        // Redémarrage : le nouveau cache ne sait pas que le fichier est corrompu, il doit le vérifier.
+        now = 10 * 60_000L
+        val second =
+            com.lielu.todo.data.todo
+                .FileLocalCache(file) { now }
+        second.save(task("Nouvelle"))
+        file.writeText("{ toujours pas du json")
+        assertEquals(
+            "Gardée",
+            second
+                .load()!!
+                .tasks
+                .single()
+                .title,
+        )
+        dir.deleteRecursively()
+    }
+
+    @Test
     fun backupSectionExportsAndRestoresTheLocalState() =
         runTest {
             val server = FakeServer()
