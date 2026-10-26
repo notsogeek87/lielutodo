@@ -143,3 +143,11 @@ rester lisible ET modifiable hors ligne.
 - `reminder/` (AlarmManager, notifications Terminer/Reporter, résumé quotidien), `widget/` (liste + ajout rapide),
   `work/SyncWorker` (30 min), `QuickAddActivity` (widget, tuile, raccourci, « Partager »).
 - Tests : `TodoRepositoryTest` joue contre un faux serveur en mémoire ; tout nouveau type d'écriture y ajoute sa route.
+
+## Version web (`web/`)
+
+Même serveur Vikunja, même logique « local d'abord » que l'APK, en site statique sans build (ES modules, voir
+`web/README.md`). `js/store.js` = `TodoRepository`, `js/parser.js` = `QuickAddParser` (port fidèle : toute évolution de
+l'un se répercute sur l'autre), `js/model.js` = `Models.kt`. Déployée sur Vercel (Root Directory `web`, réécriture
+`/vk/*` -> `task.lielu.eu`). Tests : `node --test web/test/*.test.mjs` ; faux serveur : `web/dev/fake-server.mjs`.
+Un nouveau type d'écriture se branche dans `store.js` (action + `apply`) ET dans le faux serveur.

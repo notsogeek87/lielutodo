@@ -1,0 +1,14 @@
+{
+  "name": "LieluTodo",
+  "short_name": "LieluTodo",
+  "description": "Vos tâches Vikunja, façon Todoist.",
+  "lang": "fr",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#db4c3f",
+  "icons": [
+    { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}
