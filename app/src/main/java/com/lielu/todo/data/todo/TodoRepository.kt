@@ -799,17 +799,32 @@ class TodoRepository(
         refresh()
     }
 
-    /** Donne accès à un projet. [permission] : 0 lecture, 1 lecture et écriture, 2 administrateur. */
+    /**
+     * Donne accès à un projet. [userOrEmail] : pseudo, ou adresse e-mail (résolue en pseudo via la recherche
+     * d'utilisateurs du serveur). [permission] : 0 lecture, 1 lecture et écriture, 2 administrateur.
+     * Renvoie le pseudo avec lequel le projet a été partagé.
+     */
     suspend fun shareProject(
         projectId: Long,
-        username: String,
+        userOrEmail: String,
         permission: Int,
-    ) {
+    ): String {
+        val username = if ('@' in userOrEmail) resolveEmail(userOrEmail) else userOrEmail
         api.call(
             "PUT",
             "/projects/$projectId/users",
             body = JSONObject().put("username", username).put("permission", permission),
         )
+        return username
+    }
+
+    private suspend fun resolveEmail(email: String): String {
+        val found = JSONArray(api.call("GET", "/users", query = mapOf("s" to email)).body).objects()
+        val match =
+            found.firstOrNull { it.optString("email").equals(email, ignoreCase = true) }
+                ?: found.singleOrNull()
+                ?: throw IOException("aucun utilisateur trouvé pour $email (son compte doit être visible par e-mail)")
+        return match.getString("username")
     }
 
     // ---- Pièces jointes ----
