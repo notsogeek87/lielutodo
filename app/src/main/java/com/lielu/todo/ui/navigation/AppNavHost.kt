@@ -1,8 +1,15 @@
 package com.lielu.todo.ui.navigation
 
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.initializer
@@ -47,6 +54,14 @@ object AppDestinations {
     fun filter(id: Long) = "filter/$id"
 
     fun task(id: Long) = "task/$id"
+}
+
+/** Sur grand écran (Fold déplié) les écrans plein format ne s'étirent pas sur toute la largeur. */
+@Composable
+private fun Centered(content: @Composable () -> Unit) {
+    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
+        Box(modifier = Modifier.widthIn(max = 720.dp).fillMaxHeight()) { content() }
+    }
 }
 
 private val idArgument = listOf(navArgument("id") { type = NavType.LongType })
@@ -96,103 +111,123 @@ fun AppNavHost(
         }
 
         composable(AppDestinations.PROJECT, arguments = idArgument) { entry ->
-            TaskListScreen(
-                repository = repository,
-                target = ListTarget(projectId = entry.arguments?.getLong("id")),
-                onOpenTask = { navController.navigate(AppDestinations.task(it)) },
-                onBack = { navController.popBackStack() },
-                onOpenKanban = { navController.navigate(AppDestinations.kanban(it)) },
-            )
+            Centered {
+                TaskListScreen(
+                    repository = repository,
+                    target = ListTarget(projectId = entry.arguments?.getLong("id")),
+                    onOpenTask = { navController.navigate(AppDestinations.task(it)) },
+                    onBack = { navController.popBackStack() },
+                    onOpenKanban = { navController.navigate(AppDestinations.kanban(it)) },
+                )
+            }
         }
 
         composable(AppDestinations.LABEL, arguments = idArgument) { entry ->
-            TaskListScreen(
-                repository = repository,
-                target = ListTarget(labelId = entry.arguments?.getLong("id")),
-                onOpenTask = { navController.navigate(AppDestinations.task(it)) },
-                onBack = { navController.popBackStack() },
-            )
+            Centered {
+                TaskListScreen(
+                    repository = repository,
+                    target = ListTarget(labelId = entry.arguments?.getLong("id")),
+                    onOpenTask = { navController.navigate(AppDestinations.task(it)) },
+                    onBack = { navController.popBackStack() },
+                )
+            }
         }
 
         composable(AppDestinations.FILTER, arguments = idArgument) { entry ->
-            TaskListScreen(
-                repository = repository,
-                target = ListTarget(filterId = entry.arguments?.getLong("id")),
-                onOpenTask = { navController.navigate(AppDestinations.task(it)) },
-                onBack = { navController.popBackStack() },
-            )
+            Centered {
+                TaskListScreen(
+                    repository = repository,
+                    target = ListTarget(filterId = entry.arguments?.getLong("id")),
+                    onOpenTask = { navController.navigate(AppDestinations.task(it)) },
+                    onBack = { navController.popBackStack() },
+                )
+            }
         }
 
         composable(AppDestinations.FAVORITES) {
-            TaskListScreen(
-                repository = repository,
-                target = ListTarget(favorites = true),
-                onOpenTask = { navController.navigate(AppDestinations.task(it)) },
-                onBack = { navController.popBackStack() },
-            )
+            Centered {
+                TaskListScreen(
+                    repository = repository,
+                    target = ListTarget(favorites = true),
+                    onOpenTask = { navController.navigate(AppDestinations.task(it)) },
+                    onBack = { navController.popBackStack() },
+                )
+            }
         }
 
         composable(AppDestinations.NOTIFICATIONS) {
-            NotificationsScreen(
-                repository = repository,
-                onOpenTask = { navController.navigate(AppDestinations.task(it)) },
-                onBack = { navController.popBackStack() },
-            )
+            Centered {
+                NotificationsScreen(
+                    repository = repository,
+                    onOpenTask = { navController.navigate(AppDestinations.task(it)) },
+                    onBack = { navController.popBackStack() },
+                )
+            }
         }
 
         composable(AppDestinations.ACTIVITY) {
-            ActivityScreen(
-                repository = repository,
-                onOpenTask = { navController.navigate(AppDestinations.task(it)) },
-                onBack = { navController.popBackStack() },
-            )
+            Centered {
+                ActivityScreen(
+                    repository = repository,
+                    onOpenTask = { navController.navigate(AppDestinations.task(it)) },
+                    onBack = { navController.popBackStack() },
+                )
+            }
         }
 
         composable(AppDestinations.KANBAN, arguments = idArgument) { entry ->
-            KanbanScreen(
-                repository = repository,
-                projectId = entry.arguments?.getLong("id") ?: 0L,
-                onOpenTask = { navController.navigate(AppDestinations.task(it)) },
-                onBack = { navController.popBackStack() },
-            )
+            Centered {
+                KanbanScreen(
+                    repository = repository,
+                    projectId = entry.arguments?.getLong("id") ?: 0L,
+                    onOpenTask = { navController.navigate(AppDestinations.task(it)) },
+                    onBack = { navController.popBackStack() },
+                )
+            }
         }
 
         composable(AppDestinations.SEARCH) {
-            SearchScreen(
-                repository = repository,
-                onOpenTask = { navController.navigate(AppDestinations.task(it)) },
-                onBack = { navController.popBackStack() },
-            )
+            Centered {
+                SearchScreen(
+                    repository = repository,
+                    onOpenTask = { navController.navigate(AppDestinations.task(it)) },
+                    onBack = { navController.popBackStack() },
+                )
+            }
         }
 
         composable(AppDestinations.TASK, arguments = idArgument) { entry ->
-            TaskDetailScreen(
-                repository = repository,
-                taskId = entry.arguments?.getLong("id") ?: 0L,
-                onOpenTask = { navController.navigate(AppDestinations.task(it)) },
-                onBack = { navController.popBackStack() },
-            )
+            Centered {
+                TaskDetailScreen(
+                    repository = repository,
+                    taskId = entry.arguments?.getLong("id") ?: 0L,
+                    onOpenTask = { navController.navigate(AppDestinations.task(it)) },
+                    onBack = { navController.popBackStack() },
+                )
+            }
         }
 
         composable(AppDestinations.SETTINGS) { entry ->
-            val viewModel: SettingsViewModel =
-                viewModel(
-                    entry,
-                    factory =
-                        viewModelFactory {
-                            initializer {
-                                SettingsViewModel(
-                                    container.settingsRepository,
-                                    container.backupManager,
-                                    container.autoBackup,
-                                    container.autoBackupScheduler,
-                                    container.updateManager,
-                                    container.updatesEnabled,
-                                )
-                            }
-                        },
-                )
-            SettingsScreen(viewModel = viewModel, onBackClick = { navController.popBackStack() })
+            Centered {
+                val viewModel: SettingsViewModel =
+                    viewModel(
+                        entry,
+                        factory =
+                            viewModelFactory {
+                                initializer {
+                                    SettingsViewModel(
+                                        container.settingsRepository,
+                                        container.backupManager,
+                                        container.autoBackup,
+                                        container.autoBackupScheduler,
+                                        container.updateManager,
+                                        container.updatesEnabled,
+                                    )
+                                }
+                            },
+                    )
+                SettingsScreen(viewModel = viewModel, onBackClick = { navController.popBackStack() })
+            }
         }
     }
 }
