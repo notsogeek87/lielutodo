@@ -6,6 +6,7 @@ import com.lielu.todo.data.model.Attachment
 import com.lielu.todo.data.model.Comment
 import com.lielu.todo.data.model.Label
 import com.lielu.todo.data.model.Project
+import com.lielu.todo.data.model.ProjectAccess
 import com.lielu.todo.data.model.SavedFilter
 import com.lielu.todo.data.model.Task
 import com.lielu.todo.data.model.User
@@ -799,6 +800,19 @@ class TodoRepository(
     }
 
     // ---- Opérations en ligne uniquement (rares) ----
+
+    /** Utilisateurs et équipes ayant accès au projet, avec leurs droits (le serveur doit répondre). */
+    suspend fun projectAccess(projectId: Long): List<ProjectAccess> {
+        val users =
+            JSONArray(api.call("GET", "/projects/$projectId/users").body).objects().map {
+                ProjectAccess(userFromJson(it).display, it.optInt("permission"))
+            }
+        val teams =
+            JSONArray(api.call("GET", "/projects/$projectId/teams").body).objects().map {
+                ProjectAccess(it.optString("name"), it.optInt("permission"), isTeam = true)
+            }
+        return users + teams
+    }
 
     suspend fun createFilter(
         title: String,

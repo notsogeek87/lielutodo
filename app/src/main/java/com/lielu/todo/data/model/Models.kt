@@ -42,6 +42,21 @@ data class User(
     val display: String get() = name.ifBlank { username }
 }
 
+/** Accès d'un utilisateur ou d'une équipe à un projet. [permission] : 0 lecture, 1 lecture et écriture, 2 admin. */
+data class ProjectAccess(
+    val name: String,
+    val permission: Int,
+    val isTeam: Boolean = false,
+) {
+    val rightsLabel: String
+        get() =
+            when (permission) {
+                0 -> "Lecture seule"
+                1 -> "Lecture et écriture"
+                else -> "Administrateur"
+            }
+}
+
 /** Fichier joint à une tâche. Un [id] négatif = ajouté hors ligne, pas encore envoyé. */
 data class Attachment(
     val id: Long,

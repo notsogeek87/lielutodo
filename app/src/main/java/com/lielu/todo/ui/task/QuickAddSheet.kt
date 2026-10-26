@@ -120,7 +120,7 @@ fun QuickAddSheet(
 
     fun submit() {
         if (parsed.title.trim().isEmpty()) return
-        if (date != null && time == null) {
+        if (parsed.copy(date = date, time = time).needsTime) {
             submitAfterTime = true
             showTime = true
             return
