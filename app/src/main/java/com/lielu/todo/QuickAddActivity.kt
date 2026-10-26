@@ -4,15 +4,21 @@ import android.content.Intent
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
-import android.provider.OpenableColumns
+import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.runtime.getValue
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.lifecycleScope
+import com.lielu.todo.ui.common.IncomingFile
+import com.lielu.todo.ui.common.IncomingFileResult
+import com.lielu.todo.ui.common.problem
+import com.lielu.todo.ui.common.readIncomingFile
 import com.lielu.todo.ui.task.QuickAddSheet
 import com.lielu.todo.ui.task.add
 import com.lielu.todo.ui.theme.ThemedContent
+import kotlinx.coroutines.launch
 
 /**
  * Ajout rapide hors de l'app : widget, tuile des réglages rapides, raccourci d'icône, ou « Partager » depuis une
@@ -41,15 +47,26 @@ class QuickAddActivity : ComponentActivity() {
             } else {
                 null
             }
-        val file = stream?.let { readSharedFile(it) }
         val sharedText =
             if (intent.action == Intent.ACTION_SEND) {
                 intent.getStringExtra(Intent.EXTRA_TEXT) ?: intent.getStringExtra(Intent.EXTRA_SUBJECT)
             } else {
                 null
             }
-        val shared = sharedText ?: file?.name?.substringBeforeLast('.').orEmpty()
+        // Lecture hors du fil principal (un gros fichier ne doit pas geler l'écran), puis la feuille s'affiche.
+        lifecycleScope.launch {
+            val read = stream?.let { readIncomingFile(this@QuickAddActivity, it) }
+            read?.problem()?.let { Toast.makeText(this@QuickAddActivity, it, Toast.LENGTH_LONG).show() }
+            val file = (read as? IncomingFileResult.Ok)?.file
+            showSheet(container, sharedText ?: file?.name?.substringBeforeLast('.').orEmpty(), file)
+        }
+    }
 
+    private fun showSheet(
+        container: AppContainer,
+        initialText: String,
+        file: IncomingFile?,
+    ) {
         setContent {
             ThemedContent(container.settingsRepository) {
                 val state by container.todoRepository.state.collectAsStateWithLifecycle()
@@ -57,7 +74,7 @@ class QuickAddActivity : ComponentActivity() {
                     state = state,
                     defaultProjectId = state.inboxId,
                     defaultDate = null,
-                    initialText = shared,
+                    initialText = initialText,
                     onAdd = {
                         val taskId = container.todoRepository.add(it)
                         file?.let { f -> container.todoRepository.addAttachment(taskId, f.name, f.mime, f.bytes) }
@@ -68,30 +85,8 @@ class QuickAddActivity : ComponentActivity() {
         }
     }
 
-    private class SharedFile(
-        val name: String,
-        val mime: String,
-        val bytes: ByteArray,
-    )
-
-    /** Lit le fichier partagé ; `null` s'il est illisible ou dépasse les 20 Mo acceptés par Vikunja. */
-    private fun readSharedFile(uri: Uri): SharedFile? =
-        runCatching {
-            val name =
-                contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use {
-                    if (it.moveToFirst()) it.getString(0) else null
-                } ?: uri.lastPathSegment ?: "fichier"
-            val bytes = contentResolver.openInputStream(uri)?.use { it.readBytes() } ?: return null
-            if (bytes.size > MAX_FILE_BYTES) return null
-            SharedFile(name, contentResolver.getType(uri) ?: "application/octet-stream", bytes)
-        }.getOrNull()
-
     override fun onStop() {
         super.onStop()
         (application as LieluApplication).container.todoRepository.saveNow()
-    }
-
-    private companion object {
-        const val MAX_FILE_BYTES = 20 * 1024 * 1024
     }
 }

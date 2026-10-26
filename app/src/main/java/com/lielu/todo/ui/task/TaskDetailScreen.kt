@@ -64,6 +64,7 @@ import com.lielu.todo.data.todo.QuickAdd
 import com.lielu.todo.data.todo.TodoRepository
 import com.lielu.todo.ui.common.AssigneesDialog
 import com.lielu.todo.ui.common.DatePickerSheet
+import com.lielu.todo.ui.common.IncomingFileResult
 import com.lielu.todo.ui.common.LabelsDialog
 import com.lielu.todo.ui.common.PriorityMenu
 import com.lielu.todo.ui.common.ProjectMenu
@@ -77,8 +78,10 @@ import com.lielu.todo.ui.common.borderlessFieldColors
 import com.lielu.todo.ui.common.dueLabel
 import com.lielu.todo.ui.common.localDate
 import com.lielu.todo.ui.common.priorityName
+import com.lielu.todo.ui.common.problem
 import com.lielu.todo.ui.common.projectColors
 import com.lielu.todo.ui.common.projectLabel
+import com.lielu.todo.ui.common.readIncomingFile
 import com.lielu.todo.ui.common.reminderLabel
 import com.lielu.todo.ui.common.repeatLabel
 import com.lielu.todo.ui.theme.LocalTodoColors
@@ -150,11 +153,18 @@ fun TaskDetailScreen(
 
     fun attach(uri: android.net.Uri?) {
         if (uri == null) return
-        val picked = readPickedFile(context, uri)
-        if (picked == null) {
-            detailScope.launch { snackbar.showSnackbar("Impossible de lire ce fichier, ou il dépasse 20 Mo.") }
-        } else {
-            repository.addAttachment(task.id, picked.name, picked.mime, picked.bytes)
+        detailScope.launch {
+            // Fichier choisi ici, ou photo que l'app vient de prendre (son propre FileProvider) : accepté.
+            when (val read = readIncomingFile(context, uri, allowOwn = true)) {
+                is IncomingFileResult.Ok ->
+                    repository.addAttachment(
+                        task.id,
+                        read.file.name,
+                        read.file.mime,
+                        read.file.bytes,
+                    )
+                else -> snackbar.showSnackbar(read.problem().orEmpty())
+            }
         }
     }
 
@@ -736,30 +746,6 @@ private fun stripHtml(html: String): String =
         .replace("&lt;", "<")
         .replace("&gt;", ">")
         .trim()
-
-private class PickedFile(
-    val name: String,
-    val mime: String,
-    val bytes: ByteArray,
-)
-
-/** Vikunja refuse au-delà de 20 Mo par fichier : on le dit tout de suite plutôt qu'après un envoi raté. */
-private const val MAX_ATTACHMENT_BYTES = 20 * 1024 * 1024
-
-private fun readPickedFile(
-    context: android.content.Context,
-    uri: android.net.Uri,
-): PickedFile? =
-    runCatching {
-        val resolver = context.contentResolver
-        val name =
-            resolver.query(uri, arrayOf(android.provider.OpenableColumns.DISPLAY_NAME), null, null, null)?.use {
-                if (it.moveToFirst()) it.getString(0) else null
-            } ?: uri.lastPathSegment ?: "fichier"
-        val bytes = resolver.openInputStream(uri)?.use { it.readBytes() } ?: return null
-        if (bytes.size > MAX_ATTACHMENT_BYTES) return null
-        PickedFile(name, resolver.getType(uri) ?: "application/octet-stream", bytes)
-    }.getOrNull()
 
 private fun newCameraUri(context: android.content.Context): android.net.Uri {
     val dir = java.io.File(context.cacheDir, "camera").also { it.mkdirs() }
