@@ -1,6 +1,7 @@
 package com.lielu.todo.ui.home
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -10,8 +11,10 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.CheckCircle
@@ -53,6 +56,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.unit.dp
@@ -72,6 +76,7 @@ import com.lielu.todo.ui.common.SectionHeader
 import com.lielu.todo.ui.common.TaskRow
 import com.lielu.todo.ui.common.dayHeader
 import com.lielu.todo.ui.common.localDate
+import com.lielu.todo.ui.common.projectColors
 import com.lielu.todo.ui.common.syncSummary
 import com.lielu.todo.ui.common.toggleDone
 import com.lielu.todo.ui.task.QuickAddSheet
@@ -142,6 +147,7 @@ fun HomeScreen(
         if (activeFilter == 0L) state else state.copy(tasks = state.tasks.filter { it.projectId == activeFilter })
     val filterTitle = state.projects.firstOrNull { it.id == activeFilter }?.title
     val activeInbox = inboxFilter.takeIf { id -> id == ALL_PROJECTS || state.projects.any { it.id == id } } ?: 0L
+    val projectColors = projectColors(state.projects)
     val filterable = HomeTab.entries[tab] == HomeTab.TODAY || HomeTab.entries[tab] == HomeTab.UPCOMING
     val titleActions: @Composable () -> Unit = {
         IconButton(onClick = onSearch) { Icon(Icons.Filled.Search, contentDescription = "Rechercher") }
@@ -167,9 +173,12 @@ fun HomeScreen(
                 }
                 ProjectFilterButton(
                     options =
-                        listOf(Triple(0L, "Boîte de réception", 0), Triple(ALL_PROJECTS, "Tous les projets", 0)) +
+                        listOf(
+                            FilterOption(0L, "Boîte de réception", 0),
+                            FilterOption(ALL_PROJECTS, "Tous les projets", 0),
+                        ) +
                             orderedProjects(state.projects.filter { it.id != state.inboxId })
-                                .map { (p, depth) -> Triple(p.id, p.title, depth) },
+                                .map { (p, depth) -> FilterOption(p.id, p.title, depth, projectColors[p.id]) },
                     active = activeInbox,
                     default = 0L,
                     onPick = { inboxFilter = it },
@@ -178,8 +187,9 @@ fun HomeScreen(
             HomeTab.TODAY, HomeTab.UPCOMING ->
                 ProjectFilterButton(
                     options =
-                        listOf(Triple(0L, "Tous les projets", 0)) +
-                            orderedProjects(state.projects).map { (p, depth) -> Triple(p.id, p.title, depth) },
+                        listOf(FilterOption(0L, "Tous les projets", 0)) +
+                            orderedProjects(state.projects)
+                                .map { (p, depth) -> FilterOption(p.id, p.title, depth, projectColors[p.id]) },
                     active = activeFilter,
                     default = 0L,
                     onPick = { projectFilter = it },
@@ -388,6 +398,7 @@ private fun TodayTab(
         return
     }
     val projects = state.projects.associate { it.id to it.title }
+    val projectColors = projectColors(state.projects)
     LazyColumn(modifier = Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 96.dp)) {
         item {
             val count = overdue.size + dueToday.size
@@ -412,13 +423,31 @@ private fun TodayTab(
             }
             items(overdue, key = {
                 it.id
-            }) { TaskRow(it, today, projects[it.projectId], { d -> onToggle(it, d) }, { onOpenTask(it.id) }) }
+            }) {
+                TaskRow(
+                    it,
+                    today,
+                    projects[it.projectId],
+                    { d -> onToggle(it, d) },
+                    { onOpenTask(it.id) },
+                    projectColor = projectColors[it.projectId],
+                )
+            }
         }
         if (dueToday.isNotEmpty()) {
             item { SectionHeader(if (overdue.isEmpty()) dayHeader(today) else "Aujourd'hui", count = dueToday.size) }
             items(dueToday, key = {
                 it.id
-            }) { TaskRow(it, today, projects[it.projectId], { d -> onToggle(it, d) }, { onOpenTask(it.id) }) }
+            }) {
+                TaskRow(
+                    it,
+                    today,
+                    projects[it.projectId],
+                    { d -> onToggle(it, d) },
+                    { onOpenTask(it.id) },
+                    projectColor = projectColors[it.projectId],
+                )
+            }
         }
         if (overdue.isEmpty() && dueToday.isEmpty()) item { EmptyState("Rien de prévu aujourd'hui.") }
     }
@@ -456,6 +485,7 @@ private fun InboxTab(
                     .thenBy { it.id },
             )
     val projects = state.projects.associate { it.id to it.title }
+    val projectColors = projectColors(state.projects)
     val scope =
         when (filter) {
             0L -> null
@@ -490,6 +520,7 @@ private fun InboxTab(
                 },
                 { d -> onToggle(it, d) },
                 { onOpenTask(it.id) },
+                projectColor = projectColors[it.projectId],
             )
         }
         if (tasks.isEmpty()) item { EmptyState("Votre boîte de réception est vide.") }
@@ -534,6 +565,14 @@ private fun NotificationPermissionRequest() {
     }
 }
 
+/** Option du menu de filtre : valeur, libellé, profondeur d'indentation, couleur du projet (null = aucune). */
+private data class FilterOption(
+    val value: Long,
+    val label: String,
+    val depth: Int,
+    val color: Color? = null,
+)
+
 /** Valeur de filtre « tous les projets » de la boîte de réception (les ids de projets sont positifs). */
 private const val ALL_PROJECTS = -1L
 
@@ -543,7 +582,7 @@ private const val ALL_PROJECTS = -1L
  */
 @Composable
 private fun ProjectFilterButton(
-    options: List<Triple<Long, String, Int>>,
+    options: List<FilterOption>,
     active: Long,
     default: Long,
     onPick: (Long) -> Unit,
@@ -563,9 +602,17 @@ private fun ProjectFilterButton(
             )
         }
         DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
-            options.forEach { (value, label, depth) ->
+            options.forEach { (value, label, depth, color) ->
                 DropdownMenuItem(
-                    text = { Text("  ".repeat(depth) + label) },
+                    text = {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text("  ".repeat(depth))
+                            if (color != null) {
+                                Box(Modifier.padding(end = 8.dp).size(10.dp).background(color, CircleShape))
+                            }
+                            Text(label, color = color ?: Color.Unspecified)
+                        }
+                    },
                     leadingIcon = { if (active == value) Icon(Icons.Filled.Check, contentDescription = null) },
                     onClick = {
                         onPick(value)

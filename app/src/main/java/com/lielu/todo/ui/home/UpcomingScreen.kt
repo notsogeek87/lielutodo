@@ -91,6 +91,7 @@ import com.lielu.todo.ui.common.ScreenTitle
 import com.lielu.todo.ui.common.SectionHeader
 import com.lielu.todo.ui.common.TaskRow
 import com.lielu.todo.ui.common.localDate
+import com.lielu.todo.ui.common.projectColors
 import com.lielu.todo.ui.theme.LocalTodoColors
 import com.lielu.todo.ui.theme.forPriority
 import com.lielu.todo.ui.theme.parseHexColor
@@ -194,6 +195,7 @@ private fun AgendaView(
     val colors = LocalTodoColors.current
     val scope = rememberCoroutineScope()
     val projects = remember(state.projects) { state.projects.associate { it.id to it.title } }
+    val projectColors = remember(state.projects) { projectColors(state.projects) }
     val overdue =
         remember(state.tasks, today) {
             state.tasks
@@ -249,7 +251,14 @@ private fun AgendaView(
             if (overdue.isNotEmpty()) {
                 item { SectionHeader("En retard", color = colors.overdue, count = overdue.size) }
                 items(overdue, key = { "late-${it.id}" }) {
-                    TaskRow(it, today, projects[it.projectId], { d -> onToggle(it, d) }, { onOpenTask(it.id) })
+                    TaskRow(
+                        it,
+                        today,
+                        projects[it.projectId],
+                        { d -> onToggle(it, d) },
+                        { onOpenTask(it.id) },
+                        projectColor = projectColors[it.projectId],
+                    )
                 }
             }
             items(entries, key = {
@@ -280,6 +289,7 @@ private fun AgendaView(
                             { d -> if (!occurrence.future) onToggle(occurrence.task, d) },
                             { onOpenTask(task.id) },
                             modifier = if (occurrence.future) Modifier.alpha(0.6f) else Modifier,
+                            projectColor = projectColors[task.projectId],
                         )
                     }
                 }

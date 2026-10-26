@@ -30,6 +30,7 @@ import com.lielu.todo.data.todo.TodoRepository
 import com.lielu.todo.data.todo.searchTasks
 import com.lielu.todo.ui.common.EmptyState
 import com.lielu.todo.ui.common.TaskRow
+import com.lielu.todo.ui.common.projectColors
 import java.time.LocalDate
 
 /** Recherche dans toutes les tâches du cache : fonctionne serveur coupé. */
@@ -45,6 +46,7 @@ fun SearchScreen(
     val focus = remember { FocusRequester() }
     val results = remember(query, state.tasks) { searchTasks(state.tasks, query) }
     val projects = state.projects.associate { it.id to it.title }
+    val projectColors = projectColors(state.projects)
     val today = LocalDate.now()
     LaunchedEffect(Unit) { focus.requestFocus() }
 
@@ -75,6 +77,7 @@ fun SearchScreen(
                     task = task,
                     today = today,
                     projectName = projects[task.projectId],
+                    projectColor = projectColors[task.projectId],
                     onToggle = { repository.setDone(task.id, it) },
                     onClick = { onOpenTask(task.id) },
                 )

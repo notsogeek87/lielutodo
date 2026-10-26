@@ -32,10 +32,12 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.lielu.todo.data.model.Project
 import com.lielu.todo.data.model.Task
 import com.lielu.todo.ui.theme.LocalTodoColors
 import com.lielu.todo.ui.theme.TodoColors
 import com.lielu.todo.ui.theme.forPriority
+import com.lielu.todo.ui.theme.parseHexColor
 import java.time.LocalDate
 
 /** Couleur de l'échéance, comme Todoist : rouge en retard, vert aujourd'hui, orange demain, violet cette semaine. */
@@ -53,6 +55,13 @@ internal fun TodoColors.forDue(
         else -> neutral
     }
 }
+
+/** Couleur de chaque projet qui en a une (id -> couleur), pour [TaskRow] et les filtres. */
+fun projectColors(projects: List<Project>): Map<Long, Color> =
+    projects
+        .filter { it.hexColor.isNotBlank() }
+        .associate { it.id to parseHexColor(it.hexColor, Color.Unspecified) }
+        .filterValues { it != Color.Unspecified }
 
 /** Case ronde de Todoist : anneau de la couleur de priorité, fond légèrement teinté, coche une fois terminée. */
 @Composable
@@ -102,6 +111,8 @@ fun TaskRow(
     indent: Int = 0,
     /** « 1/3 » : sous-tâches terminées sur total. */
     subtasks: String? = null,
+    /** Couleur du projet (rappelée sur son nom) ; null = projet sans couleur. */
+    projectColor: Color? = null,
 ) {
     val colors = LocalTodoColors.current
     val outline = MaterialTheme.colorScheme.outline
@@ -170,7 +181,7 @@ fun TaskRow(
                             Text(
                                 text = "$projectName #",
                                 style = MaterialTheme.typography.bodySmall,
-                                color = outline,
+                                color = projectColor ?: outline,
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis,
                                 modifier = Modifier.weight(1f),

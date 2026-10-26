@@ -62,6 +62,7 @@ import com.lielu.todo.data.todo.TodoRepository
 import com.lielu.todo.ui.common.AddFab
 import com.lielu.todo.ui.common.EmptyState
 import com.lielu.todo.ui.common.TaskRow
+import com.lielu.todo.ui.common.projectColors
 import com.lielu.todo.ui.common.toggleDone
 import com.lielu.todo.ui.task.QuickAddSheet
 import com.lielu.todo.ui.task.add
@@ -129,6 +130,7 @@ fun TaskListScreen(
     val open = all.filter { !it.done }
     val done = all.filter { it.done }.sortedByDescending { it.id }
     val projects = state.projects.associate { it.id to it.title }
+    val projectColors = projectColors(state.projects)
     val manualOrder = projectId != null
 
     // Ordre local pendant un glisser-déposer ; remis à zéro dès que la liste change.
@@ -290,6 +292,7 @@ fun TaskListScreen(
                             task = task,
                             today = today,
                             projectName = if (projectId == null) projects[task.projectId] else null,
+                            projectColor = projectColors[task.projectId],
                             subtasks = if (total > 0) "${total - kids.size}/$total" else null,
                             onToggle = { d -> scope.toggleDone(repository, snackbar, task, d) },
                             onClick = { onOpenTask(task.id) },
