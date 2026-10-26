@@ -52,6 +52,7 @@ import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.lielu.todo.data.model.Reminder
+import com.lielu.todo.data.model.Task
 import com.lielu.todo.data.todo.QuickAdd
 import com.lielu.todo.data.todo.TodoRepository
 import com.lielu.todo.ui.common.AssigneesDialog
@@ -259,22 +260,19 @@ fun TaskDetailScreen(
             )
 
             val due = task.dueDate
-            DetailRow(Icons.Filled.CalendarToday, due?.let { dueLabel(it, today) } ?: "Date d'échéance") {
-                dialog =
-                    Dialog.DATE
+            // Une seule date visible : l'échéance, sinon le rappel qui en tient lieu (tâche avec rappel seul).
+            val planned = task.plannedAt
+            DetailRow(Icons.Filled.CalendarToday, planned?.let { dueLabel(it, today) } ?: "Date et heure") {
+                dialog = Dialog.DATE
             }
+            // Ce rappel-là est déjà la date affichée au-dessus : on ne le répète pas.
+            val extraReminders = task.reminders.filterNot { it.isStandIn(task) }
             DetailRow(
                 Icons.Filled.Alarm,
-                if (task.reminders.isEmpty()) {
+                if (extraReminders.isEmpty()) {
                     "Rappels"
                 } else {
-                    task.reminders.joinToString {
-                        reminderLabel(
-                            it,
-                            due,
-                            today,
-                        )
-                    }
+                    extraReminders.joinToString { reminderLabel(it, due, today) }
                 },
             ) { dialog = Dialog.REMINDERS }
             DetailRow(Icons.Filled.Repeat, repeatLabel(task) ?: "Répétition") { dialog = Dialog.REPEAT }
@@ -472,11 +470,13 @@ fun TaskDetailScreen(
     when (dialog) {
         Dialog.DATE ->
             DatePickerSheet(
-                initial = task.dueDate?.localDate(),
+                initial = task.plannedAt?.localDate(),
                 onPick = { date ->
                     if (date == null) {
                         dialog = null
-                        repository.updateTask(task.copy(dueDate = null))
+                        // « Aucune date » efface aussi le rappel qui tenait lieu de date, et ceux liés à l'échéance.
+                        val kept = task.reminders.filterNot { it.isStandIn(task) || it.relativeTo.isNotBlank() }
+                        repository.updateTask(task.copy(dueDate = null, reminders = kept))
                     } else {
                         // Une seule date à modifier : le jour, puis l'heure juste après.
                         pendingDueDate = date
@@ -486,7 +486,7 @@ fun TaskDetailScreen(
                 onDismiss = { dialog = null },
             )
         Dialog.DUE_TIME -> {
-            val current = task.dueDate?.atZone(zone)?.toLocalTime()
+            val current = task.plannedAt?.atZone(zone)?.toLocalTime()
 
             fun saveDue(
                 time: LocalTime,
@@ -496,12 +496,14 @@ fun TaskDetailScreen(
                 dialog = null
                 val due = date.atTime(time).atZone(zone).toInstant()
                 val atDue = { r: Reminder -> r.relativeTo == Reminder.RELATIVE_TO_DUE && r.relativePeriod == 0L }
+                // Un rappel qui tenait lieu de date devient l'échéance : on ne garde pas l'ancien en double.
+                val others = task.reminders.filterNot { it.isStandIn(task) }
                 // Avec une heure, la notification tombe à l'échéance sans autre geste ; sans heure, on la retire.
                 val reminders =
                     when {
-                        !withTime -> task.reminders.filterNot(atDue)
-                        task.reminders.isEmpty() -> listOf(Reminder.beforeDue(0))
-                        else -> task.reminders
+                        !withTime -> others.filterNot(atDue)
+                        others.isEmpty() -> listOf(Reminder.beforeDue(0))
+                        else -> others
                     }
                 repository.updateTask(task.copy(dueDate = due, reminders = reminders))
             }
@@ -598,6 +600,10 @@ fun TaskDetailScreen(
 }
 
 private enum class Dialog { DATE, DUE_TIME, LABELS, REPEAT, REMINDERS, REMINDER_DATE, REMINDER_TIME, ASSIGNEES }
+
+/** Rappel absolu d'une tâche sans échéance : c'est lui que la ligne « Date et heure » affiche comme date. */
+private fun Reminder.isStandIn(task: Task): Boolean =
+    task.dueDate == null && relativeTo.isBlank() && at != null && at == task.plannedAt
 
 @Composable
 private fun SectionTitle(text: String) {
