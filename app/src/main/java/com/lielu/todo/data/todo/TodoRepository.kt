@@ -846,8 +846,10 @@ class TodoRepository(
             // Le partage a réussi : un échec de ce rafraîchissement annexe ne doit pas le faire passer pour raté.
             runCatching { refreshProjectUsers(projectId) }
             return username
+        } catch (e: com.lielu.todo.data.api.ApiException) {
+            throw IOException("${e.message} (HTTP ${e.code}, partage de « $userOrEmail » sur le projet $projectId)", e)
         } catch (e: org.json.JSONException) {
-            throw IOException("réponse inattendue du serveur", e)
+            throw IOException("réponse inattendue du serveur (${e.message})", e)
         } catch (e: RuntimeException) {
             if (e is kotlinx.coroutines.CancellationException) throw e
             throw IOException(e.message ?: e.javaClass.simpleName, e)
@@ -855,12 +857,21 @@ class TodoRepository(
     }
 
     private suspend fun resolveEmail(email: String): String {
-        val found = JSONArray(api.call("GET", "/users", query = mapOf("s" to email)).body).objects()
+        // Sans résultat, Vikunja renvoie `null` (ou rien) au lieu de `[]`.
+        val response = api.call("GET", "/users", query = mapOf("s" to email))
+        val body = response.body.trim()
+        val found = if (body.startsWith("[")) JSONArray(body).objects() else emptyList()
         val match =
             found.firstOrNull { it.optString("email").equals(email, ignoreCase = true) }
                 ?: found.singleOrNull()
-                ?: throw IOException("aucun utilisateur trouvé pour $email (son compte doit être visible par e-mail)")
-        return match.getString("username")
+                ?: throw IOException(
+                    "aucun utilisateur trouvé pour $email : son compte n'est pas visible par e-mail, " +
+                        "saisissez son pseudo Vikunja à la place.\n" +
+                        "Détail : GET /users?s=… -> HTTP ${response.code}, ${found.size} résultat(s)" +
+                        found.joinToString(prefix = " [", postfix = "]") { it.optString("username") } +
+                        ", réponse brute : ${body.take(DIAGNOSTIC_BODY_MAX).ifEmpty { "(vide)" }}",
+                )
+        return match.optString("username").ifBlank { throw IOException("utilisateur sans pseudo pour $email") }
     }
 
     // ---- Pièces jointes ----
@@ -1291,6 +1302,7 @@ class TodoRepository(
     private companion object {
         const val SAVE_DELAY_MS = 150L
         const val PAGE_SIZE = 50
+        const val DIAGNOSTIC_BODY_MAX = 300
         const val POSITION_STEP = 65536.0
         const val POSITIONS_EVERY_MS = 5 * 60 * 1000L
         const val HTTP_UNAUTHORIZED = 401
