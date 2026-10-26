@@ -91,7 +91,7 @@ function renderLogin(message = '') {
       <img class="logo" src="icon.svg" alt="" width="64" height="64">
       <h1>LieluTodo</h1><p>Connectez-vous à votre serveur Vikunja.</p>
       <div class="fl"><label for="srv">Serveur</label><input class="field" id="srv" name="server" value="${esc(DEFAULT_SERVER)}" inputmode="url" autocapitalize="off" spellcheck="false" required></div>
-      <div class="fl"><label for="usr">Nom d’utilisateur</label><input class="field" id="usr" name="username" autocomplete="username" autocapitalize="off" required></div>
+      <div class="fl"><label for="usr">Adresse e-mail</label><input class="field" id="usr" name="username" type="email" autocomplete="username" autocapitalize="off" required></div>
       <div class="fl"><label for="pwd">Mot de passe</label><input class="field" id="pwd" name="password" type="password" autocomplete="current-password" required></div>
       <div class="fl" id="totp-wrap" hidden><label for="totp">Code à deux facteurs</label><input class="field" id="totp" name="totp" inputmode="numeric" autocomplete="one-time-code" maxlength="8"></div>
       <div class="err" role="alert">${esc(message)}</div>
