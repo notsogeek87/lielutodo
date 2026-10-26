@@ -842,12 +842,17 @@ class TodoRepository(
     }
 
     private suspend fun resolveEmail(email: String): String {
-        val found = JSONArray(api.call("GET", "/users", query = mapOf("s" to email)).body).objects()
+        // Sans résultat, Vikunja renvoie `null` (ou rien) au lieu de `[]`.
+        val body = api.call("GET", "/users", query = mapOf("s" to email)).body.trim()
+        val found = if (body.startsWith("[")) JSONArray(body).objects() else emptyList()
         val match =
             found.firstOrNull { it.optString("email").equals(email, ignoreCase = true) }
                 ?: found.singleOrNull()
-                ?: throw IOException("aucun utilisateur trouvé pour $email (son compte doit être visible par e-mail)")
-        return match.getString("username")
+                ?: throw IOException(
+                    "aucun utilisateur trouvé pour $email : son compte n'est pas visible par e-mail, " +
+                        "saisissez son pseudo Vikunja à la place",
+                )
+        return match.optString("username").ifBlank { throw IOException("utilisateur sans pseudo pour $email") }
     }
 
     // ---- Pièces jointes ----
