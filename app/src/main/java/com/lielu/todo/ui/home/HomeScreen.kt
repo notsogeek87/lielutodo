@@ -478,7 +478,6 @@ private fun InboxTab(
                     }
             }.sortedWith(
                 compareBy<Task> { it.done }
-                    .thenBy { it.projectId != state.inboxId }
                     .thenBy(nullsLast()) { it.plannedAt }
                     .thenByDescending { it.priority }
                     .thenBy { it.position }
