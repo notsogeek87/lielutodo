@@ -1,5 +1,6 @@
 package com.lielu.todo.ui.home
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -7,6 +8,7 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
@@ -98,6 +100,11 @@ fun TaskListScreen(
     val projectId = target.projectId
     val live = state.tasks.associateBy { it.id }
 
+    val accent =
+        state.projects
+            .firstOrNull { it.id == projectId }
+            ?.hexColor
+            ?.let { hexColor(it) }
     val title =
         when {
             target.favorites -> "Favoris"
@@ -150,7 +157,14 @@ fun TaskListScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text(title, fontWeight = FontWeight.Bold) },
+                title = {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        if (accent != null) {
+                            Text("# ", color = accent, fontWeight = FontWeight.Bold)
+                        }
+                        Text(title, fontWeight = FontWeight.Bold)
+                    }
+                },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background),
                 navigationIcon = {
                     IconButton(
@@ -216,6 +230,15 @@ fun TaskListScreen(
             onRefresh = { scope.launch { repository.refresh() } },
             modifier = Modifier.padding(padding).fillMaxSize(),
         ) {
+            if (accent != null) {
+                Box(
+                    Modifier
+                        .fillMaxWidth()
+                        .height(3.dp)
+                        .background(accent)
+                        .zIndex(1f),
+                )
+            }
             LazyColumn(
                 state = listState,
                 modifier = Modifier.fillMaxSize(),
