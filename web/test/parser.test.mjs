@@ -70,3 +70,26 @@ test('colorOf n’accepte que de l’hexadécimal (valeur serveur insérée dans
   assert.equal(colorOf('"><img src=x onerror=alert(1)>', '#000'), '#000');
   assert.equal(colorOf(''), '#808080');
 });
+
+// Mêmes cas que QuickAddSharedCasesTest.kt : les deux parseurs doivent donner exactement ces résultats.
+test('cas partagés avec le parseur Kotlin', async () => {
+  const { readFileSync } = await import('node:fs');
+  const doc = JSON.parse(readFileSync(new URL('./fixtures/quickadd.json', import.meta.url), 'utf8'));
+  const [y, mo, d] = doc.today.split('-').map(Number);
+  const now = new Date(y, mo - 1, d, 10, 0).getTime();
+  const pad = (n) => String(n).padStart(2, '0');
+  for (const c of doc.cases) {
+    const r = parseQuickAdd(c.input, doc.projects, doc.labels, now);
+    const date = r.date == null ? null : new Date(r.date);
+    assert.deepEqual({
+      title: r.title,
+      date: date ? `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}` : null,
+      time: r.time ? `${pad(r.time[0])}:${pad(r.time[1])}` : null,
+      priority: r.priority ?? null,
+      projectId: r.projectId ?? null,
+      labels: r.labels.map((l) => l.id),
+      repeatAfter: r.repeatAfter,
+      repeatMode: r.repeatMode,
+    }, (({ input, ...rest }) => rest)(c), c.input);
+  }
+});

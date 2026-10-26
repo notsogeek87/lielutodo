@@ -93,6 +93,31 @@ object QuickAddParser {
             """(?<=\s)chaque\s+(lundi|mardi|mercredi|jeudi|vendredi|samedi|dimanche)(?=\s)""",
             RegexOption.IGNORE_CASE,
         )
+
+    /** « (le) 15 novembre », « 1er mai 2027 » : avant [dayOfMonthRegex], qui ne lirait que « le 15 ». */
+    private val monthNameRegex =
+        Regex(
+            """(?<=\s)(?:le\s+)?(\d{1,2})(?:er)?\s+(janvier|février|fevrier|mars|avril|mai|juin|juillet|août|aout|septembre|octobre|novembre|décembre|decembre)(?:\s+(\d{4}))?(?=\s)""",
+            RegexOption.IGNORE_CASE,
+        )
+    private val monthNumbers =
+        mapOf(
+            "janvier" to 1,
+            "février" to 2,
+            "fevrier" to 2,
+            "mars" to 3,
+            "avril" to 4,
+            "mai" to 5,
+            "juin" to 6,
+            "juillet" to 7,
+            "août" to 8,
+            "aout" to 8,
+            "septembre" to 9,
+            "octobre" to 10,
+            "novembre" to 11,
+            "décembre" to 12,
+            "decembre" to 12,
+        )
     private val dayOfMonthRegex = Regex("""(?<=\s)le\s+(\d{1,2})(?:er)?(?=\s)""", RegexOption.IGNORE_CASE)
 
     fun parse(
@@ -207,6 +232,18 @@ object QuickAddParser {
                 if (yearText.isNotEmpty()) {
                     val year = yearText.toInt().let { if (it < 100) 2000 + it else it }
                     LocalDate.of(year, month, day)
+                } else {
+                    LocalDate.of(today.year, month, day).let { if (it.isBefore(today)) it.plusYears(1) else it }
+                }
+            }.getOrNull()
+        }
+        take(monthNameRegex) { m ->
+            val day = m.groupValues[1].toInt()
+            val month = monthNumbers.getValue(m.groupValues[2].lowercase())
+            val yearText = m.groupValues[3]
+            runCatching {
+                if (yearText.isNotEmpty()) {
+                    LocalDate.of(yearText.toInt(), month, day)
                 } else {
                     LocalDate.of(today.year, month, day).let { if (it.isBefore(today)) it.plusYears(1) else it }
                 }

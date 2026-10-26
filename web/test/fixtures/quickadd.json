@@ -1,0 +1,394 @@
+{
+ "_doc": "Cas partagés par QuickAddParserTest.kt et parser.test.mjs : aujourd'hui = lundi 26 octobre 2026, 10 h. Les deux parseurs doivent donner exactement ces résultats.",
+ "today": "2026-10-26",
+ "projects": [
+  {
+   "id": 1,
+   "title": "Perso"
+  },
+  {
+   "id": 2,
+   "title": "Maison travaux"
+  }
+ ],
+ "labels": [
+  {
+   "id": 10,
+   "title": "urgent"
+  },
+  {
+   "id": 11,
+   "title": "Éco"
+  }
+ ],
+ "cases": [
+  {
+   "input": "Acheter du pain",
+   "title": "Acheter du pain",
+   "date": null,
+   "time": null,
+   "priority": null,
+   "projectId": null,
+   "labels": [],
+   "repeatAfter": 0,
+   "repeatMode": 0
+  },
+  {
+   "input": "Appeler Marie demain 9h30 #Perso @urgent p1",
+   "title": "Appeler Marie",
+   "date": "2026-10-27",
+   "time": "09:30",
+   "priority": 4,
+   "projectId": 1,
+   "labels": [
+    10
+   ],
+   "repeatAfter": 0,
+   "repeatMode": 0
+  },
+  {
+   "input": "aujourd'hui 18h Sport",
+   "title": "Sport",
+   "date": "2026-10-26",
+   "time": "18:00",
+   "priority": null,
+   "projectId": null,
+   "labels": [],
+   "repeatAfter": 0,
+   "repeatMode": 0
+  },
+  {
+   "input": "après-demain Dentiste",
+   "title": "Dentiste",
+   "date": "2026-10-28",
+   "time": null,
+   "priority": null,
+   "projectId": null,
+   "labels": [],
+   "repeatAfter": 0,
+   "repeatMode": 0
+  },
+  {
+   "input": "Réunion lundi 14h",
+   "title": "Réunion",
+   "date": "2026-11-02",
+   "time": "14:00",
+   "priority": null,
+   "projectId": null,
+   "labels": [],
+   "repeatAfter": 0,
+   "repeatMode": 0
+  },
+  {
+   "input": "Réunion mardi",
+   "title": "Réunion",
+   "date": "2026-10-27",
+   "time": null,
+   "priority": null,
+   "projectId": null,
+   "labels": [],
+   "repeatAfter": 0,
+   "repeatMode": 0
+  },
+  {
+   "input": "Facture vendredi 10h",
+   "title": "Facture",
+   "date": "2026-10-30",
+   "time": "10:00",
+   "priority": null,
+   "projectId": null,
+   "labels": [],
+   "repeatAfter": 0,
+   "repeatMode": 0
+  },
+  {
+   "input": "Rendez-vous le 15 novembre à 9h",
+   "title": "Rendez-vous",
+   "date": "2026-11-15",
+   "time": "09:00",
+   "priority": null,
+   "projectId": null,
+   "labels": [],
+   "repeatAfter": 0,
+   "repeatMode": 0
+  },
+  {
+   "input": "Payer loyer le 3",
+   "title": "Payer loyer",
+   "date": "2026-11-03",
+   "time": null,
+   "priority": null,
+   "projectId": null,
+   "labels": [],
+   "repeatAfter": 0,
+   "repeatMode": 0
+  },
+  {
+   "input": "Voyage 24/12",
+   "title": "Voyage",
+   "date": "2026-12-24",
+   "time": null,
+   "priority": null,
+   "projectId": null,
+   "labels": [],
+   "repeatAfter": 0,
+   "repeatMode": 0
+  },
+  {
+   "input": "Voyage 24/12/2027 8h",
+   "title": "Voyage",
+   "date": "2027-12-24",
+   "time": "08:00",
+   "priority": null,
+   "projectId": null,
+   "labels": [],
+   "repeatAfter": 0,
+   "repeatMode": 0
+  },
+  {
+   "input": "dans 3 jours Rappeler",
+   "title": "Rappeler",
+   "date": "2026-10-29",
+   "time": null,
+   "priority": null,
+   "projectId": null,
+   "labels": [],
+   "repeatAfter": 0,
+   "repeatMode": 0
+  },
+  {
+   "input": "dans 2 semaines bilan",
+   "title": "bilan",
+   "date": "2026-11-09",
+   "time": null,
+   "priority": null,
+   "projectId": null,
+   "labels": [],
+   "repeatAfter": 0,
+   "repeatMode": 0
+  },
+  {
+   "input": "à 17h45 appeler",
+   "title": "appeler",
+   "date": null,
+   "time": "17:45",
+   "priority": null,
+   "projectId": null,
+   "labels": [],
+   "repeatAfter": 0,
+   "repeatMode": 0
+  },
+  {
+   "input": "Courses 8h p2",
+   "title": "Courses",
+   "date": null,
+   "time": "08:00",
+   "priority": 3,
+   "projectId": null,
+   "labels": [],
+   "repeatAfter": 0,
+   "repeatMode": 0
+  },
+  {
+   "input": "Ménage tous les jours",
+   "title": "Ménage",
+   "date": "2026-10-26",
+   "time": null,
+   "priority": null,
+   "projectId": null,
+   "labels": [],
+   "repeatAfter": 86400,
+   "repeatMode": 0
+  },
+  {
+   "input": "Poubelles chaque lundi",
+   "title": "Poubelles",
+   "date": "2026-11-02",
+   "time": null,
+   "priority": null,
+   "projectId": null,
+   "labels": [],
+   "repeatAfter": 604800,
+   "repeatMode": 0
+  },
+  {
+   "input": "Loyer tous les mois",
+   "title": "Loyer",
+   "date": "2026-10-26",
+   "time": null,
+   "priority": null,
+   "projectId": null,
+   "labels": [],
+   "repeatAfter": 0,
+   "repeatMode": 1
+  },
+  {
+   "input": "Sport toutes les semaines",
+   "title": "Sport",
+   "date": "2026-10-26",
+   "time": null,
+   "priority": null,
+   "projectId": null,
+   "labels": [],
+   "repeatAfter": 604800,
+   "repeatMode": 0
+  },
+  {
+   "input": "Arroser tous les 3 jours",
+   "title": "Arroser",
+   "date": "2026-10-26",
+   "time": null,
+   "priority": null,
+   "projectId": null,
+   "labels": [],
+   "repeatAfter": 259200,
+   "repeatMode": 0
+  },
+  {
+   "input": "Projet #Maison travaux peinture",
+   "title": "Projet #Maison travaux peinture",
+   "date": null,
+   "time": null,
+   "priority": null,
+   "projectId": null,
+   "labels": [],
+   "repeatAfter": 0,
+   "repeatMode": 0
+  },
+  {
+   "input": "tâche @Éco @urgent p4",
+   "title": "tâche",
+   "date": null,
+   "time": null,
+   "priority": 0,
+   "projectId": null,
+   "labels": [
+    11,
+    10
+   ],
+   "repeatAfter": 0,
+   "repeatMode": 0
+  },
+  {
+   "input": "p3 important",
+   "title": "important",
+   "date": null,
+   "time": null,
+   "priority": 2,
+   "projectId": null,
+   "labels": [],
+   "repeatAfter": 0,
+   "repeatMode": 0
+  },
+  {
+   "input": "Note #Inconnu @rien",
+   "title": "Note #Inconnu @rien",
+   "date": null,
+   "time": null,
+   "priority": null,
+   "projectId": null,
+   "labels": [],
+   "repeatAfter": 0,
+   "repeatMode": 0
+  },
+  {
+   "input": "midi déjeuner",
+   "title": "midi déjeuner",
+   "date": null,
+   "time": null,
+   "priority": null,
+   "projectId": null,
+   "labels": [],
+   "repeatAfter": 0,
+   "repeatMode": 0
+  },
+  {
+   "input": "demain midi déjeuner",
+   "title": "midi déjeuner",
+   "date": "2026-10-27",
+   "time": null,
+   "priority": null,
+   "projectId": null,
+   "labels": [],
+   "repeatAfter": 0,
+   "repeatMode": 0
+  },
+  {
+   "input": "ce soir film",
+   "title": "ce soir film",
+   "date": null,
+   "time": null,
+   "priority": null,
+   "projectId": null,
+   "labels": [],
+   "repeatAfter": 0,
+   "repeatMode": 0
+  },
+  {
+   "input": "demain matin course",
+   "title": "matin course",
+   "date": "2026-10-27",
+   "time": null,
+   "priority": null,
+   "projectId": null,
+   "labels": [],
+   "repeatAfter": 0,
+   "repeatMode": 0
+  },
+  {
+   "input": "Noël le 15 décembre",
+   "title": "Noël",
+   "date": "2026-12-15",
+   "time": null,
+   "priority": null,
+   "projectId": null,
+   "labels": [],
+   "repeatAfter": 0,
+   "repeatMode": 0
+  },
+  {
+   "input": "Fête 1er mai 2027 à 10h",
+   "title": "Fête",
+   "date": "2027-05-01",
+   "time": "10:00",
+   "priority": null,
+   "projectId": null,
+   "labels": [],
+   "repeatAfter": 0,
+   "repeatMode": 0
+  },
+  {
+   "input": "Impôts le 3 mars",
+   "title": "Impôts",
+   "date": "2027-03-03",
+   "time": null,
+   "priority": null,
+   "projectId": null,
+   "labels": [],
+   "repeatAfter": 0,
+   "repeatMode": 0
+  },
+  {
+   "input": "Bilan le 26 octobre",
+   "title": "Bilan",
+   "date": "2026-10-26",
+   "time": null,
+   "priority": null,
+   "projectId": null,
+   "labels": [],
+   "repeatAfter": 0,
+   "repeatMode": 0
+  },
+  {
+   "input": "Vacances 14 aout",
+   "title": "Vacances",
+   "date": "2027-08-14",
+   "time": null,
+   "priority": null,
+   "projectId": null,
+   "labels": [],
+   "repeatAfter": 0,
+   "repeatMode": 0
+  }
+ ]
+}

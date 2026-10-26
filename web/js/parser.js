@@ -22,6 +22,8 @@ const R = {
   everyMonth: /(?<=\s)(?:tous\s+les\s+mois|chaque\s+mois)(?=\s)/i,
   everyN: /(?<=\s)(?:tous|toutes)\s+les\s+(\d{1,3})\s+(jours|semaines)(?=\s)/i,
   everyWeekday: new RegExp(`(?<=\\s)chaque\\s+(${WD})(?=\\s)`, 'i'),
+  // « (le) 15 novembre », « 1er mai 2027 » : avant dayOfMonth, qui ne lirait que « le 15 ».
+  monthName: /(?<=\s)(?:le\s+)?(\d{1,2})(?:er)?\s+(janvier|février|fevrier|mars|avril|mai|juin|juillet|août|aout|septembre|octobre|novembre|décembre|decembre)(?:\s+(\d{4}))?(?=\s)/i,
   dayOfMonth: /(?<=\s)le\s+(\d{1,2})(?:er)?(?=\s)/i,
 };
 
@@ -42,6 +44,11 @@ function daysUntil(targetDow, today) {
  * @returns {{title:string,date:number|null,time:[number,number]|null,priority:number|null,projectId:number|null,
  *            labels:object[],repeatAfter:number,repeatMode:number}}
  */
+const MONTHS = {
+  janvier: 1, février: 2, fevrier: 2, mars: 3, avril: 4, mai: 5, juin: 6, juillet: 7, août: 8, aout: 8,
+  septembre: 9, octobre: 10, novembre: 11, décembre: 12, decembre: 12,
+};
+
 export function parseQuickAdd(input, projects = [], labels = [], now = Date.now()) {
   const today = startOfDay(now);
   let s = ` ${input.trim()} `;
@@ -142,6 +149,15 @@ export function parseQuickAdd(input, projects = [], labels = [], now = Date.now(
     const month = Number(m[2]);
     let year = m[3] ? Number(m[3]) : new Date(today).getFullYear();
     if (m[3] && year < 100) year += 2000;
+    const d = new Date(year, month - 1, day);
+    if (d.getMonth() !== month - 1 || d.getDate() !== day) return null;
+    if (!m[3] && d.getTime() < today) d.setFullYear(year + 1);
+    return d.getTime();
+  });
+  take(R.monthName, (m) => {
+    const day = Number(m[1]);
+    const month = MONTHS[m[2].toLowerCase()];
+    const year = m[3] ? Number(m[3]) : new Date(today).getFullYear();
     const d = new Date(year, month - 1, day);
     if (d.getMonth() !== month - 1 || d.getDate() !== day) return null;
     if (!m[3] && d.getTime() < today) d.setFullYear(year + 1);
