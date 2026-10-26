@@ -1,8 +1,11 @@
 package com.lielu.todo.ui.home
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
@@ -10,12 +13,19 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.CalendarMonth
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.FilterList
 import androidx.compose.material.icons.filled.Folder
+import androidx.compose.material.icons.filled.Inbox
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Today
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
@@ -23,12 +33,14 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -61,6 +73,7 @@ import java.time.LocalDate
 private enum class HomeTab(
     val title: String,
 ) {
+    INBOX("Boîte de réception"),
     TODAY("Aujourd'hui"),
     UPCOMING("À venir"),
     BROWSE("Parcourir"),
@@ -84,9 +97,24 @@ fun HomeScreen(
     val state by repository.state.collectAsStateWithLifecycle()
     val scope = rememberCoroutineScope()
     val snackbar = remember { SnackbarHostState() }
-    var tab by rememberSaveable { mutableIntStateOf(0) }
+    var tab by rememberSaveable { mutableIntStateOf(HomeTab.TODAY.ordinal) }
+    // 0 = tous les projets ; sinon n'affiche dans Aujourd'hui et À venir que les tâches de ce projet.
+    var projectFilter by rememberSaveable { mutableLongStateOf(0L) }
+    var showFilter by remember { mutableStateOf(false) }
     var showAdd by remember { mutableStateOf(false) }
     val today = LocalDate.now()
+    // Un projet supprimé ou archivé ailleurs ne doit pas laisser un filtre fantôme qui vide les listes.
+    val activeFilter = projectFilter.takeIf { id -> state.projects.any { it.id == id } } ?: 0L
+    val visible =
+        if (activeFilter ==
+            0L
+        ) {
+            state
+        } else {
+            state.copy(tasks = state.tasks.filter { it.projectId == activeFilter })
+        }
+    val filterTitle = state.projects.firstOrNull { it.id == activeFilter }?.title
+    val filterable = HomeTab.entries[tab] == HomeTab.TODAY || HomeTab.entries[tab] == HomeTab.UPCOMING
 
     NotificationPermissionRequest()
 
@@ -113,6 +141,13 @@ fun HomeScreen(
                 title = {
                     Column {
                         Text(HomeTab.entries[tab].title)
+                        if (filterable && filterTitle != null) {
+                            Text(
+                                "Projet : $filterTitle",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.primary,
+                            )
+                        }
                         syncSummary(state, System.currentTimeMillis())?.let {
                             Text(
                                 it,
@@ -125,9 +160,58 @@ fun HomeScreen(
                 actions = {
                     if (state.syncing) {
                         CircularProgressIndicator(
-                            modifier = Modifier.padding(end = 16.dp).size(24.dp),
+                            modifier = Modifier.padding(end = 8.dp).size(24.dp),
                         )
                     }
+                    if (filterable) {
+                        Box {
+                            IconButton(onClick = { showFilter = true }) {
+                                Icon(
+                                    Icons.Filled.FilterList,
+                                    contentDescription = "Filtrer par projet",
+                                    tint =
+                                        if (activeFilter != 0L) {
+                                            MaterialTheme.colorScheme.primary
+                                        } else {
+                                            MaterialTheme.colorScheme.onSurfaceVariant
+                                        },
+                                )
+                            }
+                            DropdownMenu(expanded = showFilter, onDismissRequest = { showFilter = false }) {
+                                DropdownMenuItem(
+                                    text = { Text("Tous les projets") },
+                                    leadingIcon = {
+                                        if (activeFilter ==
+                                            0L
+                                        ) {
+                                            Icon(Icons.Filled.Check, contentDescription = null)
+                                        }
+                                    },
+                                    onClick = {
+                                        projectFilter = 0L
+                                        showFilter = false
+                                    },
+                                )
+                                orderedProjects(state.projects).forEach { (project, depth) ->
+                                    DropdownMenuItem(
+                                        text = { Text("  ".repeat(depth) + project.title) },
+                                        leadingIcon = {
+                                            if (activeFilter ==
+                                                project.id
+                                            ) {
+                                                Icon(Icons.Filled.Check, contentDescription = null)
+                                            }
+                                        },
+                                        onClick = {
+                                            projectFilter = project.id
+                                            showFilter = false
+                                        },
+                                    )
+                                }
+                            }
+                        }
+                    }
+                    IconButton(onClick = onSearch) { Icon(Icons.Filled.Search, contentDescription = "Rechercher") }
                 },
             )
         },
@@ -140,6 +224,7 @@ fun HomeScreen(
                         icon = {
                             Icon(
                                 when (item) {
+                                    HomeTab.INBOX -> Icons.Filled.Inbox
                                     HomeTab.TODAY -> Icons.Filled.Today
                                     HomeTab.UPCOMING -> Icons.Filled.CalendarMonth
                                     HomeTab.BROWSE -> Icons.Filled.Folder
@@ -166,12 +251,13 @@ fun HomeScreen(
         ) {
             val onToggle: (Task, Boolean) -> Unit = { task, done -> scope.toggleDone(repository, snackbar, task, done) }
             when (HomeTab.entries[tab]) {
+                HomeTab.INBOX -> InboxTab(state, today, onToggle, onOpenTask)
                 HomeTab.TODAY ->
-                    TodayTab(state, today, onToggle, onOpenTask, onReschedule = {
+                    TodayTab(visible, today, onToggle, onOpenTask, onReschedule = {
                         val moved = repository.rescheduleOverdue(today)
                         scope.launch { snackbar.showSnackbar("$moved tâche(s) reportée(s) à aujourd'hui") }
                     })
-                HomeTab.UPCOMING -> UpcomingTab(state, today, onToggle, onOpenTask)
+                HomeTab.UPCOMING -> UpcomingTab(visible, today, onToggle, onOpenTask)
                 HomeTab.BROWSE ->
                     BrowseTab(
                         repository = repository,
@@ -193,7 +279,7 @@ fun HomeScreen(
     if (showAdd) {
         QuickAddSheet(
             state = state,
-            defaultProjectId = state.inboxId,
+            defaultProjectId = if (filterable && activeFilter != 0L) activeFilter else state.inboxId,
             defaultDate = if (HomeTab.entries[tab] == HomeTab.TODAY) today else null,
             onAdd = { repository.add(it) },
             onDismiss = { showAdd = false },
@@ -223,7 +309,12 @@ private fun TodayTab(
     val projects = state.projects.associate { it.id to it.title }
     LazyColumn(modifier = Modifier.fillMaxSize()) {
         if (overdue.isNotEmpty()) {
-            item { SectionHeader("En retard", color = colors.overdue) }
+            item {
+                Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    SectionHeader("En retard", color = colors.overdue, modifier = Modifier.weight(1f))
+                    TextButton(onClick = onReschedule) { Text("Reporter") }
+                }
+            }
             items(overdue, key = {
                 it.id
             }) { TaskRow(it, today, projects[it.projectId], { d -> onToggle(it, d) }, { onOpenTask(it.id) }) }
@@ -314,5 +405,50 @@ private fun NotificationPermissionRequest() {
         ) {
             launcher.launch(android.Manifest.permission.POST_NOTIFICATIONS)
         }
+    }
+}
+
+/** Boîte de réception : les tâches du projet par défaut du serveur, dans leur ordre manuel, sous-tâches imbriquées. */
+@Composable
+private fun InboxTab(
+    state: TodoState,
+    today: LocalDate,
+    onToggle: (Task, Boolean) -> Unit,
+    onOpenTask: (Long) -> Unit,
+) {
+    if (!state.loaded) {
+        LoadingState()
+        return
+    }
+    val open = state.tasks.filter { !it.done && it.projectId == state.inboxId }
+    val ids = open.map { it.id }.toSet()
+    val ordered = open.sortedWith(compareBy<Task> { it.position }.thenBy { it.id })
+    val roots = ordered.filter { it.parentId == 0L || it.parentId !in ids }
+    val children = ordered.filter { it.parentId != 0L }.groupBy { it.parentId }
+    LazyColumn(modifier = Modifier.fillMaxSize()) {
+        items(roots, key = { it.id }) { task ->
+            val kids = children[task.id].orEmpty()
+            Column {
+                TaskRow(
+                    task = task,
+                    today = today,
+                    projectName = null,
+                    subtasks = if (kids.isNotEmpty()) "0/${kids.size}" else null,
+                    onToggle = { onToggle(task, it) },
+                    onClick = { onOpenTask(task.id) },
+                )
+                kids.forEach { kid ->
+                    TaskRow(
+                        task = kid,
+                        today = today,
+                        projectName = null,
+                        indent = 1,
+                        onToggle = { onToggle(kid, it) },
+                        onClick = { onOpenTask(kid.id) },
+                    )
+                }
+            }
+        }
+        if (roots.isEmpty()) item { EmptyState("Boîte de réception vide.") }
     }
 }

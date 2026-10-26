@@ -1,6 +1,7 @@
 package com.lielu.todo.ui.home
 
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
@@ -13,8 +14,11 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
@@ -147,6 +151,27 @@ fun TaskListScreen(
                         IconButton(
                             onClick = { showShare = true },
                         ) { Icon(Icons.Filled.Share, contentDescription = "Partager le projet") }
+                        Box {
+                            IconButton(onClick = { showMenu = true }) {
+                                Icon(Icons.Filled.MoreVert, contentDescription = "Options du projet")
+                            }
+                            DropdownMenu(expanded = showMenu, onDismissRequest = { showMenu = false }) {
+                                listOf(
+                                    "Renommer" to ProjectDialog.RENAME,
+                                    "Couleur" to ProjectDialog.COLOR,
+                                    "Archiver" to ProjectDialog.ARCHIVE,
+                                    "Supprimer" to ProjectDialog.DELETE,
+                                ).forEach { (label, kind) ->
+                                    DropdownMenuItem(
+                                        text = { Text(label) },
+                                        onClick = {
+                                            showMenu = false
+                                            projectDialog = kind
+                                        },
+                                    )
+                                }
+                            }
+                        }
                     }
                 },
             )

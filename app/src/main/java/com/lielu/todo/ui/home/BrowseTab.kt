@@ -80,9 +80,14 @@ fun BrowseTab(
         }
         item { BrowseHeader("Projets", onAdd = { creating = Creating.PROJECT }) }
         items(others, key = { "p-${it.first.id}" }) { (project, depth) ->
-            BrowseRow(Icons.Filled.Folder, project.title, openCount[project.id], indent = depth, onClick = {
-                onOpenProject(project.id)
-            })
+            BrowseRow(
+                Icons.Filled.Folder,
+                project.title,
+                openCount[project.id],
+                indent = depth,
+                tint = hexColor(project.hexColor),
+                onClick = { onOpenProject(project.id) },
+            )
         }
         item { BrowseHeader("Étiquettes", onAdd = { creating = Creating.LABEL }) }
         items(state.labels, key = { "l-${it.id}" }) { label ->
