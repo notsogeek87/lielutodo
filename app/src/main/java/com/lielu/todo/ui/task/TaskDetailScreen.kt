@@ -267,14 +267,17 @@ fun TaskDetailScreen(
             }
             // Ce rappel-là est déjà la date affichée au-dessus : on ne le répète pas.
             val extraReminders = task.reminders.filterNot { it.isStandIn(task) }
-            DetailRow(
-                Icons.Filled.Alarm,
-                if (extraReminders.isEmpty()) {
-                    "Rappels"
-                } else {
-                    extraReminders.joinToString { reminderLabel(it, due, today) }
-                },
-            ) { dialog = Dialog.REMINDERS }
+            // Sans date, pas de ligne « Rappels » : elle permettrait de saisir une 2e date. On pose d'abord la date.
+            if (planned != null) {
+                DetailRow(
+                    Icons.Filled.Alarm,
+                    if (extraReminders.isEmpty()) {
+                        "Rappels"
+                    } else {
+                        extraReminders.joinToString { reminderLabel(it, due, today) }
+                    },
+                ) { dialog = Dialog.REMINDERS }
+            }
             DetailRow(Icons.Filled.Repeat, repeatLabel(task) ?: "Répétition") { dialog = Dialog.REPEAT }
             Box {
                 DetailRow(Icons.Filled.Flag, priorityName(task.priority), tint = colors.forPriority(task.priority)) {
