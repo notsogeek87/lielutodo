@@ -1,5 +1,5 @@
 import { ApiError, DEFAULT_SERVER, createApi, login, session } from './api.js';
-import { createStore } from './store.js';
+import { createStore, describeWrite } from './store.js';
 import { icon } from './icons.js';
 import { colorOf, todoistLevel } from './model.js';
 import { addDays, dueKind, dueText, startOfDay } from './dates.js';
@@ -216,6 +216,7 @@ function renderSidebar() {
       ${navItem('#/upcoming', `<span class="nav-ic-upcoming">${icon('upcoming', 18)}</span>`, 'À venir', 0, isRoute('upcoming'))}
       ${navItem('#/filters', `<span class="nav-ic-filters">${icon('filters', 18)}</span>`, 'Filtres et étiquettes', 0, isRoute('filters') || isRoute('label') || isRoute('filter'))}
       ${navItem('#/completed', icon('checkCircle', 18), 'Terminées', 0, isRoute('completed'))}
+      ${s.failed.length ? `<button class="nav-item nav-warn" data-act="failed-ops">${icon('offline', 18)}<span class="label">Modifications non envoyées</span><span class="count">${s.failed.length}</span></button>` : ''}
       ${favorites.length ? section('favorites', 'Favoris', favorites.map((p) => `<a class="nav-item" href="#/project/${p.id}"><i class="dot" style="background:${colorOf(p.hex)}"></i><span class="label">${esc(p.title)}</span></a>`).join('')) : ''}
       ${section('projects', 'Mes projets', roots.map((p) => projectRow(p, 0)).join('') || '<div class="menu-sub">Aucun projet</div>', 'add-project')}
     </nav>
@@ -225,7 +226,9 @@ function renderSidebar() {
 function syncText() {
   const { offline, syncing, error } = store.meta;
   const pending = store.state.ops.length;
+  const refused = store.state.failed.length;
   if (syncing) return 'Synchronisation…';
+  if (refused && !offline) return `${refused} refusée${refused > 1 ? 's' : ''}${pending ? ` · ${pending} en attente` : ''}`;
   if (offline) return `Hors ligne${pending ? ` · ${pending} en attente` : ''}`;
   if (pending) return `${pending} en attente`;
   if (error) return error;
@@ -467,6 +470,37 @@ function openSettings() {
   });
 }
 
+/** Modifications refusées par le serveur : renvoyer ou abandonner, rien n'est effacé sans accord. */
+function openFailedOps() {
+  const m = modal(`
+    <div class="modal-head"><span class="grow">Modifications non envoyées</span><button class="icon-btn" data-close aria-label="Fermer">${icon('close')}</button></div>
+    <div class="modal-body" data-list></div>
+    <div class="modal-foot" data-foot></div>`, { sheet: true, onClose: () => unsubscribe() });
+  const fmt = new Intl.DateTimeFormat('fr-FR', { dateStyle: 'short', timeStyle: 'short' });
+  const draw = () => {
+    const list = store.state.failed;
+    if (!list.length) { m.close(); return; }
+    $('[data-list]', m.root).innerHTML = `
+      <p class="view-sub" style="margin:0 0 8px">Le serveur a refusé ces modifications. Elles restent ici jusqu'à ce que vous les renvoyiez ou y renonciez.</p>
+      ${list.map((f, i) => `<div class="failed-op">
+        <div>${esc(describeWrite(f.op, store.state))}</div>
+        <div class="failed-why">Refusée le ${esc(fmt.format(f.at))} : ${esc(f.message || 'erreur')} (HTTP ${f.code})</div>
+        <div style="display:flex;gap:6px;justify-content:flex-end"><button class="btn" data-abandon="${i}">Abandonner</button><button class="btn primary" data-retry="${i}">Renvoyer</button></div>
+      </div>`).join('')}`;
+    $('[data-foot]', m.root).innerHTML = list.length > 1 ? '<button class="btn" data-retry-all>Tout renvoyer</button>' : '';
+  };
+  const unsubscribe = store.subscribe(draw);
+  draw();
+  m.root.addEventListener('click', (e) => {
+    if (e.target.closest('[data-close]')) return m.close();
+    const r = e.target.closest('[data-retry]');
+    if (r) store.retryFailed(store.state.failed[Number(r.dataset.retry)]);
+    const a = e.target.closest('[data-abandon]');
+    if (a) store.abandonFailed(store.state.failed[Number(a.dataset.abandon)]);
+    if (e.target.closest('[data-retry-all]')) store.retryAllFailed();
+  });
+}
+
 // ---------- Clics ----------
 async function onClick(e) {
   const nav = e.target.closest('[data-nav]');
@@ -492,6 +526,7 @@ async function onClick(e) {
     case 'search': ui.sidebarOpen = false; openSearch(); break;
     case 'sync': store.refresh(); toast('Synchronisation…', { ms: 1200 }); break;
     case 'settings': openSettings(); break;
+    case 'failed-ops': ui.sidebarOpen = false; openFailedOps(); break;
     case 'add-project': addProject(); break;
     case 'add-label': {
       const r = await promptDialog({ title: 'Nouvelle étiquette', placeholder: 'Nom', confirm: 'Ajouter' });

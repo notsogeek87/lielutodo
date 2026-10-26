@@ -170,7 +170,7 @@ Même serveur Vikunja, même logique « local d'abord » que l'APK, en site stat
 `web/README.md`). `js/store.js` = `TodoRepository`, `js/parser.js` = `QuickAddParser` (port fidèle : toute évolution de
 l'un se répercute sur l'autre), `js/model.js` = `Models.kt`. Déployée sur Vercel (Root Directory `web`, réécriture
 `/vk/*` -> `task.lielu.eu`). Tests : `node --test web/test/*.test.mjs` ; faux serveur : `web/dev/fake-server.mjs`.
-Un nouveau type d'écriture se branche dans `store.js` (action + `apply`) ET dans le faux serveur.
+Un nouveau type d'écriture se branche dans `store.js` (action + `apply`) ET dans le faux serveur. Même politique d'erreurs que l'APK (`failed`, `mergeTasks`, `mergeCreated`). Les écritures non envoyées et les objets qu'elles visent sont rangés à part (`lielutodo.pending`) et écrits avant le cache : un quota dépassé sacrifie le cache, jamais elles. Tests du store : `web/test/store.test.mjs` (faux serveur en mémoire).
 
 ## Règle : l'heure est obligatoire avec une date
 

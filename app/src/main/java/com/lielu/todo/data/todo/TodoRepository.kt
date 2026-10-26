@@ -878,6 +878,18 @@ class TodoRepository(
                                 },
                         )
                     },
+                // Une écriture refusée peut viser cette tâche (commentaire posé avant sa création) : même remappage.
+                failed =
+                    s.failed.map { f ->
+                        val o = f.op
+                        f.copy(
+                            op =
+                                o.copy(
+                                    taskId = if (o.taskId == local.id) created.id else o.taskId,
+                                    otherId = if (o.otherId == local.id) created.id else o.otherId,
+                                ),
+                        )
+                    },
                 comments = s.comments.mapKeys { if (it.key == local.id) created.id else it.key },
                 attachments = s.attachments.mapKeys { if (it.key == local.id) created.id else it.key },
             )
