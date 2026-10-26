@@ -14,11 +14,13 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -55,6 +57,19 @@ fun LoginScreen(
     var needsTotp by remember { mutableStateOf(false) }
     var busy by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
+    // Connexion réussie à un AUTRE compte alors que le précédent a des modifications non envoyées : à confirmer.
+    var switchTo by remember { mutableStateOf<Triple<String, String, String>?>(null) }
+
+    fun finish(
+        url: String,
+        token: String,
+        user: String,
+    ) {
+        // Un autre compte ne doit pas voir le cache du précédent.
+        if (url != session.baseUrl || user != session.username) repository.reset()
+        session.save(url, token, user, password.takeIf { totp.isBlank() })
+        scope.launch { repository.refresh() }
+    }
 
     fun submit() {
         busy = true
@@ -63,10 +78,13 @@ fun LoginScreen(
             try {
                 val url = VikunjaClient.normalizeUrl(server)
                 val token = client.login(url, username.trim(), password, totp)
-                // Un autre compte ne doit pas voir le cache du précédent.
-                if (url != session.baseUrl || username.trim() != session.username) repository.reset()
-                session.save(url, token, username.trim(), password.takeIf { totp.isBlank() })
-                repository.refresh()
+                val otherAccount = url != session.baseUrl || username.trim() != session.username
+                val unsent = repository.state.value.let { it.ops.size + it.failed.size }
+                if (otherAccount && unsent > 0) {
+                    switchTo = Triple(url, token, username.trim())
+                } else {
+                    finish(url, token, username.trim())
+                }
             } catch (e: ApiException) {
                 if (e.code == HTTP_PRECONDITION_FAILED) needsTotp = true
                 error =
@@ -83,6 +101,28 @@ fun LoginScreen(
                 busy = false
             }
         }
+    }
+
+    switchTo?.let { (url, token, user) ->
+        val unsent = repository.state.value.let { it.ops.size + it.failed.size }
+        AlertDialog(
+            onDismissRequest = { switchTo = null },
+            title = { Text("Changer de compte ?") },
+            text = {
+                Text(
+                    "Le compte précédent (${session.username}) a $unsent modification(s) pas encore envoyée(s). " +
+                        "Se connecter avec un autre compte les efface. Pour les garder, reconnectez-vous d'abord " +
+                        "avec ${session.username} quand le serveur répond.",
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    switchTo = null
+                    finish(url, token, user)
+                }) { Text("Effacer et continuer") }
+            },
+            dismissButton = { TextButton(onClick = { switchTo = null }) { Text("Annuler") } },
+        )
     }
 
     Column(

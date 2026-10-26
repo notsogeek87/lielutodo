@@ -104,6 +104,7 @@ fun BrowseTab(
     var managingFilter by remember { mutableStateOf<SavedFilter?>(null) }
     var showIcons by remember { mutableStateOf(false) }
     var showFailed by remember { mutableStateOf(false) }
+    var confirmLogout by remember { mutableStateOf(false) }
     val context = LocalContext.current
     var projectsOpen by rememberSaveable { mutableStateOf(true) }
     var labelsOpen by rememberSaveable { mutableStateOf(true) }
@@ -145,7 +146,9 @@ fun BrowseTab(
                 )
                 BrowseRow(Icons.Outlined.BarChart, "Productivité et activité", onClick = onOpenActivity)
                 BrowseRow(Icons.Outlined.Settings, "Paramètres et sauvegarde", onClick = onSettings)
-                BrowseRow(Icons.AutoMirrored.Outlined.Logout, "Se déconnecter", onClick = onLogout)
+                BrowseRow(Icons.AutoMirrored.Outlined.Logout, "Se déconnecter", onClick = {
+                    if (state.ops.isEmpty() && state.failed.isEmpty()) onLogout() else confirmLogout = true
+                })
             }
         }
         item {
@@ -344,6 +347,26 @@ fun BrowseTab(
                 }
             },
             onDismiss = { managingFilter = null },
+        )
+    }
+    if (confirmLogout) {
+        AlertDialog(
+            onDismissRequest = { confirmLogout = false },
+            title = { Text("Se déconnecter ?") },
+            text = {
+                Text(
+                    "${state.ops.size + state.failed.size} modification(s) ne sont pas encore sur le serveur. " +
+                        "Elles restent sur ce téléphone et partiront quand vous vous reconnecterez avec ce compte ; " +
+                        "un autre compte les effacerait.",
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    confirmLogout = false
+                    onLogout()
+                }) { Text("Se déconnecter") }
+            },
+            dismissButton = { TextButton(onClick = { confirmLogout = false }) { Text("Annuler") } },
         )
     }
     // La fenêtre se ferme d'elle-même quand il n'y a plus rien à décider.

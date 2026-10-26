@@ -457,7 +457,11 @@ function openSettings() {
     }
     if (e.target.closest('[data-import]')) $('input[type=file]', m.root).click();
     if (e.target.closest('[data-logout]')) {
-      confirmDialog('Se déconnecter ? Les modifications non envoyées seront perdues.', 'Se déconnecter').then((ok) => {
+      const unsent = store.state.ops.length + store.state.failed.length;
+      const warning = unsent
+        ? `Se déconnecter ? ${unsent} modification${unsent > 1 ? 's' : ''} pas encore sur le serveur ${unsent > 1 ? 'seront perdues' : 'sera perdue'}.`
+        : 'Se déconnecter ?';
+      confirmDialog(warning, 'Se déconnecter', unsent > 0).then((ok) => {
         if (!ok) return;
         session.clear(); store.reset(); location.hash = ''; location.reload();
       });
