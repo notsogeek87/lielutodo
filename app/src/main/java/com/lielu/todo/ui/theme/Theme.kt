@@ -17,7 +17,7 @@ import androidx.compose.ui.unit.dp
 // doivent suivre `window_background` dans res/values*/colors.xml.
 private val BrandLight = Color(0xFF0A8A78)
 private val BrandDark = Color(0xFF3CCBB6)
-private val BackgroundLight = Color(0xFFFFFFFF)
+private val BackgroundLight = Color(0xFFF7F3EE)
 private val BackgroundDark = Color(0xFF1E1E1E)
 
 private val LightColors =
@@ -32,15 +32,15 @@ private val LightColors =
         onBackground = Color(0xFF202020),
         surface = BackgroundLight,
         onSurface = Color(0xFF202020),
-        surfaceVariant = Color(0xFFF4F4F4),
+        surfaceVariant = Color(0xFFF1EDE8),
         onSurfaceVariant = Color(0xFF666666),
-        surfaceContainerLowest = BackgroundLight,
-        surfaceContainerLow = Color(0xFFF7F7F7),
-        surfaceContainer = Color(0xFFF4F4F4),
-        surfaceContainerHigh = Color(0xFFF0F0F0),
-        surfaceContainerHighest = Color(0xFFEBEBEB),
+        surfaceContainerLowest = Color(0xFFFFFFFF),
+        surfaceContainerLow = Color(0xFFFAF8F5),
+        surfaceContainer = Color(0xFFF1EDE8),
+        surfaceContainerHigh = Color(0xFFECE8E2),
+        surfaceContainerHighest = Color(0xFFE6E2DC),
         outline = Color(0xFF8A8A8A),
-        outlineVariant = Color(0xFFE6E6E6),
+        outlineVariant = Color(0xFFE6E1DA),
     )
 
 private val DarkColors =
