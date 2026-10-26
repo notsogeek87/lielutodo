@@ -472,7 +472,7 @@ private fun InboxTab(
             .filter {
                 (showDone || !it.done) &&
                     when (filter) {
-                        0L -> it.projectId == state.inboxId
+                        0L -> it.projectId == state.inboxId || it.assignees.any { a -> a.id == state.userId }
                         ALL_PROJECTS -> true
                         else -> it.projectId == filter
                     }
@@ -516,13 +516,7 @@ private fun InboxTab(
             TaskRow(
                 it,
                 today,
-                if (filter ==
-                    0L
-                ) {
-                    null
-                } else {
-                    projects[it.projectId]
-                },
+                if (filter == 0L && it.projectId == state.inboxId) null else projects[it.projectId],
                 { d -> onToggle(it, d) },
                 { onOpenTask(it.id) },
                 projectColor = projectColors[it.projectId],

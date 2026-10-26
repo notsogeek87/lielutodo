@@ -51,10 +51,12 @@ export function buildView(state, route, ui, now = Date.now()) {
       const project = route.name === 'inbox' ? inboxProject(state) : state.projects.find((p) => p.id === route.id);
       if (!project) return { ...base, title: 'Projet introuvable', icon: 'inbox', canAdd: false, empty: { icon: '🗂️', title: 'Projet introuvable', text: 'Il a peut-être été supprimé.' } };
       const showDone = ui.showDone.has(project.id);
-      const { roots, children } = projectTree(state.tasks.filter((t) => t.projectId === project.id), showDone);
+      // La boîte de réception réunit aussi les tâches des autres projets affectées à l'utilisateur connecté.
+      const mine = (t) => route.name === 'inbox' && state.user?.id && t.assignees?.some((a) => a.id === state.user.id);
+      const { roots, children } = projectTree(state.tasks.filter((t) => t.projectId === project.id || mine(t)), showDone);
       return {
         ...base, title: project.title, project, projectId: project.id, color: colorOf(project.hex), draggable: true,
-        icon: route.name === 'inbox' ? 'inbox' : 'hash',
+        icon: route.name === 'inbox' ? 'inbox' : 'hash', showProject: route.name === 'inbox',
         sections: roots.length ? [{ key: 'all', tasks: roots, children }] : [],
         empty: { icon: '🌤️', title: 'Rien à faire ici', text: 'Ajoutez une tâche pour commencer.' },
       };

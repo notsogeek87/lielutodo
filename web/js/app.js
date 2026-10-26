@@ -176,7 +176,7 @@ function renderSidebar() {
   const today = startOfDay(Date.now());
   const inbox = inboxProject(s);
   const nToday = open.filter((t) => t.due != null && t.due < today + 86_400_000).length;
-  const nInbox = inbox ? open.filter((t) => t.projectId === inbox.id).length : 0;
+  const nInbox = inbox ? open.filter((t) => t.projectId === inbox.id || t.assignees?.some((a) => a.id === s.user?.id)).length : 0;
   const counts = new Map();
   open.forEach((t) => counts.set(t.projectId, (counts.get(t.projectId) || 0) + 1));
   const isRoute = (name, id) => route.name === name && (id == null || route.id === id);

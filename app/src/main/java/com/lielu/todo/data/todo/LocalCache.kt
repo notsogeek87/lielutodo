@@ -91,6 +91,7 @@ object TodoStateCodec {
                 },
             ).put("notifications", JSONArray(state.notifications.map(AppNotification::toJson)))
             .put("default_project_id", state.defaultProjectId)
+            .put("user_id", state.userId)
             .put("last_sync", state.lastSync)
             .put("ops", JSONArray(state.ops.map(::opToJson)))
 
@@ -116,6 +117,7 @@ object TodoStateCodec {
                     ?.map(::appNotificationFromStoredJson)
                     .orEmpty(),
             defaultProjectId = o.optLong("default_project_id"),
+            userId = o.optLong("user_id"),
             ops = o.getJSONArray("ops").objects().map(::opFromJson),
             lastSync = o.optLong("last_sync"),
             loaded = true,

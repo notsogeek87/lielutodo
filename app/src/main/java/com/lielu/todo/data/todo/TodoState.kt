@@ -59,6 +59,8 @@ data class TodoState(
     val notifications: List<AppNotification> = emptyList(),
     val projectUsers: Map<Long, List<User>> = emptyMap(),
     val defaultProjectId: Long = 0,
+    /** Id Vikunja de l'utilisateur connecté (0 si inconnu) : sert à repérer les tâches qui lui sont affectées. */
+    val userId: Long = 0,
     val ops: List<PendingOp> = emptyList(),
     val syncing: Boolean = false,
     val error: String? = null,

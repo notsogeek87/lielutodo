@@ -321,8 +321,9 @@ class TodoRepository(
         val projectJson = fetchPaged("/projects", mapOf("is_archived" to "false"))
         val projects = projectJson.filter { it.getLong("id") > 0 }.map(::projectFromJson)
         val labels = fetchPaged("/labels").map(::labelFromJson)
-        val defaultProject =
-            JSONObject(api.call("GET", "/user").body).optJSONObject("settings")?.optLong("default_project_id") ?: 0L
+        val me = JSONObject(api.call("GET", "/user").body)
+        val defaultProject = me.optJSONObject("settings")?.optLong("default_project_id") ?: 0L
+        val userId = me.optLong("id")
 
         // Les filtres enregistrés apparaissent dans /projects avec un id négatif : -(id du filtre) - 1.
         val filters =
@@ -351,6 +352,7 @@ class TodoRepository(
                 filters = filters,
                 filterResults = results ?: it.filterResults,
                 defaultProjectId = defaultProject,
+                userId = userId,
             )
         }
     }
