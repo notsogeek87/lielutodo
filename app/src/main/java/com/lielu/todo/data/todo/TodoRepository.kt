@@ -719,6 +719,7 @@ class TodoRepository(
         val local = task(op.taskId) ?: return
         val saved = taskFromJson(JSONObject(api.call("POST", "/tasks/${local.id}", body = local.toRequestJson()).body))
         if (op.flag) setLabels(local.id, local.labels)
+        restoreAssignees(local, saved)
         // Une tâche répétée revient « non terminée » avec une nouvelle échéance : on prend la réponse, sauf si
         // l'utilisateur a encore modifié la tâche pendant l'envoi.
         _state.update { s ->
@@ -738,6 +739,28 @@ class TodoRepository(
                     },
             )
         }
+    }
+
+    /**
+     * Vikunja efface les affectations d'une tâche mise à jour sans champ `assignees` (on ne l'envoie pas, voir
+     * `READ_ONLY_KEYS`) : on remet celles que la réponse ne contient plus, sauf celles qu'une écriture ASSIGN en
+     * attente enverra de toute façon. Un échec (déjà affecté) est sans importance.
+     */
+    private suspend fun restoreAssignees(
+        local: Task,
+        saved: Task,
+    ) {
+        val kept = saved.assignees.map { it.id }.toSet()
+        val queued = _state.value.ops.filter { it.kind == PendingOp.Kind.ASSIGN && it.taskId == local.id }
+        local.assignees
+            .filter { u -> u.id !in kept && queued.none { it.otherId == u.id } }
+            .forEach { u ->
+                try {
+                    api.call("PUT", "/tasks/${local.id}/assignees", body = JSONObject().put("user_id", u.id))
+                } catch (_: ApiException) {
+                    // déjà affecté ou refusé : la prochaine synchronisation relira l'état du serveur
+                }
+            }
     }
 
     private suspend fun setLabels(

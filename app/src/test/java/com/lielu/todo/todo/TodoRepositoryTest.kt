@@ -528,6 +528,26 @@ class TodoRepositoryTest {
         }
 
     @Test
+    fun updatingATaskKeepsItsAssignees() =
+        runTest {
+            val server = FakeServer()
+            server.tasks[5] =
+                JSONObject(
+                    """{"id":5,"title":"T","project_id":2,"done":false,
+                    "assignees":[{"id":7,"username":"marie","name":"Marie"}]}""",
+                )
+            val repo = repo(server)
+            repo.refresh()
+            repo.updateTask(
+                repo.state.value.tasks
+                    .single()
+                    .copy(title = "T2"),
+            )
+            repo.syncPending()
+            assertTrue("assign:5>7" in server.created)
+        }
+
+    @Test
     fun corruptedCacheFallsBackToTheBackupCopy() {
         val dir = createTempDir()
         val file = java.io.File(dir, "cache.json")
