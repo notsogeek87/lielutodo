@@ -105,7 +105,7 @@ fun TaskDetailScreen(
     var pendingDueDate by remember { mutableStateOf<LocalDate?>(null) }
 
     // Répétition choisie sur une tâche sans date : enregistrée seulement une fois la date et l'heure données.
-    var pendingRepeat by remember { mutableStateOf<Pair<Long, String>?>(null) }
+    var pendingRepeat by remember { mutableStateOf<Pair<Long, Int>?>(null) }
     var showPriority by remember { mutableStateOf(false) }
     var showProject by remember { mutableStateOf(false) }
     var commentNote by remember { mutableStateOf<String?>(null) }
