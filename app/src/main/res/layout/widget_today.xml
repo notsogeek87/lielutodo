@@ -46,7 +46,8 @@
             android:src="@drawable/ic_add" />
     </LinearLayout>
 
-    <View
+    <ImageView
+        android:importantForAccessibility="no"
         android:layout_width="match_parent"
         android:layout_height="1dp"
         android:layout_marginVertical="6dp"
