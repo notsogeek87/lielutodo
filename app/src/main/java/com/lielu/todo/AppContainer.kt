@@ -15,6 +15,7 @@ import com.lielu.todo.data.api.VikunjaClient
 import com.lielu.todo.data.settings.SettingsRepository
 import com.lielu.todo.data.settings.SettingsRepositoryImpl
 import com.lielu.todo.data.settings.settingsDataStore
+import com.lielu.todo.data.todo.DiskAttachmentFiles
 import com.lielu.todo.data.todo.FileLocalCache
 import com.lielu.todo.data.todo.TodoRepository
 import com.lielu.todo.reminder.ReminderScheduler
@@ -60,6 +61,7 @@ class AppContainer(
         TodoRepository(
             api = vikunjaClient,
             cache = FileLocalCache(File(appContext.filesDir, "todo-cache.json")),
+            files = DiskAttachmentFiles(File(appContext.filesDir, "attachments")),
             scope = applicationScope,
             onAuthExpired = {
                 session.clear()

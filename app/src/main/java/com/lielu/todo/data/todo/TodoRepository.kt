@@ -2,15 +2,19 @@ package com.lielu.todo.data.todo
 
 import com.lielu.todo.data.api.ApiException
 import com.lielu.todo.data.api.HttpApi
+import com.lielu.todo.data.model.Attachment
 import com.lielu.todo.data.model.Comment
 import com.lielu.todo.data.model.Label
 import com.lielu.todo.data.model.Project
 import com.lielu.todo.data.model.SavedFilter
 import com.lielu.todo.data.model.Task
 import com.lielu.todo.data.model.User
+import com.lielu.todo.data.model.attachmentFromJson
+import com.lielu.todo.data.model.bucketFromJson
 import com.lielu.todo.data.model.commentFromJson
 import com.lielu.todo.data.model.labelFromJson
 import com.lielu.todo.data.model.lastUnreadableDate
+import com.lielu.todo.data.model.notificationFromJson
 import com.lielu.todo.data.model.objects
 import com.lielu.todo.data.model.projectFromJson
 import com.lielu.todo.data.model.resetUnreadableDate
@@ -29,6 +33,7 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import org.json.JSONArray
 import org.json.JSONObject
+import java.io.File
 import java.io.IOException
 import java.time.Instant
 
@@ -44,15 +49,19 @@ import java.time.Instant
 class TodoRepository(
     private val api: HttpApi,
     private val cache: LocalCache,
+    private val files: AttachmentFiles,
     private val scope: CoroutineScope,
     private val onAuthExpired: () -> Unit = {},
     private val clock: () -> Long = System::currentTimeMillis,
+    /** Appelé quand une tâche vient d'être terminée (son de complétion). */
+    private val onCompleted: () -> Unit = {},
 ) {
     private val _state = MutableStateFlow(cache.load() ?: TodoState())
     val state: StateFlow<TodoState> = _state
 
     private val syncLock = Mutex()
     private var positionsSyncedAt = 0L
+    private var kanbanSyncedAt = 0L
 
     // Les ids temporaires (objets créés hors ligne) sont négatifs. On repart sous le plus bas déjà utilisé : après
     // un redémarrage, un compteur remis à -1 réattribuerait l'id d'une tâche encore en attente d'envoi.
@@ -140,9 +149,13 @@ class TodoRepository(
     ) {
         val task = task(id) ?: return
         updateTask(task.copy(done = done))
+        if (done && !task.done) onCompleted()
     }
 
     fun deleteTask(id: Long) {
+        _state.value.ops
+            .filter { it.kind == PendingOp.Kind.ATTACH && it.taskId == id }
+            .forEach { runCatching { files.deletePending(it.text) } }
         _state.update { s ->
             val tasks = s.tasks.filterNot { it.id == id }
             val related = { op: PendingOp -> op.taskId == id || (op.kind == PendingOp.Kind.RELATE && op.otherId == id) }
@@ -210,12 +223,15 @@ class TodoRepository(
     }
 
     /** Crée une étiquette, même hors ligne. Renvoie l'étiquette locale. */
-    fun createLabel(title: String): Label {
-        val label = Label(nextTempId--, title, "")
+    fun createLabel(
+        title: String,
+        hexColor: String = "",
+    ): Label {
+        val label = Label(nextTempId--, title, hexColor)
         _state.update { s ->
             s.copy(
                 labels = s.labels + label,
-                ops = enqueue(s.ops, PendingOp(PendingOp.Kind.CREATE_LABEL, label.id, text = title)),
+                ops = enqueue(s.ops, PendingOp(PendingOp.Kind.CREATE_LABEL, label.id, text = title, extra = hexColor)),
             )
         }
         flushSoon()
@@ -250,6 +266,12 @@ class TodoRepository(
                 ops.map { if (it === existing) it.copy(flag = it.flag || op.flag) else it }
             }
             PendingOp.Kind.POSITION -> if (ops.any(sameTask)) ops else ops + op
+            // Dernier mot gagne : seul le dernier déplacement ou la dernière modification part au serveur.
+            PendingOp.Kind.MOVE_BUCKET -> ops.filterNot(sameTask) + op
+            PendingOp.Kind.LABEL_UPDATE -> ops.filterNot(sameTask) + op
+            PendingOp.Kind.COMMENT_EDIT -> ops.filterNot { sameTask(it) && it.otherId == op.otherId } + op
+            PendingOp.Kind.MARK_READ -> if (ops.any(sameTask)) ops else ops + op
+            PendingOp.Kind.MARK_ALL_READ -> if (ops.any { it.kind == op.kind }) ops else ops + op
             PendingOp.Kind.ASSIGN -> {
                 val opposite = ops.firstOrNull { sameTask(it) && it.otherId == op.otherId && it.flag != op.flag }
                 // Ajouter puis retirer le même utilisateur avant envoi ne laisse rien à envoyer.
@@ -319,6 +341,7 @@ class TodoRepository(
         }
         val results = if (clean) fetchFilterResults(filters) else null
         tasks?.let(::diagnoseDates)
+        pullExtras(projects, clean)
         _state.update {
             it.copy(
                 projects = projects,
@@ -470,7 +493,19 @@ class TodoRepository(
             PendingOp.Kind.CREATE_LABEL -> {
                 val created =
                     labelFromJson(
-                        JSONObject(api.call("PUT", "/labels", body = JSONObject().put("title", op.text)).body),
+                        JSONObject(
+                            api
+                                .call(
+                                    "PUT",
+                                    "/labels",
+                                    body =
+                                        JSONObject()
+                                            .put(
+                                                "title",
+                                                op.text,
+                                            ).put("hex_color", op.extra.removePrefix("#")),
+                                ).body,
+                        ),
                     )
                 _state.update { s ->
                     s.copy(
@@ -518,6 +553,37 @@ class TodoRepository(
                         if (e.code != HTTP_NOT_FOUND) throw e
                     }
                 }
+            PendingOp.Kind.ATTACH -> applyAttach(op)
+            PendingOp.Kind.DELETE_ATTACHMENT ->
+                ignoringMissing { api.call("DELETE", "/tasks/${op.taskId}/attachments/${op.otherId}") }
+            PendingOp.Kind.COMMENT_EDIT ->
+                api.call(
+                    "POST",
+                    "/tasks/${op.taskId}/comments/${op.otherId}",
+                    body = JSONObject().put("comment", op.text),
+                )
+            PendingOp.Kind.COMMENT_DELETE ->
+                ignoringMissing { api.call("DELETE", "/tasks/${op.taskId}/comments/${op.otherId}") }
+            PendingOp.Kind.LABEL_UPDATE -> {
+                // Relire la version du serveur : la mise à jour remplace tout, y compris la description.
+                val json = JSONObject(api.call("GET", "/labels/${op.taskId}").body)
+                json.put("title", op.text)
+                if (op.extra.isNotEmpty()) json.put("hex_color", op.extra.removePrefix("#"))
+                api.call("POST", "/labels/${op.taskId}", body = json)
+            }
+            PendingOp.Kind.LABEL_DELETE -> ignoringMissing { api.call("DELETE", "/labels/${op.taskId}") }
+            PendingOp.Kind.MOVE_BUCKET -> {
+                val (project, view) = op.extra.split(':').let { it[0] to it[1] }
+                val body =
+                    JSONObject()
+                        .put("task_id", op.taskId)
+                        .put("bucket_id", op.otherId)
+                        .put("project_view_id", view.toLong())
+                api.call("POST", "/projects/$project/views/$view/buckets/${op.otherId}/tasks", body = body)
+            }
+            PendingOp.Kind.MARK_READ ->
+                api.call("POST", "/notifications/${op.taskId}", body = JSONObject().put("read", true))
+            PendingOp.Kind.MARK_ALL_READ -> api.call("POST", "/notifications", body = JSONObject())
             PendingOp.Kind.POSITION -> {
                 val task = task(op.taskId) ?: return
                 val view =
@@ -529,6 +595,77 @@ class TodoRepository(
                 api.call("POST", "/tasks/${task.id}/position", body = body)
             }
         }
+    }
+
+    private suspend fun ignoringMissing(block: suspend () -> Unit) {
+        try {
+            block()
+        } catch (e: ApiException) {
+            if (e.code != HTTP_NOT_FOUND) throw e
+        }
+    }
+
+    private suspend fun applyAttach(op: PendingOp) {
+        val (name, mime) =
+            op.extra
+                .split(
+                    '\n',
+                    limit = 2,
+                ).let { it[0] to it.getOrElse(1) { "application/octet-stream" } }
+        val bytes =
+            try {
+                files.readPending(op.text)
+            } catch (e: IOException) {
+                // Fichier en attente disparu (stockage vidé) : rien à envoyer, on oublie cette écriture.
+                dropPlaceholder(op)
+                return
+            }
+        api.upload("/tasks/${op.taskId}/attachments", name, mime, bytes)
+        runCatching { files.deletePending(op.text) }
+        dropPlaceholder(op)
+        // La vraie liste remplace l'ancienne ; si le serveur ne répond plus, la prochaine ouverture la relira.
+        try {
+            refreshAttachments(op.taskId)
+        } catch (e: IOException) {
+            // Sans importance : l'envoi lui-même a réussi.
+        }
+    }
+
+    private fun dropPlaceholder(op: PendingOp) {
+        _state.update { s ->
+            s.copy(
+                attachments =
+                    s.attachments + (op.taskId to s.attachments[op.taskId].orEmpty().filter { it.id != op.otherId }),
+            )
+        }
+    }
+
+    /**
+     * Notifications et colonnes Kanban : utiles mais secondaires, une erreur ici ne doit jamais faire échouer la
+     * synchronisation des tâches. Le Kanban n'est relu qu'au plus toutes les [POSITIONS_EVERY_MS].
+     */
+    private suspend fun pullExtras(
+        projects: List<Project>,
+        clean: Boolean,
+    ) {
+        if (clean) {
+            runCatching {
+                JSONArray(api.call("GET", "/notifications", mapOf("per_page" to "50")).body)
+                    .objects()
+                    .map(::notificationFromJson)
+            }.getOrNull()?.let { list -> _state.update { it.copy(notifications = list) } }
+        }
+        val now = clock()
+        if (now - kanbanSyncedAt < POSITIONS_EVERY_MS) return
+        var complete = true
+        projects.filter { it.kanbanViewId > 0 }.forEach { p ->
+            try {
+                refreshKanban(p.id)
+            } catch (e: IOException) {
+                complete = false
+            }
+        }
+        if (complete) kanbanSyncedAt = now
     }
 
     private suspend fun applyCreate(op: PendingOp) {
@@ -573,6 +710,7 @@ class TodoRepository(
                         )
                     },
                 comments = s.comments.mapKeys { if (it.key == local.id) created.id else it.key },
+                attachments = s.attachments.mapKeys { if (it.key == local.id) created.id else it.key },
             )
         }
     }
@@ -672,6 +810,349 @@ class TodoRepository(
             "/projects/$projectId/users",
             body = JSONObject().put("username", username).put("permission", permission),
         )
+    }
+
+    // ---- Pièces jointes ----
+
+    /** Ajoute un fichier à une tâche, même hors ligne : copié sur le téléphone, envoyé dès que possible. */
+    fun addAttachment(
+        taskId: Long,
+        name: String,
+        mime: String,
+        bytes: ByteArray,
+    ) {
+        val path = files.stagePending(name, bytes)
+        val placeholder = Attachment(nextTempId--, name, bytes.size.toLong(), mime, Instant.ofEpochMilli(clock()))
+        _state.update { s ->
+            val op =
+                PendingOp(PendingOp.Kind.ATTACH, taskId, otherId = placeholder.id, text = path, extra = "$name\n$mime")
+            s.copy(
+                attachments = s.attachments + (taskId to s.attachments[taskId].orEmpty() + placeholder),
+                ops = enqueue(s.ops, op),
+            )
+        }
+        flushSoon()
+    }
+
+    fun deleteAttachment(
+        taskId: Long,
+        attachment: Attachment,
+    ) {
+        if (attachment.id < 0) {
+            _state.value.ops
+                .firstOrNull { it.kind == PendingOp.Kind.ATTACH && it.otherId == attachment.id }
+                ?.let { runCatching { files.deletePending(it.text) } }
+        }
+        _state.update { s ->
+            val remaining = s.attachments[taskId].orEmpty().filter { it.id != attachment.id }
+            val ops =
+                if (attachment.id < 0) {
+                    // Jamais envoyé : on oublie simplement l'envoi.
+                    s.ops.filterNot { it.kind == PendingOp.Kind.ATTACH && it.otherId == attachment.id }
+                } else {
+                    enqueue(s.ops, PendingOp(PendingOp.Kind.DELETE_ATTACHMENT, taskId, otherId = attachment.id))
+                }
+            s.copy(attachments = s.attachments + (taskId to remaining), ops = ops)
+        }
+        flushSoon()
+    }
+
+    /** Relit la liste des fichiers d'une tâche ; ceux pas encore envoyés restent affichés à la suite. */
+    suspend fun refreshAttachments(taskId: Long) {
+        if (taskId < 0) return
+        val list = JSONArray(api.call("GET", "/tasks/$taskId/attachments").body).objects().map(::attachmentFromJson)
+        _state.update { s ->
+            val unsent = s.attachments[taskId].orEmpty().filter { it.id < 0 }
+            s.copy(attachments = s.attachments + (taskId to list + unsent))
+        }
+    }
+
+    /**
+     * Le fichier à ouvrir : celui déjà téléchargé (donc lisible serveur coupé), sinon on le télécharge. Un fichier
+     * pas encore envoyé s'ouvre depuis sa copie locale.
+     */
+    suspend fun openAttachment(
+        taskId: Long,
+        attachment: Attachment,
+    ): File {
+        files.cached(attachment.id, attachment.name)?.let { return it }
+        val bytes =
+            if (attachment.id < 0) {
+                val staged =
+                    _state.value.ops.firstOrNull { it.kind == PendingOp.Kind.ATTACH && it.otherId == attachment.id }
+                        ?: throw IOException("Fichier introuvable")
+                files.readPending(staged.text)
+            } else {
+                api.download("/tasks/$taskId/attachments/${attachment.id}")
+            }
+        return files.cache(attachment.id, attachment.name, bytes)
+    }
+
+    // ---- Commentaires : modifier, supprimer ----
+
+    fun editComment(
+        taskId: Long,
+        comment: Comment,
+        text: String,
+    ) {
+        _state.update { s ->
+            val local = s.comments[taskId].orEmpty().map { if (it.id == comment.id) it.copy(text = text) else it }
+            val ops =
+                if (comment.id < 0) {
+                    // Pas encore envoyé : on change le texte de son envoi.
+                    var done = false
+                    s.ops.map {
+                        if (!done &&
+                            it.kind == PendingOp.Kind.COMMENT &&
+                            it.taskId == taskId &&
+                            it.text == comment.text
+                        ) {
+                            done = true
+                            it.copy(text = text)
+                        } else {
+                            it
+                        }
+                    }
+                } else {
+                    enqueue(s.ops, PendingOp(PendingOp.Kind.COMMENT_EDIT, taskId, otherId = comment.id, text = text))
+                }
+            s.copy(comments = s.comments + (taskId to local), ops = ops)
+        }
+        flushSoon()
+    }
+
+    fun deleteComment(
+        taskId: Long,
+        comment: Comment,
+    ) {
+        _state.update { s ->
+            val local = s.comments[taskId].orEmpty().filter { it.id != comment.id }
+            val ops =
+                if (comment.id < 0) {
+                    var removed = false
+                    s.ops.filterNot {
+                        val match =
+                            !removed &&
+                                it.kind == PendingOp.Kind.COMMENT &&
+                                it.taskId == taskId &&
+                                it.text == comment.text
+                        if (match) removed = true
+                        match
+                    }
+                } else {
+                    enqueue(s.ops, PendingOp(PendingOp.Kind.COMMENT_DELETE, taskId, otherId = comment.id))
+                }
+            s.copy(
+                comments = s.comments + (taskId to local),
+                tasks =
+                    s.tasks.map {
+                        if (it.id ==
+                            taskId
+                        ) {
+                            it.copy(commentCount = (it.commentCount - 1).coerceAtLeast(0))
+                        } else {
+                            it
+                        }
+                    },
+                ops = ops,
+            )
+        }
+        flushSoon()
+    }
+
+    // ---- Étiquettes : modifier, supprimer ----
+
+    fun updateLabel(
+        id: Long,
+        title: String,
+        hexColor: String,
+    ) {
+        _state.update { s ->
+            val updated = { l: Label -> if (l.id == id) l.copy(title = title, hexColor = hexColor) else l }
+            val ops =
+                if (id < 0) {
+                    // Étiquette pas encore créée : sa création porte déjà le bon titre et la bonne couleur.
+                    s.ops.map {
+                        if (it.kind == PendingOp.Kind.CREATE_LABEL &&
+                            it.taskId == id
+                        ) {
+                            it.copy(text = title, extra = hexColor)
+                        } else {
+                            it
+                        }
+                    }
+                } else {
+                    enqueue(s.ops, PendingOp(PendingOp.Kind.LABEL_UPDATE, id, text = title, extra = hexColor))
+                }
+            s.copy(
+                labels = s.labels.map(updated),
+                tasks =
+                    s.tasks.map { t ->
+                        if (t.labels.any { it.id == id }) t.copy(labels = t.labels.map(updated)) else t
+                    },
+                ops = ops,
+            )
+        }
+        flushSoon()
+    }
+
+    fun deleteLabel(id: Long) {
+        _state.update { s ->
+            val ops =
+                if (id < 0) {
+                    s.ops.filterNot {
+                        it.taskId == id &&
+                            (it.kind == PendingOp.Kind.CREATE_LABEL || it.kind == PendingOp.Kind.LABEL_UPDATE)
+                    }
+                } else {
+                    s.ops.filterNot { it.kind == PendingOp.Kind.LABEL_UPDATE && it.taskId == id } +
+                        PendingOp(PendingOp.Kind.LABEL_DELETE, id)
+                }
+            s.copy(
+                labels = s.labels.filter { it.id != id },
+                tasks =
+                    s.tasks.map { t ->
+                        if (t.labels.any { it.id == id }) {
+                            t.copy(
+                                labels =
+                                    t.labels.filter {
+                                        it.id !=
+                                            id
+                                    },
+                            )
+                        } else {
+                            t
+                        }
+                    },
+                ops = ops,
+            )
+        }
+        flushSoon()
+    }
+
+    // ---- Kanban ----
+
+    /** Relit les colonnes d'un projet ; [IOException] si le serveur ne répond pas (le cache reste affiché). */
+    suspend fun refreshKanban(projectId: Long) {
+        val view =
+            _state.value.projects
+                .firstOrNull { it.id == projectId }
+                ?.kanbanViewId ?: 0L
+        if (view == 0L) return
+        val buckets =
+            JSONArray(api.call("GET", "/projects/$projectId/views/$view/tasks", mapOf("per_page" to "50")).body)
+                .objects()
+                .map(::bucketFromJson)
+        _state.update { it.copy(kanban = it.kanban + (projectId to buckets)) }
+    }
+
+    /** Déplace une tâche dans une colonne, même hors ligne (le changement part au prochain envoi). */
+    fun moveToBucket(
+        projectId: Long,
+        taskId: Long,
+        bucketId: Long,
+    ) {
+        val view =
+            _state.value.projects
+                .firstOrNull { it.id == projectId }
+                ?.kanbanViewId ?: return
+        _state.update { s ->
+            val moved =
+                s.kanban[projectId].orEmpty().map { b ->
+                    val without = b.taskIds.filter { it != taskId }
+                    if (b.id == bucketId) b.copy(taskIds = without + taskId) else b.copy(taskIds = without)
+                }
+            s.copy(
+                kanban = s.kanban + (projectId to moved),
+                ops =
+                    enqueue(
+                        s.ops,
+                        PendingOp(PendingOp.Kind.MOVE_BUCKET, taskId, otherId = bucketId, extra = "$projectId:$view"),
+                    ),
+            )
+        }
+        flushSoon()
+    }
+
+    // ---- Notifications ----
+
+    /** Relit les notifications ; [IOException] si le serveur ne répond pas (les anciennes restent affichées). */
+    suspend fun refreshNotifications() {
+        val list =
+            JSONArray(
+                api.call("GET", "/notifications", mapOf("per_page" to "50")).body,
+            ).objects().map(::notificationFromJson)
+        _state.update { it.copy(notifications = list) }
+    }
+
+    fun markNotificationRead(id: Long) {
+        _state.update { s ->
+            s.copy(
+                notifications = s.notifications.map { if (it.id == id) it.copy(read = true) else it },
+                ops = enqueue(s.ops, PendingOp(PendingOp.Kind.MARK_READ, id)),
+            )
+        }
+        flushSoon()
+    }
+
+    fun markAllNotificationsRead() {
+        _state.update { s ->
+            s.copy(
+                notifications = s.notifications.map { it.copy(read = true) },
+                ops = enqueue(s.ops, PendingOp(PendingOp.Kind.MARK_ALL_READ, 0)),
+            )
+        }
+        flushSoon()
+    }
+
+    // ---- Filtres et projets (en ligne : le serveur doit valider) ----
+
+    suspend fun updateFilter(
+        id: Long,
+        title: String,
+        query: String,
+    ) {
+        val json = JSONObject(api.call("GET", "/filters/$id").body)
+        json.put("title", title)
+        val filters = json.optJSONObject("filters") ?: JSONObject().also { json.put("filters", it) }
+        filters.put("filter", query)
+        api.call("POST", "/filters/$id", body = json)
+        refresh()
+    }
+
+    suspend fun deleteFilter(id: Long) {
+        api.call("DELETE", "/filters/$id")
+        _state.update { s -> s.copy(filters = s.filters.filter { it.id != id }, filterResults = s.filterResults - id) }
+        refresh()
+    }
+
+    /** Place le projet [id] sous [parentId] (0 = à la racine). */
+    suspend fun moveProject(
+        id: Long,
+        parentId: Long,
+    ) = updateProject(id) { it.put("parent_project_id", parentId) }
+
+    /** Monte ou descend un projet parmi ses frères, en échangeant leurs positions. */
+    suspend fun moveProjectOrder(
+        id: Long,
+        up: Boolean,
+    ) {
+        val me = _state.value.projects.firstOrNull { it.id == id } ?: return
+        val siblings =
+            _state.value.projects
+                .filter { it.parentId == me.parentId }
+                .sortedWith(compareBy({ it.position }, { it.id }))
+        val index = siblings.indexOfFirst { it.id == id }
+        val other = siblings.getOrNull(if (up) index - 1 else index + 1) ?: return
+        // Positions confondues : on les écarte, sinon l'échange ne changerait rien.
+        val (mine, theirs) =
+            if (other.position == me.position) {
+                if (up) (other.position - 1) to other.position else (other.position + 1) to other.position
+            } else {
+                other.position to me.position
+            }
+        updateProject(id) { it.put("position", mine) }
+        updateProject(other.id) { it.put("position", theirs) }
     }
 
     /**
