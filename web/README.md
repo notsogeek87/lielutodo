@@ -22,3 +22,6 @@ node --test web/test/*.test.mjs               # tests (analyseur d'ajout rapide,
 Projet Vercel lié à ce dépôt, **Root Directory = `web`**, aucune commande de build. `vercel.json` réécrit
 `/vk/*` vers `https://task.lielu.eu/*` : le navigateur parle ainsi au serveur sans CORS. Un autre serveur Vikunja
 est appelé directement (il doit autoriser CORS).
+
+Le `vercel.json` à la racine du dépôt (`outputDirectory: web`) fait la même chose si le Root Directory du projet reste
+sur la racine ; il doit rester identique à `web/vercel.json` (réécritures et en-têtes).
