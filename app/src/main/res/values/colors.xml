@@ -5,10 +5,12 @@
          l'affichage de la fenêtre et la première frame Compose. -->
     <color name="window_background">#F7F3EE</color>
     <!-- Widgets (RemoteViews, hors Compose) : même palette que Theme.kt. -->
-    <color name="widget_background">#F2F7F3EE</color>
+    <color name="widget_background">#FFFFFFFF</color>
     <color name="widget_text">#202020</color>
     <color name="widget_text_secondary">#8A8A8A</color>
     <color name="widget_accent">#0A8A78</color>
+    <color name="widget_stroke">#1F000000</color>
+    <color name="widget_accent_soft">#1F0A8A78</color>
     <!-- Fonds des icônes d'app alternatives (choisies dans Parcourir) : sans lien avec le thème de l'écran. -->
     <color name="launcher_red">#C9352B</color>
     <color name="launcher_orange">#E8890C</color>
