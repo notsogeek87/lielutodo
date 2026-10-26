@@ -147,6 +147,11 @@ data class Task(
     /** Date de complétion et de création (pour la productivité et l'activité) ; `null` si inconnue. */
     val doneAt: Instant? = null,
     val createdAt: Instant? = null,
+    /**
+     * Dernière version reçue du serveur, intacte (contrairement à [raw], où le cache mêle nos modifications) : la
+     * base de la fusion à l'envoi (voir [mergeEdits]). `null` si inconnue (cache d'une ancienne version de l'app).
+     */
+    val serverRaw: String? = null,
 ) {
     val isRecurring: Boolean get() = repeatAfter > 0 || repeatMode == REPEAT_MONTHLY
 
@@ -163,6 +168,8 @@ data class Task(
     /** JSON complet (champs du serveur + nos modifications), relu tel quel par [taskFromJson]. */
     fun toJson(): JSONObject {
         val o = JSONObject(raw)
+        // Seul le codec du cache range la base de fusion, et seulement quand il le faut (jamais deux fois imbriquée).
+        o.remove(SERVER_RAW_KEY)
         o.put("id", id)
         o.put("project_id", projectId)
         o.put("title", title)
@@ -217,7 +224,11 @@ data class Task(
                 "updated",
                 "comment_count",
                 "is_unread",
+                SERVER_RAW_KEY,
             )
+
+        /** Clé du cache où [serverRaw] est rangé, pour les tâches qui ont une modification en attente. */
+        const val SERVER_RAW_KEY = "_server_raw"
     }
 }
 
@@ -335,6 +346,7 @@ fun taskFromJson(o: JSONObject): Task {
         position = o.optDouble("position", 0.0),
         commentCount = o.optInt("comment_count"),
         raw = o.toString(),
+        serverRaw = o.toString(),
         reminders =
             (0 until (reminders?.length() ?: 0)).map {
                 val r = reminders!!.getJSONObject(it)
@@ -427,3 +439,37 @@ fun appNotificationFromStoredJson(o: JSONObject) =
         parseDate(o.optString("created")),
         o.optLong("task_id"),
     )
+
+/**
+ * Fusion à trois au moment d'envoyer une modification faite ici : [base] = la version du serveur sur laquelle elle a
+ * été faite, [local] = la nôtre, [server] = celle du serveur maintenant. Un champ changé ici prend notre valeur ; les
+ * autres prennent celle du serveur. Ainsi une modification faite ailleurs entre-temps (site web, autre appareil)
+ * n'est pas écrasée par un envoi qui ne la concernait pas. Même champ changé des deux côtés : le nôtre l'emporte.
+ * Le JSON de départ est celui du serveur : les champs que l'app ne gère pas restent à jour.
+ */
+fun mergeEdits(
+    base: Task,
+    local: Task,
+    server: Task,
+): Task {
+    fun <T> pick(field: (Task) -> T): T = if (field(local) != field(base)) field(local) else field(server)
+    return server.copy(
+        id = local.id,
+        projectId = pick { it.projectId },
+        title = pick { it.title },
+        description = pick { it.description },
+        done = pick { it.done },
+        doneAt = pick { it.doneAt },
+        dueDate = pick { it.dueDate },
+        priority = pick { it.priority },
+        isFavorite = pick { it.isFavorite },
+        reminders = pick { it.reminders },
+        repeatAfter = pick { it.repeatAfter },
+        repeatMode = pick { it.repeatMode },
+        labels = pick { it.labels },
+        assignees = pick { it.assignees },
+        // Ordre et parenté passent par leurs propres écritures : la valeur locale est la plus récente.
+        position = local.position,
+        parentId = local.parentId,
+    )
+}

@@ -6,7 +6,7 @@ import { ApiError, NetworkError, fetchPaged } from './api.js';
 import { nextOccurrence } from './dates.js';
 import { textToHtml } from './richtext.js';
 import {
-  commentFromJson, isRecurring, labelFromJson, labelToJson, projectFromJson, taskFromJson, taskToRequest,
+  commentFromJson, isRecurring, labelFromJson, labelToJson, mergeEdits, projectFromJson, taskFromJson, taskToRequest,
 } from './model.js';
 
 const STATE_KEY = 'lielutodo.state';
@@ -508,14 +508,17 @@ export function createStore(api) {
       case 'update': {
         const local = taskById(op.taskId);
         if (!local) return;
-        const body = taskToRequest(local);
+        // Fusion avec la version actuelle du serveur (raw = la version sur laquelle la modification a été faite).
+        const base = local.raw && local.raw.id > 0 ? taskFromJson(local.raw) : null;
+        const toSend = base ? mergeEdits(base, local, taskFromJson((await api('GET', `/tasks/${local.id}`)).json())) : local;
+        const body = taskToRequest(toSend);
         if (op.done !== undefined) body.done = op.done;
         const saved = taskFromJson((await api('POST', `/tasks/${local.id}`, { body })).json());
         if (op.flag) await setLabels(local.id, local.labels);
         // Vikunja efface les affectations d'une tâche mise à jour sans `assignees` (champ en lecture seule ici) :
         // on remet celles que la réponse ne contient plus. Un échec (déjà affecté) est sans importance.
         const kept = new Set((saved.assignees || []).map((u) => u.id));
-        for (const u of local.assignees || []) {
+        for (const u of toSend.assignees || []) {
           if (kept.has(u.id)) continue;
           try {
             await api('PUT', `/tasks/${local.id}/assignees`, { body: { user_id: u.id } });
@@ -523,15 +526,24 @@ export function createStore(api) {
             if (!(e instanceof ApiError)) throw e;
           }
         }
-        // Une tâche répétée revient « non terminée » avec une nouvelle échéance : on prend la réponse, sauf si
-        // l'utilisateur a encore modifié la tâche pendant l'envoi.
-        state = {
-          ...state,
-          tasks: state.tasks.map((t) => {
-            if (t.id !== local.id || t !== local) return t;
-            return { ...saved, labels: t.labels, assignees: t.assignees, parentId: t.parentId, position: t.position };
-          }),
-        };
+        // Une tâche répétée revient « non terminée » avec une nouvelle échéance : on prend la réponse. Modifiée
+        // encore pendant l'envoi : sa version reste et repart (cette écriture-ci, fusionnée avec la nouvelle, va être
+        // retirée de la file), sur la base de la réponse du serveur.
+        const current = taskById(local.id);
+        if (current === local) {
+          state = {
+            ...state,
+            tasks: state.tasks.map((t) => (t.id !== local.id ? t
+              : { ...saved, labels: t.labels, assignees: toSend.assignees, parentId: t.parentId, position: t.position })),
+          };
+        } else if (current) {
+          const head = state.ops.find((o) => o.kind === 'update' && o.taskId === local.id);
+          state = {
+            ...state,
+            tasks: state.tasks.map((t) => (t.id === local.id ? { ...t, raw: saved.raw } : t)),
+            ops: [...state.ops, { kind: 'update', taskId: local.id, flag: op.flag || !!head?.flag, done: head && head.done !== op.done ? head.done : undefined }],
+          };
+        }
         break;
       }
       case 'delete':

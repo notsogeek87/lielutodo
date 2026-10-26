@@ -14,6 +14,7 @@ import com.lielu.todo.data.model.attachmentFromJson
 import com.lielu.todo.data.model.commentFromJson
 import com.lielu.todo.data.model.labelFromJson
 import com.lielu.todo.data.model.lastUnreadableDate
+import com.lielu.todo.data.model.mergeEdits
 import com.lielu.todo.data.model.notificationFromJson
 import com.lielu.todo.data.model.objects
 import com.lielu.todo.data.model.projectFromJson
@@ -852,6 +853,7 @@ class TodoRepository(
                                 it.copy(
                                     id = created.id,
                                     raw = created.raw,
+                                    serverRaw = created.serverRaw,
                                     commentCount = created.commentCount,
                                 )
                             it.parentId == local.id -> it.copy(parentId = created.id)
@@ -900,27 +902,49 @@ class TodoRepository(
 
     private suspend fun applyUpdate(op: PendingOp) {
         val local = task(op.taskId) ?: return
-        val saved = taskFromJson(JSONObject(api.call("POST", "/tasks/${local.id}", body = local.toRequestJson()).body))
+        // Fusion avec la version actuelle du serveur : une modification faite ailleurs entre-temps n'est pas écrasée.
+        // Base inconnue (cache d'une version précédente de l'app) : comme avant, la version locale entière.
+        val base = local.serverRaw?.let { runCatching { taskFromJson(JSONObject(it)) }.getOrNull() }
+        val toSend =
+            if (base == null) {
+                local
+            } else {
+                mergeEdits(base, local, taskFromJson(JSONObject(api.call("GET", "/tasks/${local.id}").body)))
+            }
+        val saved = taskFromJson(JSONObject(api.call("POST", "/tasks/${local.id}", body = toSend.toRequestJson()).body))
         if (op.flag) setLabels(local.id, local.labels)
-        restoreAssignees(local, saved)
-        // Une tâche répétée revient « non terminée » avec une nouvelle échéance : on prend la réponse, sauf si
-        // l'utilisateur a encore modifié la tâche pendant l'envoi.
+        restoreAssignees(toSend, saved)
+        // Une tâche répétée revient « non terminée » avec une nouvelle échéance : on prend la réponse. Si
+        // l'utilisateur l'a encore modifiée pendant l'envoi, sa version reste, et repart (sur la base du serveur) :
+        // cette écriture-ci, fusionnée avec la nouvelle, va être retirée de la file.
         _state.update { s ->
-            s.copy(
-                tasks =
-                    s.tasks.map {
-                        if (it.id == local.id && it == local) {
-                            saved.copy(
-                                labels = it.labels,
-                                assignees = it.assignees,
-                                parentId = it.parentId,
-                                position = it.position,
-                            )
-                        } else {
-                            it
-                        }
-                    },
-            )
+            val current = s.tasks.firstOrNull { it.id == local.id } ?: return@update s
+            if (current == local) {
+                val merged =
+                    saved.copy(
+                        labels = current.labels,
+                        assignees = toSend.assignees,
+                        parentId = current.parentId,
+                        position = current.position,
+                    )
+                s.copy(tasks = s.tasks.map { if (it.id == local.id) merged else it })
+            } else {
+                s.copy(
+                    tasks = s.tasks.map { if (it.id == local.id) it.copy(serverRaw = saved.serverRaw) else it },
+                    // Étiquettes changées pendant l'envoi : le drapeau est sur l'écriture en tête, fusionnée.
+                    ops =
+                        s.ops +
+                            PendingOp(
+                                PendingOp.Kind.UPDATE,
+                                local.id,
+                                flag =
+                                    op.flag ||
+                                        s.ops.any {
+                                            it.kind == PendingOp.Kind.UPDATE && it.taskId == local.id && it.flag
+                                        },
+                            ),
+                )
+            }
         }
     }
 

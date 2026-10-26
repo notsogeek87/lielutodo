@@ -137,6 +137,10 @@ rester lisible ET modifiable hors ligne.
   sauvegarde (`TodoBackupSection`). Une panne serveur (502/503/504, 408, 429, ou 500 partout) = hors ligne, les écritures sont gardées. Une écriture refusée (4xx, ou 500 répété alors que `GET /user` répond) sort de la file vers `TodoState.failed` : jamais effacée en silence, elle ne bloque pas les suivantes, l'utilisateur la renvoie ou l'abandonne (Parcourir > « Modifications non envoyées »). Au rafraîchissement, la version locale prime pour tout objet visé par une écriture en file ou refusée (`mergeTasks`/`mergeProjects`/`mergeLabels`).
 - Une `Task` garde son JSON serveur (`raw`) : Vikunja remplace la tâche entière à chaque mise à jour, renvoyer
   seulement nos champs effacerait les autres.
+- Envoi d'une modification = fusion à trois (`mergeEdits`, Kotlin et web) : relit la tâche (`GET /tasks/{id}`), garde
+  nos champs changés depuis la version serveur de départ (`Task.serverRaw` ; web : `raw`), prend le reste du serveur.
+  Le cache range `serverRaw` (clé `_server_raw`) pour les tâches en attente seulement ; absent (ancien cache) =
+  envoi de la version locale entière. Une modification faite pendant l'envoi repart dans une nouvelle écriture.
 - Descriptions et commentaires : Vikunja stocke du HTML, l'app manipule du texte. Conversion à la frontière du modèle
   (`RichText.kt` = `web/js/richtext.js`, cas partagés `web/test/fixtures/richtext.json`) ; une description inchangée
   est renvoyée avec son HTML d'origine (`htmlForServer`), pour ne pas perdre la mise en forme du site.

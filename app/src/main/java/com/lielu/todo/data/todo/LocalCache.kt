@@ -6,6 +6,7 @@ import com.lielu.todo.data.model.Comment
 import com.lielu.todo.data.model.Label
 import com.lielu.todo.data.model.Project
 import com.lielu.todo.data.model.SavedFilter
+import com.lielu.todo.data.model.Task
 import com.lielu.todo.data.model.User
 import com.lielu.todo.data.model.appNotificationFromStoredJson
 import com.lielu.todo.data.model.attachmentFromJson
@@ -79,12 +80,25 @@ class FileLocalCache(
 
 /** Passage d'un [TodoState] au JSON du cache et de la sauvegarde, et retour. */
 object TodoStateCodec {
-    fun encode(state: TodoState): JSONObject =
-        JSONObject()
+    fun encode(state: TodoState): JSONObject {
+        val merging = awaitingMerge(state)
+        return JSONObject()
             .put("projects", JSONArray(state.projects.map(Project::toJson)))
             .put("labels", JSONArray(state.labels.map(Label::toJson)))
-            .put("tasks", JSONArray(state.tasks.map { it.toJson() }))
-            .put("filters", JSONArray(state.filters.map(SavedFilter::toJson)))
+            .put(
+                "tasks",
+                JSONArray(
+                    state.tasks.map { t ->
+                        t.toJson().also {
+                            if (t.id in merging &&
+                                t.serverRaw != null
+                            ) {
+                                it.put(Task.SERVER_RAW_KEY, t.serverRaw)
+                            }
+                        }
+                    },
+                ),
+            ).put("filters", JSONArray(state.filters.map(SavedFilter::toJson)))
             .put(
                 "filter_results",
                 JSONObject().also { o ->
@@ -122,12 +136,13 @@ object TodoStateCodec {
                     },
                 ),
             )
+    }
 
     fun decode(o: JSONObject): TodoState =
         TodoState(
             projects = o.getJSONArray("projects").objects().map(::projectFromJson),
             labels = o.getJSONArray("labels").objects().map(::labelFromJson),
-            tasks = o.getJSONArray("tasks").objects().map(::taskFromJson),
+            tasks = decodeTasks(o),
             filters =
                 o
                     .optJSONArray("filters")
@@ -156,6 +171,36 @@ object TodoStateCodec {
             lastSync = o.optLong("last_sync"),
             loaded = true,
         )
+
+    /** Tâches qu'une modification en attente enverra par fusion : leur base serveur doit survivre au redémarrage. */
+    private fun awaitingMerge(state: TodoState): Set<Long> =
+        (state.ops + state.failed.map { it.op })
+            .filter { it.kind == PendingOp.Kind.UPDATE || it.kind == PendingOp.Kind.CREATE }
+            .map { it.taskId }
+            .toSet()
+
+    private fun decodeTasks(o: JSONObject): List<Task> {
+        val ops = o.getJSONArray("ops").objects().map(::opFromJson)
+        val failed =
+            o
+                .optJSONArray("failed_ops")
+                ?.objects()
+                ?.map(::opFromJson)
+                .orEmpty()
+        val pending = awaitingMerge(TodoState(ops = ops, failed = failed.map { FailedOp(it, 0, "", 0) }))
+        return o.getJSONArray("tasks").objects().map { json ->
+            val task = taskFromJson(json)
+            // Tâche modifiée ici : sa base est la version serveur rangée à part (absente d'un ancien cache : inconnue).
+            // Sinon le JSON relu EST la version serveur.
+            if (task.id in
+                pending
+            ) {
+                task.copy(serverRaw = json.optString(Task.SERVER_RAW_KEY).ifEmpty { null })
+            } else {
+                task
+            }
+        }
+    }
 
     private fun <T> mapOfArrays(
         o: JSONObject?,

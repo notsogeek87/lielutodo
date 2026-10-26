@@ -53,6 +53,10 @@ function fakeServer() {
       srv.tasks.set(t.id, t);
       return res(t);
     }
+    if ((m = key.match(/^GET \/tasks\/(\d+)$/))) {
+      if (!srv.tasks.has(Number(m[1]))) throw new ApiError(404, 'introuvable');
+      return res(srv.tasks.get(Number(m[1])));
+    }
     if ((m = key.match(/^POST \/tasks\/(\d+)$/))) {
       const id = Number(m[1]);
       if (!srv.tasks.has(id)) throw new ApiError(404, 'introuvable');
@@ -220,4 +224,37 @@ test('stockage plein : les écritures en attente (et leurs tâches) passent avan
   const again = createStore(srv.api);
   assert.equal(again.state.ops.length, 1);
   assert.ok(again.state.tasks.some((t) => t.title === 'Hors ligne'));
+});
+
+test('une modification faite ailleurs entre-temps n’est pas écrasée', async () => {
+  const { srv, store } = fresh();
+  srv.tasks.set(5, { id: 5, title: 'T', description: '<p>d</p>', project_id: 2, done: false });
+  await store.refresh();
+  srv.online = false;
+  store.updateTask({ ...store.task(5), title: 'Titre changé ici' });
+  Object.assign(srv.tasks.get(5), { description: '<p><b>web</b></p>', priority: 3, percent_done: 0.5 });
+  srv.online = true;
+  await store.syncPending();
+  const sent = srv.tasks.get(5);
+  assert.equal(sent.title, 'Titre changé ici');
+  assert.equal(sent.description, '<p><b>web</b></p>');
+  assert.equal(sent.priority, 3);
+  assert.equal(sent.percent_done, 0.5);
+});
+
+test('une modification faite pendant l’envoi part aussi', async () => {
+  const { srv, store } = fresh();
+  srv.tasks.set(5, { id: 5, title: 'T', project_id: 2, done: false });
+  await store.refresh();
+  let edited = false;
+  srv.onCall = (k) => {
+    if (k === 'POST /tasks/5' && !edited) {
+      edited = true;
+      store.updateTask({ ...store.task(5), description: 'ajoutée pendant l’envoi' });
+    }
+  };
+  store.updateTask({ ...store.task(5), title: 'Premier' });
+  await store.syncPending();
+  assert.equal(srv.tasks.get(5).title, 'Premier');
+  assert.equal(srv.tasks.get(5).description, '<p>ajoutée pendant l’envoi</p>');
 });

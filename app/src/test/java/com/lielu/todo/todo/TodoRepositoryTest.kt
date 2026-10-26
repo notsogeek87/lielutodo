@@ -110,6 +110,8 @@ private class FakeServer : HttpApi {
                 tasks[task.getLong("id")] = task
                 ok(task.toString())
             }
+            method == "GET" && path.matches(Regex("/tasks/\\d+")) ->
+                ok((tasks[path.substringAfterLast('/').toLong()] ?: throw ApiException(404, "not found")).toString())
             method == "POST" && path.matches(Regex("/tasks/\\d+")) -> {
                 val id = path.substringAfterLast('/').toLong()
                 if (!tasks.containsKey(id)) throw ApiException(404, "not found")
@@ -1008,5 +1010,70 @@ class TodoRepositoryTest {
                 repo.state.value.tasks
                     .any { it.id == added },
             )
+        }
+
+    @Test
+    fun aChangeMadeElsewhereMeanwhileIsNotOverwritten() =
+        runTest {
+            val server = FakeServer()
+            server.tasks[5] =
+                JSONObject("""{"id":5,"title":"T","description":"<p>d</p>","project_id":2,"done":false}""")
+            val repo = repo(server)
+            repo.refresh()
+            server.online = false
+            repo.updateTask(repo.task(5)!!.copy(title = "Titre changé ici"))
+            // Pendant ce temps, sur le site : autre description, autre priorité, un champ que l'app ne gère pas.
+            server.tasks[5]!!
+                .put("description", "<p><b>web</b></p>")
+                .put("priority", 3)
+                .put("percent_done", 0.5)
+            server.online = true
+            assertTrue(repo.syncPending())
+
+            val sent = server.tasks[5]!!
+            assertEquals("Titre changé ici", sent.getString("title"))
+            assertEquals("<p><b>web</b></p>", sent.getString("description"))
+            assertEquals(3, sent.getInt("priority"))
+            assertEquals(0.5, sent.getDouble("percent_done"), 0.0)
+        }
+
+    @Test
+    fun theMergeBaseSurvivesARestart() =
+        runTest {
+            val server = FakeServer()
+            server.tasks[5] = JSONObject("""{"id":5,"title":"T","project_id":2,"done":false,"priority":1}""")
+            val cache = MemoryCache()
+            val first = repo(server, cache)
+            first.refresh()
+            server.online = false
+            first.setDone(5, true)
+            // Redémarrage : l'état passe par le JSON du cache (comme FileLocalCache).
+            cache.saved = TodoStateCodec.decode(TodoStateCodec.encode(first.state.value))
+            server.tasks[5]!!.put("priority", 4)
+            server.online = true
+            val second = repo(server, cache)
+            assertTrue(second.syncPending())
+            assertTrue(server.tasks[5]!!.getBoolean("done"))
+            assertEquals(4, server.tasks[5]!!.getInt("priority"))
+        }
+
+    @Test
+    fun anEditMadeWhileTheTaskIsBeingSentIsSentToo() =
+        runTest {
+            val server = FakeServer()
+            server.tasks[5] = JSONObject("""{"id":5,"title":"T","project_id":2,"done":false}""")
+            val repo = repo(server)
+            repo.refresh()
+            var edited = false
+            server.onCall = {
+                if (it == "POST /tasks/5" && !edited) {
+                    edited = true
+                    repo.updateTask(repo.task(5)!!.copy(description = "ajoutée pendant l'envoi"))
+                }
+            }
+            repo.updateTask(repo.task(5)!!.copy(title = "Premier"))
+            assertTrue(repo.syncPending())
+            assertEquals("Premier", server.tasks[5]!!.getString("title"))
+            assertEquals("<p>ajoutée pendant l'envoi</p>", server.tasks[5]!!.getString("description"))
         }
 }

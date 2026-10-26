@@ -99,3 +99,17 @@ export function colorOf(hex, fallback = '#808080') {
   if (typeof hex !== 'string' || !/^#?[0-9a-f]{3,8}$/i.test(hex)) return fallback;
   return hex.startsWith('#') ? hex : `#${hex}`;
 }
+
+/**
+ * Fusion à trois à l'envoi d'une modification faite ici (port de mergeEdits, Models.kt) : `base` = la version du
+ * serveur sur laquelle elle a été faite (`raw`), `local` = la nôtre, `server` = l'actuelle. Un champ changé ici
+ * prend notre valeur, les autres celle du serveur : une modification faite ailleurs entre-temps n'est pas écrasée.
+ */
+export function mergeEdits(base, local, server) {
+  const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+  const pick = (k) => (same(local[k], base[k]) ? server[k] : local[k]);
+  const merged = { ...server, id: local.id, position: local.position, parentId: local.parentId };
+  for (const k of ['projectId', 'title', 'description', 'done', 'due', 'priority', 'isFavorite', 'reminders',
+    'repeatAfter', 'repeatMode', 'labels', 'assignees']) merged[k] = pick(k);
+  return merged;
+}
