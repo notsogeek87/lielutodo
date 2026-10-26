@@ -2,6 +2,7 @@ package com.lielu.todo.ui.home
 
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -22,6 +23,7 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.outlined.BarChart
+import androidx.compose.material.icons.outlined.CalendarMonth
 import androidx.compose.material.icons.outlined.CheckCircle
 import androidx.compose.material.icons.outlined.FilterList
 import androidx.compose.material.icons.outlined.Notifications
@@ -56,6 +58,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.lielu.todo.calendar.CalendarSync
+import com.lielu.todo.calendar.DeviceCalendar
 import com.lielu.todo.data.model.Label
 import com.lielu.todo.data.model.Project
 import com.lielu.todo.data.model.SavedFilter
@@ -85,6 +89,7 @@ fun BrowseTab(
     onOpenFavorites: () -> Unit,
     onOpenCompleted: () -> Unit,
     reminderScheduler: ReminderScheduler,
+    calendarSync: CalendarSync,
     prefs: AppPrefs,
     onOpenNotifications: () -> Unit,
     onOpenActivity: () -> Unit,
@@ -250,6 +255,7 @@ fun BrowseTab(
                 }
             }
         }
+        item { CalendarSyncCard(calendarSync, repository, prefs, snackbar) }
         item {
             var lock by remember { mutableStateOf(prefs.lockEnabled) }
             var sound by remember { mutableStateOf(prefs.completionSound) }
@@ -605,6 +611,112 @@ private fun SwitchRow(
     ) {
         Text(label, modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodyLarge)
         Switch(checked = checked, onCheckedChange = onChange)
+    }
+}
+
+/**
+ * Recopie des tâches datées dans un agenda de l'appareil. À l'activation : autorisation, puis choix de l'agenda.
+ * Les événements n'ont pas de rappel (l'app sonne déjà) et suivent la tâche : date changée, terminée, supprimée.
+ */
+@Composable
+private fun CalendarSyncCard(
+    calendarSync: CalendarSync,
+    repository: TodoRepository,
+    prefs: AppPrefs,
+    snackbar: SnackbarHostState,
+) {
+    val scope = rememberCoroutineScope()
+    var enabled by remember { mutableStateOf(prefs.calendarSyncEnabled) }
+    var calendarName by remember { mutableStateOf(prefs.calendarName) }
+    var choices by remember { mutableStateOf<List<DeviceCalendar>?>(null) }
+
+    fun openChoices() {
+        scope.launch {
+            val found = calendarSync.calendars()
+            if (found.isEmpty()) {
+                snackbar.showSnackbar("Aucun agenda modifiable trouvé sur cet appareil.")
+            } else {
+                choices = found
+            }
+        }
+    }
+
+    val permission =
+        androidx.activity.compose.rememberLauncherForActivityResult(
+            androidx.activity.result.contract.ActivityResultContracts
+                .RequestMultiplePermissions(),
+        ) { granted ->
+            if (granted.values.all { it }) {
+                openChoices()
+            } else {
+                scope.launch { snackbar.showSnackbar("Sans l'autorisation Agenda, la recopie ne peut pas marcher.") }
+            }
+        }
+
+    BrowseCard {
+        SwitchRow("Ajouter les tâches datées à mon agenda", enabled) { wanted ->
+            if (!wanted) {
+                enabled = false
+                prefs.calendarSyncEnabled = false
+                scope.launch { calendarSync.sync(repository.state.value) }
+            } else if (calendarSync.hasPermission()) {
+                openChoices()
+            } else {
+                permission.launch(
+                    arrayOf(android.Manifest.permission.READ_CALENDAR, android.Manifest.permission.WRITE_CALENDAR),
+                )
+            }
+        }
+        if (enabled) {
+            BrowseRow(
+                Icons.Outlined.CalendarMonth,
+                "Agenda : ${calendarName.ifBlank { "à choisir" }}",
+                onClick = { openChoices() },
+            )
+        }
+    }
+
+    choices?.let { list ->
+        AlertDialog(
+            onDismissRequest = { choices = null },
+            title = { Text("Agenda à utiliser") },
+            text = {
+                Column {
+                    Text(
+                        "Les tâches y apparaissent sans rappel (l'app sonne déjà). Modifier l'événement dans " +
+                            "l'agenda ne change pas la tâche.",
+                        style = MaterialTheme.typography.bodySmall,
+                        modifier = Modifier.padding(bottom = 8.dp),
+                    )
+                    list.forEach { calendar ->
+                        Row(
+                            modifier =
+                                Modifier
+                                    .fillMaxWidth()
+                                    .clickable {
+                                        prefs.calendarId = calendar.id
+                                        prefs.calendarName = calendar.name
+                                        prefs.calendarSyncEnabled = true
+                                        calendarName = calendar.name
+                                        enabled = true
+                                        choices = null
+                                        scope.launch { calendarSync.sync(repository.state.value) }
+                                    }.padding(vertical = 10.dp),
+                        ) {
+                            Column {
+                                Text(calendar.name, style = MaterialTheme.typography.bodyLarge)
+                                Text(
+                                    calendar.account,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.outline,
+                                )
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = { TextButton(onClick = { choices = null }) { Text("Annuler") } },
+        )
     }
 }
 

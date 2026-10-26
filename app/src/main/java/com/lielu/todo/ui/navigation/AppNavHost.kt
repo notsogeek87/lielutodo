@@ -104,6 +104,7 @@ fun AppNavHost(
                 onOpenCompleted = { navController.navigate(AppDestinations.COMPLETED) },
                 onSearch = { navController.navigate(AppDestinations.SEARCH) },
                 reminderScheduler = container.reminderScheduler,
+                calendarSync = container.calendarSync,
                 prefs = container.prefs,
                 onOpenNotifications = { navController.navigate(AppDestinations.NOTIFICATIONS) },
                 onOpenActivity = { navController.navigate(AppDestinations.ACTIVITY) },

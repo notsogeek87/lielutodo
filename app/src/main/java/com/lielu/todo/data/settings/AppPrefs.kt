@@ -37,6 +37,21 @@ class AppPrefs(
         get() = prefs.getBoolean(KEY_SOUND, false)
         set(value) = prefs.edit().putBoolean(KEY_SOUND, value).apply()
 
+    /** Recopie des tâches datées dans un agenda de l'appareil (voir CalendarSync). */
+    var calendarSyncEnabled: Boolean
+        get() = prefs.getBoolean(KEY_CAL_ON, false)
+        set(value) = prefs.edit().putBoolean(KEY_CAL_ON, value).apply()
+
+    /** Agenda choisi pour cette recopie, 0 si aucun. */
+    var calendarId: Long
+        get() = prefs.getLong(KEY_CAL_ID, 0)
+        set(value) = prefs.edit().putLong(KEY_CAL_ID, value).apply()
+
+    /** Nom de l'agenda choisi, pour l'affichage. */
+    var calendarName: String
+        get() = prefs.getString(KEY_CAL_NAME, "").orEmpty()
+        set(value) = prefs.edit().putString(KEY_CAL_NAME, value).apply()
+
     var inboxShowDone: Boolean
         get() = prefs.getBoolean(KEY_INBOX_DONE, false)
         set(value) = prefs.edit().putBoolean(KEY_INBOX_DONE, value).apply()
@@ -107,6 +122,9 @@ class AppPrefs(
     private companion object {
         const val KEY_LOCK = "lock"
         const val KEY_SOUND = "sound"
+        const val KEY_CAL_ON = "calendar_sync"
+        const val KEY_CAL_ID = "calendar_id"
+        const val KEY_CAL_NAME = "calendar_name"
         const val KEY_ICON = "icon"
         const val KEY_UP_LAYOUT = "upcoming_layout"
         const val KEY_UP_DONE = "upcoming_done"
