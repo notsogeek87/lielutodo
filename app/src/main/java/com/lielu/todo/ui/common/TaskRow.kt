@@ -143,7 +143,15 @@ fun TaskRow(
                             MetaItem(Icons.Outlined.CalendarToday, dueLabel(due, today), tint)
                         }
                         if (task.isRecurring) SmallIcon(Icons.Filled.Repeat, "Tâche répétée", outline)
-                        if (task.reminders.isNotEmpty()) SmallIcon(Icons.Filled.Alarm, "Rappel", outline)
+                        if (task.reminders.isNotEmpty()) {
+                            // Le rappel porte sa date quand elle diffère de l'échéance (ou qu'il n'y a pas d'échéance).
+                            val next = task.reminders.mapNotNull { it.effective(due) }.minOrNull()
+                            if (next != null && next != due) {
+                                MetaItem(Icons.Filled.Alarm, dueLabel(next, today), outline)
+                            } else {
+                                SmallIcon(Icons.Filled.Alarm, "Rappel", outline)
+                            }
+                        }
                         if (subtasks != null) {
                             Text(subtasks, style = MaterialTheme.typography.bodySmall, color = outline)
                         }

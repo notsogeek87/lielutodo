@@ -184,6 +184,7 @@ fun RemindersDialog(
                     }
                 }
                 HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
+                TextButton(onClick = onPickAbsolute) { Text("Date et heure précises…") }
                 if (!hasDue) {
                     Text("Ajoutez une échéance pour des rappels relatifs.", style = MaterialTheme.typography.bodySmall)
                 }
@@ -193,7 +194,6 @@ fun RemindersDialog(
                         onClick = { onChange(task.reminders + Reminder.beforeDue(seconds)) },
                     ) { Text(label) }
                 }
-                TextButton(onClick = onPickAbsolute) { Text("Date et heure précises…") }
             }
         },
         confirmButton = { TextButton(onClick = onDismiss) { Text("Fermer") } },
@@ -206,13 +206,19 @@ fun TimePickerDialog(
     initial: LocalTime,
     onPick: (LocalTime) -> Unit,
     onDismiss: () -> Unit,
+    onNoTime: (() -> Unit)? = null,
 ) {
     val state = rememberTimePickerState(initialHour = initial.hour, initialMinute = initial.minute, is24Hour = true)
     AlertDialog(
         onDismissRequest = onDismiss,
         text = { TimePicker(state = state) },
         confirmButton = { TextButton(onClick = { onPick(LocalTime.of(state.hour, state.minute)) }) { Text("OK") } },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Annuler") } },
+        dismissButton = {
+            Row {
+                if (onNoTime != null) TextButton(onClick = onNoTime) { Text("Sans heure") }
+                TextButton(onClick = onDismiss) { Text("Annuler") }
+            }
+        },
     )
 }
 
