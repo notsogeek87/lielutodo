@@ -376,10 +376,17 @@ fun BrowseTab(
         } else {
             NameDialog(
                 title = if (kind == Creating.PROJECT) "Nouveau projet" else "Nouvelle étiquette",
-                onConfirm = { name ->
+                withColor = kind == Creating.PROJECT,
+                onConfirm = { name, color ->
                     creating = null
                     // Hors ligne aussi : le projet ou l'étiquette existe tout de suite et part au prochain envoi.
-                    if (kind == Creating.PROJECT) repository.createProject(name) else repository.createLabel(name)
+                    if (kind ==
+                        Creating.PROJECT
+                    ) {
+                        repository.createProject(name, color)
+                    } else {
+                        repository.createLabel(name)
+                    }
                 },
                 onDismiss = { creating = null },
             )
@@ -566,24 +573,47 @@ private fun FilterDialog(
 @Composable
 private fun NameDialog(
     title: String,
-    onConfirm: (String) -> Unit,
+    withColor: Boolean,
+    onConfirm: (String, String) -> Unit,
     onDismiss: () -> Unit,
 ) {
     var name by remember { mutableStateOf("") }
+    var color by remember { mutableStateOf("") }
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(title) },
         text = {
-            OutlinedTextField(
-                value = name,
-                onValueChange = { name = it },
-                singleLine = true,
-                label = { Text("Nom") },
-            )
+            Column {
+                OutlinedTextField(
+                    value = name,
+                    onValueChange = { name = it },
+                    singleLine = true,
+                    label = { Text("Nom") },
+                )
+                if (withColor) {
+                    Text(
+                        "Couleur",
+                        style = MaterialTheme.typography.labelMedium,
+                        modifier = Modifier.padding(top = 12.dp),
+                    )
+                    ProjectPalette.chunked(5).forEach { row ->
+                        Row {
+                            row.forEach { hex ->
+                                TextButton(onClick = { color = hex }) {
+                                    Text(
+                                        if (color == hex) "◉" else "●",
+                                        color = parseHexColor(hex, MaterialTheme.colorScheme.outline),
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
         },
         confirmButton = {
             TextButton(
-                onClick = { onConfirm(name.trim()) },
+                onClick = { onConfirm(name.trim(), color) },
                 enabled = name.isNotBlank(),
             ) { Text("Créer") }
         },

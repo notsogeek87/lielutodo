@@ -209,14 +209,17 @@ class TodoRepository(
     }
 
     /** Crée un projet, même hors ligne (id temporaire, remplacé à l'envoi). Renvoie l'id local. */
-    fun createProject(title: String): Long {
+    fun createProject(
+        title: String,
+        hexColor: String = "",
+    ): Long {
         val id = nextTempId--
         _state.update { s ->
             val position = (s.projects.maxOfOrNull { it.position } ?: 0.0) + POSITION_STEP
-            val project = Project(id, title, 0, "", false, false, position)
+            val project = Project(id, title, 0, hexColor, false, false, position)
             s.copy(
                 projects = s.projects + project,
-                ops = enqueue(s.ops, PendingOp(PendingOp.Kind.CREATE_PROJECT, id, text = title)),
+                ops = enqueue(s.ops, PendingOp(PendingOp.Kind.CREATE_PROJECT, id, text = title, extra = hexColor)),
             )
         }
         flushSoon()
@@ -482,7 +485,17 @@ class TodoRepository(
             PendingOp.Kind.CREATE_PROJECT -> {
                 val created =
                     projectFromJson(
-                        JSONObject(api.call("PUT", "/projects", body = JSONObject().put("title", op.text)).body),
+                        JSONObject(
+                            api
+                                .call(
+                                    "PUT",
+                                    "/projects",
+                                    body =
+                                        JSONObject().put("title", op.text).also {
+                                            if (op.extra.isNotEmpty()) it.put("hex_color", op.extra.removePrefix("#"))
+                                        },
+                                ).body,
+                        ),
                     )
                 _state.update { s ->
                     s.copy(
