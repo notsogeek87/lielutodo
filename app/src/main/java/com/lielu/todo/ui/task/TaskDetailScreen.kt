@@ -77,6 +77,8 @@ import com.lielu.todo.ui.common.borderlessFieldColors
 import com.lielu.todo.ui.common.dueLabel
 import com.lielu.todo.ui.common.localDate
 import com.lielu.todo.ui.common.priorityName
+import com.lielu.todo.ui.common.projectColors
+import com.lielu.todo.ui.common.projectLabel
 import com.lielu.todo.ui.common.reminderLabel
 import com.lielu.todo.ui.common.repeatLabel
 import com.lielu.todo.ui.theme.LocalTodoColors
@@ -221,10 +223,7 @@ fun TaskDetailScreen(
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background),
                 title = {
                     Text(
-                        state.projects
-                            .firstOrNull { it.id == task.projectId }
-                            ?.title
-                            .orEmpty(),
+                        projectLabel(state.projects.firstOrNull { it.id == task.projectId }, state.inboxId, ""),
                     )
                 },
                 navigationIcon = {
@@ -341,13 +340,17 @@ fun TaskDetailScreen(
                 }
             }
             Box {
+                val project = state.projects.firstOrNull { it.id == task.projectId }
+                val projectColor = project?.let { projectColors(listOf(it))[it.id] }
                 DetailRow(
                     Icons.Filled.Inbox,
-                    state.projects.firstOrNull { it.id == task.projectId }?.title ?: "Projet",
+                    projectLabel(project, state.inboxId),
+                    tint = projectColor ?: MaterialTheme.colorScheme.onSurfaceVariant,
+                    textColor = projectColor ?: Color.Unspecified,
                 ) {
                     showProject = true
                 }
-                ProjectMenu(showProject, state.projects, onDismiss = { showProject = false }) {
+                ProjectMenu(showProject, state.projects, state.inboxId, onDismiss = { showProject = false }) {
                     repository.updateTask(task.copy(projectId = it.id))
                     showProject = false
                 }
@@ -707,6 +710,7 @@ private fun DetailRow(
     icon: ImageVector,
     text: String,
     tint: Color = MaterialTheme.colorScheme.onSurfaceVariant,
+    textColor: Color = Color.Unspecified,
     onClick: () -> Unit,
 ) {
     Row(
@@ -714,7 +718,12 @@ private fun DetailRow(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Icon(icon, contentDescription = null, tint = tint)
-        Text(text, modifier = Modifier.padding(start = 16.dp), style = MaterialTheme.typography.bodyLarge)
+        Text(
+            text,
+            modifier = Modifier.padding(start = 16.dp),
+            style = MaterialTheme.typography.bodyLarge,
+            color = textColor,
+        )
     }
 }
 

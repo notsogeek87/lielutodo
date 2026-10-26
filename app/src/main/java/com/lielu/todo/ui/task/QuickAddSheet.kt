@@ -53,6 +53,7 @@ import com.lielu.todo.ui.common.TimePickerDialog
 import com.lielu.todo.ui.common.borderlessFieldColors
 import com.lielu.todo.ui.common.dayLabel
 import com.lielu.todo.ui.common.priorityName
+import com.lielu.todo.ui.common.projectLabel
 import com.lielu.todo.ui.theme.LocalTodoColors
 import com.lielu.todo.ui.theme.forPriority
 import java.time.Instant
@@ -180,10 +181,10 @@ fun QuickAddSheet(
                 Box {
                     QuickChip(
                         onClick = { showProject = true },
-                        label = { Text(project?.title ?: "Projet") },
+                        label = { Text(projectLabel(project, state.inboxId)) },
                         leadingIcon = { Icon(Icons.Filled.Inbox, contentDescription = null) },
                     )
-                    ProjectMenu(showProject, state.projects, onDismiss = { showProject = false }) {
+                    ProjectMenu(showProject, state.projects, state.inboxId, onDismiss = { showProject = false }) {
                         manualProject = it.id
                         showProject = false
                     }

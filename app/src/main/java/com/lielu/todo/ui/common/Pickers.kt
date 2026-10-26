@@ -108,10 +108,12 @@ fun PriorityMenu(
 fun ProjectMenu(
     expanded: Boolean,
     projects: List<Project>,
+    inboxId: Long,
     onDismiss: () -> Unit,
     onPick: (Project) -> Unit,
 ) {
     if (!expanded) return
+    val colors = projectColors(projects)
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("Projet") },
@@ -119,8 +121,9 @@ fun ProjectMenu(
             Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
                 orderedProjects(projects).forEach { (project, depth) ->
                     Text(
-                        project.title,
+                        projectLabel(project, inboxId),
                         style = MaterialTheme.typography.bodyLarge,
+                        color = colors[project.id] ?: Color.Unspecified,
                         modifier =
                             Modifier
                                 .fillMaxWidth()
@@ -133,6 +136,18 @@ fun ProjectMenu(
         confirmButton = { TextButton(onClick = onDismiss) { Text("Annuler") } },
     )
 }
+
+/** Nom affiché d'un projet : la boîte de réception s'appelle « Tâches personnelles ». */
+fun projectLabel(
+    project: Project?,
+    inboxId: Long,
+    fallback: String = "Projet",
+): String =
+    when {
+        project == null -> fallback
+        project.id == inboxId -> "Tâches personnelles"
+        else -> project.title
+    }
 
 @Composable
 fun LabelsDialog(
