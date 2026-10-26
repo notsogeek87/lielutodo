@@ -17,6 +17,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.RadioButton
+import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
@@ -31,6 +32,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.lielu.todo.LieluApplication
 import com.lielu.todo.data.model.Project
 import com.lielu.todo.ui.theme.ThemedContent
+import kotlin.math.roundToInt
 
 /**
  * Configuration d'un widget liste, ouverte à son ajout (et par appui long > « Reconfigurer ») : l'utilisateur choisit
@@ -101,6 +103,26 @@ private fun WidgetConfigScreen(
                     config.projectId == project.id,
                 ) { onChange(config.copy(projectId = project.id)) }
             }
+            Text(
+                "Taille du texte : ${config.fontPercent} %",
+                style = MaterialTheme.typography.titleMedium,
+                modifier = Modifier.padding(top = 16.dp),
+            )
+            Slider(
+                value = config.fontPercent.toFloat(),
+                onValueChange = { onChange(config.copy(fontPercent = it.roundToInt())) },
+                valueRange = 70f..160f,
+            )
+            Text(
+                "Opacité du fond : ${config.opacityPercent} %",
+                style = MaterialTheme.typography.titleMedium,
+                modifier = Modifier.padding(top = 8.dp),
+            )
+            Slider(
+                value = config.opacityPercent.toFloat(),
+                onValueChange = { onChange(config.copy(opacityPercent = it.roundToInt())) },
+                valueRange = 0f..100f,
+            )
             if (config.projectId != 0L) {
                 Row(
                     modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
