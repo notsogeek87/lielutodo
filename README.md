@@ -54,11 +54,16 @@ source » si Android le demande. **Ensuite :** rien à faire, l'app propose elle
 
 ## Signature des APK
 
-Par défaut, les APK release sont signés avec le keystore **versionné** `app/debug.keystore` (mots de passe
-publics `android`) : zéro configuration, et la mise à jour par-dessus fonctionne puisque la signature est stable.
-Pour une vraie clé de publication, ajouter les secrets du dépôt `KEYSTORE_BASE64` (le `.jks` encodé en base64),
-`KEYSTORE_PASSWORD`, `KEY_ALIAS`, `KEY_PASSWORD` — ou, en local, un `keystore.properties` (`storeFile`,
-`storePassword`, `keyAlias`, `keyPassword`). **Changer de clé impose de désinstaller l'app une fois.**
+Les APK release publiés par la CI sont signés avec la **clé de publication de LieluTodo** (`CN=LieluTodo, O=Lielu,
+C=FR`, SHA-256 `1E:59:40:FA:4F:EA:D7:2D:6E:50:7B:47:A9:7B:9B:B6:5C:57:C8:99:B2:03:88:3B:D6:01:3D:0B:5E:18:2A:6D`),
+fournie par les secrets du dépôt `KEYSTORE_BASE64` (le `.jks` encodé en base64), `KEYSTORE_PASSWORD`, `KEY_ALIAS`,
+`KEY_PASSWORD`. La clé et son mot de passe sont archivés hors du dépôt : les perdre obligerait à désinstaller l'app
+à la mise à jour suivante. En local, un `keystore.properties` (`storeFile`, `storePassword`, `keyAlias`,
+`keyPassword`) permet de signer de la même façon.
+
+Sans ces secrets (copie du modèle, build local), c'est le keystore **versionné** `app/debug.keystore` (mots de passe
+publics `android`) qui signe : pratique pour tester, mais n'importe qui peut signer avec, il ne doit donc jamais
+signer une app distribuée. **Changer de clé impose de désinstaller l'app une fois.**
 
 ## Build
 

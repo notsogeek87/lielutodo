@@ -63,8 +63,10 @@ uniquement, l'APK est ensuite publié :
 
 `<version>` = `<appVersionBase>.<run_number>` ; le run number est aussi le `versionCode` (`BUILD_NUMBER`), condition
 pour que la mise à jour intégrée voie la release comme plus récente. Une release **par build**, jamais un tag
-écrasé. Les APK sont signés avec le keystore versionné `app/debug.keystore` par défaut, ou avec les secrets
-`KEYSTORE_BASE64`/`KEYSTORE_PASSWORD`/`KEY_ALIAS`/`KEY_PASSWORD` s'ils existent (README, « Signature »).
+écrasé. LieluTodo : les secrets `KEYSTORE_BASE64`/`KEYSTORE_PASSWORD`/`KEY_ALIAS`/`KEY_PASSWORD` sont configurés,
+les APK publiés sont signés avec la clé de publication (README, « Signature » : empreinte attendue). Le keystore
+versionné `app/debug.keystore` ne sert qu'à défaut de secrets (builds locaux) — dépôt public, il ne doit jamais signer
+une app distribuée.
 R8 est désactivé (`isMinifyEnabled = false`) : ne l'activer qu'après l'avoir testé sur un appareil.
 
 ## Architecture
