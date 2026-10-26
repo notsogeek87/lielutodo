@@ -37,6 +37,10 @@ class AppPrefs(
         get() = prefs.getBoolean(KEY_SOUND, false)
         set(value) = prefs.edit().putBoolean(KEY_SOUND, value).apply()
 
+    var inboxShowDone: Boolean
+        get() = prefs.getBoolean(KEY_INBOX_DONE, false)
+        set(value) = prefs.edit().putBoolean(KEY_INBOX_DONE, value).apply()
+
     var upcoming: UpcomingSettings
         get() =
             UpcomingSettings(
@@ -106,6 +110,7 @@ class AppPrefs(
         const val KEY_ICON = "icon"
         const val KEY_UP_LAYOUT = "upcoming_layout"
         const val KEY_UP_DONE = "upcoming_done"
+        const val KEY_INBOX_DONE = "inbox_done"
         const val KEY_UP_FUTURE = "upcoming_future"
         const val KEY_UP_COLORING = "upcoming_coloring"
         const val KEY_UP_SORT = "upcoming_sort"
