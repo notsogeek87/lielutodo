@@ -24,6 +24,8 @@ data class Project(
     val position: Double,
     /** Vue « liste » du projet : c'est elle qui porte l'ordre manuel des tâches ; 0 si inconnue. */
     val listViewId: Long = 0,
+    /** Vue Kanban (colonnes) du projet ; 0 si elle n'existe pas. */
+    val kanbanViewId: Long = 0,
 )
 
 data class Label(
@@ -39,6 +41,32 @@ data class User(
 ) {
     val display: String get() = name.ifBlank { username }
 }
+
+/** Fichier joint à une tâche. Un [id] négatif = ajouté hors ligne, pas encore envoyé. */
+data class Attachment(
+    val id: Long,
+    val name: String,
+    val size: Long,
+    val mime: String,
+    val created: Instant?,
+)
+
+/** Colonne d'une vue Kanban ; [taskIds] dans l'ordre d'affichage. */
+data class Bucket(
+    val id: Long,
+    val title: String,
+    val taskIds: List<Long>,
+)
+
+/** Notification Vikunja (assignation, commentaire, rappel…), résumée en une phrase lisible. */
+data class AppNotification(
+    val id: Long,
+    val text: String,
+    val read: Boolean,
+    val created: Instant?,
+    /** Tâche concernée, 0 si la notification n'en vise pas. */
+    val taskId: Long,
+)
 
 data class Comment(
     val id: Long,
@@ -110,6 +138,9 @@ data class Task(
     /** Tâche parente (0 = aucune) : les sous-tâches sont des tâches dont [parentId] pointe vers la parente. */
     val parentId: Long = 0,
     val assignees: List<User> = emptyList(),
+    /** Date de complétion et de création (pour la productivité et l'activité) ; `null` si inconnue. */
+    val doneAt: Instant? = null,
+    val createdAt: Instant? = null,
 ) {
     val isRecurring: Boolean get() = repeatAfter > 0 || repeatMode == REPEAT_MONTHLY
 
@@ -132,6 +163,7 @@ data class Task(
         o.put("priority", priority)
         o.put("is_favorite", isFavorite)
         o.put("position", position)
+        o.put("done_at", doneAt?.toString() ?: ZERO_DATE)
         o.put("repeat_after", repeatAfter)
         o.put("repeat_mode", repeatMode)
         o.put("labels", JSONArray(labels.map { it.toJson() }))
@@ -199,6 +231,7 @@ fun Project.toJson(): JSONObject =
         .put("is_archived", isArchived)
         .put("position", position)
         .put("list_view_id", listViewId)
+        .put("kanban_view_id", kanbanViewId)
 
 fun SavedFilter.toJson(): JSONObject =
     JSONObject()
@@ -261,10 +294,9 @@ fun userFromJson(o: JSONObject) = User(o.getLong("id"), o.optString("username"),
 
 fun projectFromJson(o: JSONObject): Project {
     val views = o.optJSONArray("views")
-    val listView =
-        (0 until (views?.length() ?: 0))
-            .map { views!!.getJSONObject(it) }
-            .firstOrNull { it.optString("view_kind") == "list" }
+    val viewObjects = (0 until (views?.length() ?: 0)).map { views!!.getJSONObject(it) }
+    val listView = viewObjects.firstOrNull { it.optString("view_kind") == "list" }
+    val kanbanView = viewObjects.firstOrNull { it.optString("view_kind") == "kanban" }
     return Project(
         id = o.getLong("id"),
         title = o.optString("title"),
@@ -274,6 +306,7 @@ fun projectFromJson(o: JSONObject): Project {
         isArchived = o.optBoolean("is_archived"),
         position = o.optDouble("position", 0.0),
         listViewId = listView?.optLong("id") ?: o.optLong("list_view_id", 0),
+        kanbanViewId = kanbanView?.optLong("id") ?: o.optLong("kanban_view_id", 0),
     )
 }
 
@@ -304,6 +337,8 @@ fun taskFromJson(o: JSONObject): Task {
         repeatMode = o.optInt("repeat_mode"),
         parentId = if (parents != null && parents.length() > 0) parents.getJSONObject(0).optLong("id") else 0,
         assignees = (0 until (assignees?.length() ?: 0)).map { userFromJson(assignees!!.getJSONObject(it)) },
+        doneAt = parseDate(o.optString("done_at")),
+        createdAt = parseDate(o.optString("created")),
     )
 }
 
@@ -318,3 +353,87 @@ fun commentFromJson(o: JSONObject): Comment {
 }
 
 fun JSONArray.objects(): List<JSONObject> = (0 until length()).map { getJSONObject(it) }
+
+fun attachmentFromJson(o: JSONObject): Attachment {
+    val file = o.optJSONObject("file") ?: o
+    return Attachment(
+        id = o.getLong("id"),
+        name = file.optString("name"),
+        size = file.optLong("size"),
+        mime = file.optString("mime"),
+        created = parseDate(o.optString("created")),
+    )
+}
+
+fun Attachment.toJson(): JSONObject =
+    JSONObject()
+        .put("id", id)
+        .put("created", created?.toString() ?: ZERO_DATE)
+        .put("file", JSONObject().put("name", name).put("size", size).put("mime", mime))
+
+fun Bucket.toJson(): JSONObject = JSONObject().put("id", id).put("title", title).put("task_ids", JSONArray(taskIds))
+
+fun bucketFromJson(o: JSONObject): Bucket {
+    val tasks = o.optJSONArray("tasks")
+    val ids = o.optJSONArray("task_ids")
+    return Bucket(
+        id = o.getLong("id"),
+        title = o.optString("title"),
+        taskIds =
+            when {
+                tasks != null -> (0 until tasks.length()).map { tasks.getJSONObject(it).getLong("id") }
+                ids != null -> (0 until ids.length()).map { ids.getLong(it) }
+                else -> emptyList()
+            },
+    )
+}
+
+private val NOTIFICATION_VERBS =
+    mapOf(
+        "task.assigned" to "vous a assigné",
+        "task.comment" to "a commenté",
+        "task.deadline.reached" to "échéance atteinte :",
+        "task.reminder" to "rappel :",
+        "task.mentioned" to "vous a mentionné dans",
+        "project.created" to "a créé le projet",
+        "team.member.added" to "vous a ajouté à l'équipe",
+    )
+
+/**
+ * Le contenu de `notification` dépend du type : on en tire au mieux « qui », « quoi » (type) et la tâche, sans
+ * jamais échouer sur un type inconnu (on affiche alors son nom brut).
+ */
+fun notificationFromJson(o: JSONObject): AppNotification {
+    val body = o.optJSONObject("notification")
+    val doer = body?.optJSONObject("doer")
+    val who = doer?.optString("name").orEmpty().ifBlank { doer?.optString("username").orEmpty() }
+    val task = body?.optJSONObject("task")
+    val project = body?.optJSONObject("project")
+    val name = o.optString("name")
+    val verb = NOTIFICATION_VERBS[name] ?: name.ifBlank { "notification" }
+    val subject = task?.optString("title").orEmpty().ifBlank { project?.optString("title").orEmpty() }
+    return AppNotification(
+        id = o.getLong("id"),
+        text = listOf(who, verb, subject).filter { it.isNotBlank() }.joinToString(" "),
+        read = o.optBoolean("read") || parseDate(o.optString("read_at")) != null,
+        created = parseDate(o.optString("created")),
+        taskId = task?.optLong("id") ?: 0,
+    )
+}
+
+fun AppNotification.toJson(): JSONObject =
+    JSONObject()
+        .put("id", id)
+        .put("text", text)
+        .put("read", read)
+        .put("created", created?.toString() ?: ZERO_DATE)
+        .put("task_id", taskId)
+
+fun appNotificationFromStoredJson(o: JSONObject) =
+    AppNotification(
+        o.getLong("id"),
+        o.optString("text"),
+        o.optBoolean("read"),
+        parseDate(o.optString("created")),
+        o.optLong("task_id"),
+    )

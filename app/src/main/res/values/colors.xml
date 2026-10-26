@@ -9,4 +9,10 @@
     <color name="widget_text">#202020</color>
     <color name="widget_text_secondary">#8A8A8A</color>
     <color name="widget_accent">#0A8A78</color>
+    <!-- Fonds des icônes d'app alternatives (choisies dans Parcourir) : sans lien avec le thème de l'écran. -->
+    <color name="launcher_red">#C9352B</color>
+    <color name="launcher_orange">#E8890C</color>
+    <color name="launcher_green">#2E8B57</color>
+    <color name="launcher_blue">#246FE0</color>
+    <color name="launcher_black">#1D1B20</color>
 </resources>

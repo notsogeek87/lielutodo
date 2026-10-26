@@ -24,4 +24,15 @@ interface HttpApi {
         query: Map<String, String> = emptyMap(),
         body: JSONObject? = null,
     ): ApiResponse
+
+    /** Envoie un fichier (formulaire multipart, champ `files`) ; mêmes erreurs que [call]. */
+    suspend fun upload(
+        path: String,
+        fileName: String,
+        mime: String,
+        bytes: ByteArray,
+    ): ApiResponse
+
+    /** Télécharge le contenu brut d'une ressource. */
+    suspend fun download(path: String): ByteArray
 }

@@ -4,6 +4,7 @@ import com.lielu.todo.data.api.ApiException
 import com.lielu.todo.data.api.ApiResponse
 import com.lielu.todo.data.api.HttpApi
 import com.lielu.todo.data.model.Label
+import com.lielu.todo.data.todo.AttachmentFiles
 import com.lielu.todo.data.todo.LocalCache
 import com.lielu.todo.data.todo.TodoRepository
 import com.lielu.todo.data.todo.TodoState
@@ -32,7 +33,28 @@ private class FakeServer : HttpApi {
     private val extraProjects = mutableListOf<JSONObject>()
     private val extraLabels = mutableListOf<JSONObject>()
     val comments = mutableMapOf<Long, MutableList<String>>()
+    val uploads = mutableListOf<String>()
+    val labels = mutableMapOf<Long, JSONObject>()
+    val unreadNotifications = mutableSetOf(1L, 2L)
     private var nextId = 100L
+
+    override suspend fun upload(
+        path: String,
+        fileName: String,
+        mime: String,
+        bytes: ByteArray,
+    ): ApiResponse {
+        calls += "UPLOAD $path"
+        if (!online) throw IOException("offline")
+        uploads += "$fileName:$mime:${bytes.size}"
+        return ApiResponse(200, "{}", emptyMap())
+    }
+
+    override suspend fun download(path: String): ByteArray {
+        calls += "DOWNLOAD $path"
+        if (!online) throw IOException("offline")
+        return "contenu".toByteArray()
+    }
 
     override suspend fun call(
         method: String,
@@ -50,7 +72,18 @@ private class FakeServer : HttpApi {
                     JSONArray(
                         listOf(
                             JSONObject().put("id", 1).put("title", "Boîte de réception"),
-                            JSONObject().put("id", 2).put("title", "Perso"),
+                            JSONObject()
+                                .put("id", 2)
+                                .put("title", "Perso")
+                                .put(
+                                    "views",
+                                    JSONArray(
+                                        listOf(
+                                            JSONObject().put("id", 20).put("view_kind", "list"),
+                                            JSONObject().put("id", 21).put("view_kind", "kanban"),
+                                        ),
+                                    ),
+                                ),
                         ) + extraProjects,
                     ).toString(),
                 )
@@ -76,7 +109,7 @@ private class FakeServer : HttpApi {
                 labelCalls++
                 ok("{}")
             }
-            method == "DELETE" && path.startsWith("/tasks/") -> {
+            method == "DELETE" && path.matches(Regex("/tasks/\\d+")) -> {
                 tasks.remove(path.substringAfterLast('/').toLong())
                 ok("{}")
             }
@@ -117,9 +150,133 @@ private class FakeServer : HttpApi {
                 created += "assign:" + path.split('/')[2] + ">" + body!!.getLong("user_id")
                 ok("{}")
             }
+            method == "POST" && path.matches(Regex("/tasks/\\d+/comments/\\d+")) -> {
+                created += "comment-edit:" + path.split('/')[4] + ":" + body!!.getString("comment")
+                ok("{}")
+            }
+            method == "DELETE" && path.matches(Regex("/tasks/\\d+/comments/\\d+")) -> {
+                created += "comment-delete:" + path.split('/')[4]
+                ok("{}")
+            }
+            method == "GET" && path.matches(Regex("/labels/\\d+")) ->
+                ok(
+                    labels
+                        .getOrPut(path.substringAfterLast('/').toLong()) {
+                            JSONObject().put("id", 10).put("title", "urgent").put("description", "garde-moi")
+                        }.toString(),
+                )
+            method == "POST" && path.matches(Regex("/labels/\\d+")) -> {
+                labels[path.substringAfterLast('/').toLong()] = JSONObject(body.toString())
+                ok("{}")
+            }
+            method == "DELETE" && path.matches(Regex("/labels/\\d+")) -> {
+                created += "label-delete:" + path.substringAfterLast('/')
+                ok("{}")
+            }
+            method == "GET" && path == "/notifications" ->
+                ok(
+                    JSONArray(
+                        listOf(1L, 2L, 3L).map { id ->
+                            JSONObject()
+                                .put("id", id)
+                                .put("name", "task.assigned")
+                                .put("read", id !in unreadNotifications)
+                                .put(
+                                    "notification",
+                                    JSONObject()
+                                        .put(
+                                            "doer",
+                                            JSONObject().put("username", "marie"),
+                                        ).put("task", JSONObject().put("id", 5).put("title", "Rapport")),
+                                )
+                        },
+                    ).toString(),
+                )
+            method == "POST" && path.startsWith("/notifications/") -> {
+                unreadNotifications -= path.substringAfterLast('/').toLong()
+                ok("{}")
+            }
+            method == "POST" && path == "/notifications" -> {
+                unreadNotifications.clear()
+                ok("{}")
+            }
+            method == "GET" && path.matches(Regex("/tasks/\\d+/attachments")) ->
+                ok(
+                    JSONArray(
+                        listOf(
+                            JSONObject()
+                                .put(
+                                    "id",
+                                    900,
+                                ).put(
+                                    "file",
+                                    JSONObject()
+                                        .put(
+                                            "name",
+                                            "serveur.pdf",
+                                        ).put("size", 12)
+                                        .put("mime", "application/pdf"),
+                                ),
+                        ),
+                    ).toString(),
+                )
+            method == "GET" && path == "/projects/2/views/20/tasks" -> ok(JSONArray(tasks.values.toList()).toString())
+            method == "GET" && path == "/projects/2/views/21/tasks" ->
+                ok(
+                    JSONArray(
+                        listOf(
+                            JSONObject()
+                                .put(
+                                    "id",
+                                    1,
+                                ).put("title", "À faire")
+                                .put("tasks", JSONArray(tasks.values.toList())),
+                            JSONObject().put("id", 2).put("title", "Fait").put("tasks", JSONArray()),
+                        ),
+                    ).toString(),
+                )
+            method == "POST" && path.matches(Regex("/projects/\\d+/views/\\d+/buckets/\\d+/tasks")) -> {
+                created += "bucket:" + path.split('/')[6] + ">" + body!!.getLong("task_id")
+                ok("{}")
+            }
             else -> throw ApiException(404, "route inconnue $method $path")
         }
     }
+}
+
+private class MemoryFiles : AttachmentFiles {
+    val pending = mutableMapOf<String, ByteArray>()
+    private val downloaded = mutableMapOf<String, java.io.File>()
+
+    override fun stagePending(
+        name: String,
+        bytes: ByteArray,
+    ): String =
+        "pending-${pending.size}-$name".also {
+            pending[it] =
+                bytes
+        }
+
+    override fun readPending(path: String): ByteArray = pending[path] ?: throw IOException("manquant")
+
+    override fun deletePending(path: String) {
+        pending.remove(path)
+    }
+
+    override fun cached(
+        attachmentId: Long,
+        name: String,
+    ) = downloaded["$attachmentId-$name"]
+
+    override fun cache(
+        attachmentId: Long,
+        name: String,
+        bytes: ByteArray,
+    ): java.io.File =
+        java.io.File.createTempFile("att", name).also {
+            it.writeBytes(bytes)
+            downloaded["$attachmentId-$name"] = it
+        }
 }
 
 private class MemoryCache : LocalCache {
@@ -137,7 +294,8 @@ class TodoRepositoryTest {
     private fun TestScope.repo(
         server: FakeServer,
         cache: LocalCache = MemoryCache(),
-    ) = TodoRepository(server, cache, CoroutineScope(StandardTestDispatcher(testScheduler)))
+        files: AttachmentFiles = MemoryFiles(),
+    ) = TodoRepository(server, cache, files, CoroutineScope(StandardTestDispatcher(testScheduler)))
 
     @Test
     fun refreshLoadsProjectsLabelsAndTasks() =
@@ -430,5 +588,208 @@ class TodoRepositoryTest {
                 repo.state.value.tasks
                     .map { it.title },
             )
+        }
+
+    @Test
+    fun attachmentAddedOfflineIsStagedThenUploaded() =
+        runTest {
+            val server = FakeServer()
+            server.tasks[5] = JSONObject("""{"id":5,"title":"T","project_id":2,"done":false}""")
+            val files = MemoryFiles()
+            val repo = repo(server, files = files)
+            repo.refresh()
+            server.online = false
+            repo.addAttachment(5, "photo.jpg", "image/jpeg", ByteArray(1000))
+            advanceUntilIdle()
+            assertEquals(1, repo.state.value.pending)
+            assertEquals(
+                listOf("photo.jpg"),
+                repo.state.value.attachments[5]
+                    .orEmpty()
+                    .map { it.name },
+            )
+            assertEquals(1, files.pending.size)
+
+            server.online = true
+            repo.refresh()
+            assertEquals(listOf("photo.jpg:image/jpeg:1000"), server.uploads)
+            assertEquals(0, repo.state.value.pending)
+            assertTrue(files.pending.isEmpty())
+            // La liste du serveur remplace le marqueur local.
+            assertEquals(
+                listOf("serveur.pdf"),
+                repo.state.value.attachments[5]
+                    .orEmpty()
+                    .map { it.name },
+            )
+        }
+
+    @Test
+    fun removingAnUnsentAttachmentNeverUploadsAndDownloadedFilesStayAvailableOffline() =
+        runTest {
+            val server = FakeServer()
+            server.tasks[5] = JSONObject("""{"id":5,"title":"T","project_id":2,"done":false}""")
+            val files = MemoryFiles()
+            val repo = repo(server, files = files)
+            repo.refresh()
+            server.online = false
+            repo.addAttachment(5, "a.txt", "text/plain", ByteArray(3))
+            val local =
+                repo.state.value.attachments
+                    .getValue(5)
+                    .single()
+            repo.deleteAttachment(5, local)
+            assertEquals(0, repo.state.value.pending)
+            assertTrue(files.pending.isEmpty())
+
+            server.online = true
+            repo.refreshAttachments(5)
+            val remote =
+                repo.state.value.attachments
+                    .getValue(5)
+                    .single()
+            val first = repo.openAttachment(5, remote)
+            server.online = false
+            assertEquals(first, repo.openAttachment(5, remote))
+            assertEquals(1, server.calls.count { it.startsWith("DOWNLOAD") })
+        }
+
+    @Test
+    fun commentsCanBeEditedAndDeletedOffline() =
+        runTest {
+            val server = FakeServer()
+            server.tasks[5] = JSONObject("""{"id":5,"title":"T","project_id":2,"done":false}""")
+            val repo = repo(server)
+            repo.refresh()
+            server.comments[5] = mutableListOf("du serveur")
+            repo.refreshComments(5)
+            val remote =
+                repo.state.value.comments
+                    .getValue(5)
+                    .single()
+            server.online = false
+            repo.editComment(5, remote, "corrigé")
+            repo.addComment(5, "brouillon")
+            val draft =
+                repo.state.value.comments
+                    .getValue(5)
+                    .last()
+            repo.editComment(5, draft, "brouillon corrigé")
+            assertEquals(
+                listOf("corrigé", "brouillon corrigé"),
+                repo.state.value.comments
+                    .getValue(5)
+                    .map { it.text },
+            )
+
+            server.online = true
+            repo.refresh()
+            assertEquals(0, repo.state.value.pending)
+            assertTrue("comment-edit:${remote.id}:corrigé" in server.created)
+            assertEquals(listOf("du serveur", "brouillon corrigé"), server.comments.getValue(5))
+
+            repo.deleteComment(5, remote)
+            repo.refresh()
+            assertTrue("comment-delete:${remote.id}" in server.created)
+        }
+
+    @Test
+    fun labelRenameKeepsServerDescriptionAndDeleteRemovesItFromTasks() =
+        runTest {
+            val server = FakeServer()
+            server.tasks[5] =
+                JSONObject("""{"id":5,"title":"T","project_id":2,"done":false,"labels":[{"id":10,"title":"urgent"}]}""")
+            val repo = repo(server)
+            repo.refresh()
+            server.online = false
+            repo.updateLabel(10, "important", "ff0000")
+            assertEquals(
+                "important",
+                repo.state.value.tasks
+                    .single()
+                    .labels
+                    .single()
+                    .title,
+            )
+            server.online = true
+            repo.refresh()
+            val sent = server.labels.getValue(10)
+            assertEquals("important", sent.getString("title"))
+            assertEquals("ff0000", sent.getString("hex_color"))
+            assertEquals("garde-moi", sent.getString("description"))
+
+            repo.deleteLabel(10)
+            assertTrue(
+                repo.state.value.tasks
+                    .single()
+                    .labels
+                    .isEmpty(),
+            )
+            repo.refresh()
+            assertTrue("label-delete:10" in server.created)
+        }
+
+    @Test
+    fun kanbanMoveAndNotificationReadAreQueuedAndSent() =
+        runTest {
+            val server = FakeServer()
+            server.tasks[5] = JSONObject("""{"id":5,"title":"T","project_id":2,"done":false}""")
+            val repo = repo(server)
+            repo.refresh()
+            repo.refreshNotifications()
+            assertEquals(2, repo.state.value.unreadNotifications)
+            assertEquals(
+                "marie vous a assigné Rapport",
+                repo.state.value.notifications
+                    .first()
+                    .text,
+            )
+            assertEquals(
+                5L,
+                repo.state.value.notifications
+                    .first()
+                    .taskId,
+            )
+
+            repo.refreshKanban(2)
+            assertEquals(
+                listOf("À faire", "Fait"),
+                repo.state.value.kanban
+                    .getValue(2)
+                    .map { it.title },
+            )
+            assertEquals(
+                listOf(5L),
+                repo.state.value.kanban
+                    .getValue(2)
+                    .first()
+                    .taskIds,
+            )
+
+            server.online = false
+            repo.moveToBucket(2, 5, 2)
+            assertEquals(
+                listOf(5L),
+                repo.state.value.kanban
+                    .getValue(2)
+                    .last()
+                    .taskIds,
+            )
+            assertTrue(
+                repo.state.value.kanban
+                    .getValue(2)
+                    .first()
+                    .taskIds
+                    .isEmpty(),
+            )
+            repo.markNotificationRead(1)
+            assertEquals(1, repo.state.value.unreadNotifications)
+            repo.markAllNotificationsRead()
+            assertEquals(0, repo.state.value.unreadNotifications)
+            server.online = true
+            repo.refresh()
+            assertEquals(0, repo.state.value.pending)
+            assertTrue(server.unreadNotifications.isEmpty())
+            assertTrue("bucket:2>5" in server.created)
         }
 }

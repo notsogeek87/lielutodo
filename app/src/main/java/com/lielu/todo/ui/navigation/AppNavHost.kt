@@ -13,8 +13,11 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.lielu.todo.AppContainer
+import com.lielu.todo.ui.home.ActivityScreen
 import com.lielu.todo.ui.home.HomeScreen
+import com.lielu.todo.ui.home.KanbanScreen
 import com.lielu.todo.ui.home.ListTarget
+import com.lielu.todo.ui.home.NotificationsScreen
 import com.lielu.todo.ui.home.SearchScreen
 import com.lielu.todo.ui.home.TaskListScreen
 import com.lielu.todo.ui.login.LoginScreen
@@ -29,12 +32,17 @@ object AppDestinations {
     const val LABEL = "label/{id}"
     const val FILTER = "filter/{id}"
     const val FAVORITES = "favorites"
+    const val NOTIFICATIONS = "notifications"
+    const val ACTIVITY = "activity"
+    const val KANBAN = "kanban/{id}"
     const val SEARCH = "search"
     const val TASK = "task/{id}"
 
     fun project(id: Long) = "project/$id"
 
     fun label(id: Long) = "label/$id"
+
+    fun kanban(id: Long) = "kanban/$id"
 
     fun filter(id: Long) = "filter/$id"
 
@@ -79,6 +87,9 @@ fun AppNavHost(
                 onOpenFavorites = { navController.navigate(AppDestinations.FAVORITES) },
                 onSearch = { navController.navigate(AppDestinations.SEARCH) },
                 reminderScheduler = container.reminderScheduler,
+                prefs = container.prefs,
+                onOpenNotifications = { navController.navigate(AppDestinations.NOTIFICATIONS) },
+                onOpenActivity = { navController.navigate(AppDestinations.ACTIVITY) },
                 onSettings = { navController.navigate(AppDestinations.SETTINGS) },
                 onLogout = { container.session.clear() },
             )
@@ -90,6 +101,7 @@ fun AppNavHost(
                 target = ListTarget(projectId = entry.arguments?.getLong("id")),
                 onOpenTask = { navController.navigate(AppDestinations.task(it)) },
                 onBack = { navController.popBackStack() },
+                onOpenKanban = { navController.navigate(AppDestinations.kanban(it)) },
             )
         }
 
@@ -115,6 +127,31 @@ fun AppNavHost(
             TaskListScreen(
                 repository = repository,
                 target = ListTarget(favorites = true),
+                onOpenTask = { navController.navigate(AppDestinations.task(it)) },
+                onBack = { navController.popBackStack() },
+            )
+        }
+
+        composable(AppDestinations.NOTIFICATIONS) {
+            NotificationsScreen(
+                repository = repository,
+                onOpenTask = { navController.navigate(AppDestinations.task(it)) },
+                onBack = { navController.popBackStack() },
+            )
+        }
+
+        composable(AppDestinations.ACTIVITY) {
+            ActivityScreen(
+                repository = repository,
+                onOpenTask = { navController.navigate(AppDestinations.task(it)) },
+                onBack = { navController.popBackStack() },
+            )
+        }
+
+        composable(AppDestinations.KANBAN, arguments = idArgument) { entry ->
+            KanbanScreen(
+                repository = repository,
+                projectId = entry.arguments?.getLong("id") ?: 0L,
                 onOpenTask = { navController.navigate(AppDestinations.task(it)) },
                 onBack = { navController.popBackStack() },
             )

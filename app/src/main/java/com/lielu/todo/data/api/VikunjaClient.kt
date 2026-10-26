@@ -49,6 +49,70 @@ class VikunjaClient(
             }
         }
 
+    override suspend fun upload(
+        path: String,
+        fileName: String,
+        mime: String,
+        bytes: ByteArray,
+    ): ApiResponse =
+        withContext(Dispatchers.IO) {
+            val boundary = "----lielutodo" + System.nanoTime()
+            val safeName = fileName.replace("\"", "_").replace("\r", "").replace("\n", "")
+            val head =
+                "--$boundary\r\nContent-Disposition: form-data; name=\"files\"; filename=\"$safeName\"\r\n" +
+                    "Content-Type: $mime\r\n\r\n"
+            val tail = "\r\n--$boundary--\r\n"
+            // UTF-8 : un nom de fichier accentué doit arriver intact.
+            val headBytes = head.toByteArray(Charsets.UTF_8)
+            val tailBytes = tail.toByteArray(Charsets.UTF_8)
+            val connection = URL("${session.baseUrl}/api/v1$path").openConnection() as HttpURLConnection
+            try {
+                connection.requestMethod = "PUT"
+                connection.connectTimeout = CONNECT_TIMEOUT_MS
+                // Un envoi de fichier peut être long : bien plus que les appels JSON.
+                connection.readTimeout = UPLOAD_TIMEOUT_MS
+                connection.setRequestProperty("Accept", "application/json")
+                session.token?.let { connection.setRequestProperty("Authorization", "Bearer $it") }
+                connection.setRequestProperty("Content-Type", "multipart/form-data; boundary=$boundary")
+                connection.doOutput = true
+                connection.setFixedLengthStreamingMode(headBytes.size + bytes.size + tailBytes.size)
+                connection.outputStream.use {
+                    it.write(headBytes)
+                    it.write(bytes)
+                    it.write(tailBytes)
+                }
+                val code = connection.responseCode
+                val stream = if (code >= HTTP_ERROR) connection.errorStream else connection.inputStream
+                val text = stream?.bufferedReader(Charsets.UTF_8)?.use { it.readText() }.orEmpty()
+                if (code >= HTTP_ERROR) throw ApiException(code, errorMessage(code, text))
+                ApiResponse(code, text, emptyMap())
+            } finally {
+                connection.disconnect()
+            }
+        }
+
+    override suspend fun download(path: String): ByteArray =
+        withContext(Dispatchers.IO) {
+            val connection = URL("${session.baseUrl}/api/v1$path").openConnection() as HttpURLConnection
+            try {
+                connection.connectTimeout = CONNECT_TIMEOUT_MS
+                connection.readTimeout = UPLOAD_TIMEOUT_MS
+                session.token?.let { connection.setRequestProperty("Authorization", "Bearer $it") }
+                val code = connection.responseCode
+                if (code >= HTTP_ERROR) {
+                    val text =
+                        connection.errorStream
+                            ?.bufferedReader(Charsets.UTF_8)
+                            ?.use { it.readText() }
+                            .orEmpty()
+                    throw ApiException(code, errorMessage(code, text))
+                }
+                connection.inputStream.use { it.readBytes() }
+            } finally {
+                connection.disconnect()
+            }
+        }
+
     /** Renvoie le jeton. Un code TOTP manquant ou faux donne une [ApiException] 412. */
     suspend fun login(
         baseUrl: String,
@@ -118,6 +182,7 @@ class VikunjaClient(
         // Court : serveur coupé = on veut passer au cache vite, pas attendre 20 s à chaque ouverture.
         private const val CONNECT_TIMEOUT_MS = 6_000
         private const val TIMEOUT_MS = 20_000
+        private const val UPLOAD_TIMEOUT_MS = 120_000
         private const val HTTP_ERROR = 400
         private const val HTTP_UNAUTHORIZED = 401
         private const val HTTP_SERVER_ERROR = 500

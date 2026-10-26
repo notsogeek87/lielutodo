@@ -1,10 +1,16 @@
 package com.lielu.todo.data.todo
 
+import com.lielu.todo.data.model.AppNotification
+import com.lielu.todo.data.model.Attachment
+import com.lielu.todo.data.model.Bucket
 import com.lielu.todo.data.model.Comment
 import com.lielu.todo.data.model.Label
 import com.lielu.todo.data.model.Project
 import com.lielu.todo.data.model.SavedFilter
 import com.lielu.todo.data.model.User
+import com.lielu.todo.data.model.appNotificationFromStoredJson
+import com.lielu.todo.data.model.attachmentFromJson
+import com.lielu.todo.data.model.bucketFromJson
 import com.lielu.todo.data.model.commentFromJson
 import com.lielu.todo.data.model.labelFromJson
 import com.lielu.todo.data.model.objects
@@ -78,7 +84,20 @@ object TodoStateCodec {
                 JSONObject().also { o ->
                     state.projectUsers.forEach { (id, list) -> o.put(id.toString(), JSONArray(list.map(User::toJson))) }
                 },
-            ).put("default_project_id", state.defaultProjectId)
+            ).put(
+                "attachments",
+                JSONObject().also { o ->
+                    state.attachments.forEach { (id, list) ->
+                        o.put(id.toString(), JSONArray(list.map(Attachment::toJson)))
+                    }
+                },
+            ).put(
+                "kanban",
+                JSONObject().also { o ->
+                    state.kanban.forEach { (id, list) -> o.put(id.toString(), JSONArray(list.map(Bucket::toJson))) }
+                },
+            ).put("notifications", JSONArray(state.notifications.map(AppNotification::toJson)))
+            .put("default_project_id", state.defaultProjectId)
             .put("last_sync", state.lastSync)
             .put("ops", JSONArray(state.ops.map(::opToJson)))
 
@@ -96,6 +115,14 @@ object TodoStateCodec {
             filterResults = mapOfArrays(o.optJSONObject("filter_results")) { taskFromJson(it) },
             comments = mapOfArrays(o.optJSONObject("comments")) { commentFromJson(it) },
             projectUsers = mapOfArrays(o.optJSONObject("project_users")) { userFromJson(it) },
+            attachments = mapOfArrays(o.optJSONObject("attachments")) { attachmentFromJson(it) },
+            kanban = mapOfArrays(o.optJSONObject("kanban")) { bucketFromJson(it) },
+            notifications =
+                o
+                    .optJSONArray("notifications")
+                    ?.objects()
+                    ?.map(::appNotificationFromStoredJson)
+                    .orEmpty(),
             defaultProjectId = o.optLong("default_project_id"),
             ops = o.getJSONArray("ops").objects().map(::opFromJson),
             lastSync = o.optLong("last_sync"),
@@ -123,6 +150,7 @@ object TodoStateCodec {
             .put("other_id", op.otherId)
             .put("text", op.text)
             .put("flag", op.flag)
+            .put("extra", op.extra)
 
     private fun opFromJson(o: JSONObject) =
         PendingOp(
@@ -132,5 +160,6 @@ object TodoStateCodec {
             text = o.optString("text"),
             // Ancien format : « labels » jouait le rôle de [PendingOp.flag] pour les UPDATE.
             flag = o.optBoolean("flag", o.optBoolean("labels")),
+            extra = o.optString("extra"),
         )
 }
