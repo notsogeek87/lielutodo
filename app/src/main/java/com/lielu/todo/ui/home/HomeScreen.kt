@@ -68,7 +68,6 @@ import com.lielu.todo.ui.common.ScreenTitle
 import com.lielu.todo.ui.common.SectionHeader
 import com.lielu.todo.ui.common.TaskRow
 import com.lielu.todo.ui.common.dayHeader
-import com.lielu.todo.ui.common.dayLabel
 import com.lielu.todo.ui.common.localDate
 import com.lielu.todo.ui.common.syncSummary
 import com.lielu.todo.ui.common.toggleDone
@@ -117,6 +116,7 @@ fun HomeScreen(
     val snackbar = remember { SnackbarHostState() }
     var tab by rememberSaveable { mutableIntStateOf(HomeTab.INBOX.ordinal) }
     var showAdd by remember { mutableStateOf(false) }
+    var upcomingSettings by remember { mutableStateOf(prefs.upcoming) }
     // 0 = tous les projets ; sinon Aujourd'hui et Prochainement n'affichent que les tâches de ce projet.
     var projectFilter by rememberSaveable { mutableLongStateOf(0L) }
     // Boîte de réception : 0 = la boîte elle-même (défaut), ALL_PROJECTS = toutes les tâches, sinon un projet.
@@ -255,7 +255,20 @@ fun HomeScreen(
                                 val moved = repository.rescheduleOverdue(today)
                                 scope.launch { snackbar.showSnackbar("$moved tâche(s) reportée(s) à aujourd'hui") }
                             })
-                        HomeTab.UPCOMING -> UpcomingTab(visible, today, onToggle, openTask, titleActions, filterTitle)
+                        HomeTab.UPCOMING ->
+                            UpcomingTab(
+                                visible,
+                                today,
+                                upcomingSettings,
+                                {
+                                    upcomingSettings = it
+                                    prefs.upcoming = it
+                                },
+                                onToggle,
+                                openTask,
+                                titleActions,
+                                filterTitle,
+                            )
                         HomeTab.BROWSE ->
                             BrowseTab(
                                 repository = repository,
@@ -372,51 +385,6 @@ private fun TodayTab(
             }) { TaskRow(it, today, projects[it.projectId], { d -> onToggle(it, d) }, { onOpenTask(it.id) }) }
         }
         if (overdue.isEmpty() && dueToday.isEmpty()) item { EmptyState("Rien de prévu aujourd'hui.") }
-    }
-}
-
-@Composable
-private fun UpcomingTab(
-    state: TodoState,
-    today: LocalDate,
-    onToggle: (Task, Boolean) -> Unit,
-    onOpenTask: (Long) -> Unit,
-    actions: @Composable () -> Unit,
-    filterTitle: String?,
-) {
-    val colors = LocalTodoColors.current
-    val dated = state.tasks.filter { !it.done && it.plannedAt != null }
-    val overdue = dated.filter { it.plannedAt!!.localDate().isBefore(today) }.sortedBy { it.plannedAt }
-    val byDay =
-        dated
-            .filter { !it.plannedAt!!.localDate().isBefore(today) }
-            .groupBy { it.plannedAt!!.localDate() }
-            .toSortedMap()
-    if (!state.loaded) {
-        LoadingState()
-        return
-    }
-    val projects = state.projects.associate { it.id to it.title }
-    LazyColumn(modifier = Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 96.dp)) {
-        item { ScreenTitle("Prochainement", filterTitle?.let { "Projet : $it" }, actions = actions) }
-        if (overdue.isNotEmpty()) {
-            item { SectionHeader("En retard", color = colors.overdue, count = overdue.size) }
-            items(overdue, key = {
-                it.id
-            }) { TaskRow(it, today, projects[it.projectId], { d -> onToggle(it, d) }, { onOpenTask(it.id) }) }
-        }
-        byDay.forEach { (day, tasks) ->
-            item(key = "day-$day") {
-                SectionHeader(
-                    dayHeader(day) + if (day == today) " · ${dayLabel(day, today)}" else "",
-                )
-            }
-            val sorted = tasks.sortedWith(compareBy<Task> { it.plannedAt }.thenByDescending { it.priority })
-            items(sorted, key = { it.id }) {
-                TaskRow(it, today, projects[it.projectId], { d -> onToggle(it, d) }, { onOpenTask(it.id) })
-            }
-        }
-        if (overdue.isEmpty() && byDay.isEmpty()) item { EmptyState("Aucune tâche planifiée.") }
     }
 }
 

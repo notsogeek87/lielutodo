@@ -37,6 +37,31 @@ class AppPrefs(
         get() = prefs.getBoolean(KEY_SOUND, false)
         set(value) = prefs.edit().putBoolean(KEY_SOUND, value).apply()
 
+    var upcoming: UpcomingSettings
+        get() =
+            UpcomingSettings(
+                layout = enumPref(KEY_UP_LAYOUT, UpcomingLayout.AGENDA),
+                showDone = prefs.getBoolean(KEY_UP_DONE, false),
+                futureOccurrences = prefs.getBoolean(KEY_UP_FUTURE, false),
+                coloring = enumPref(KEY_UP_COLORING, UpcomingColoring.PRIORITY),
+                sort = enumPref(KEY_UP_SORT, UpcomingSort.SMART),
+            )
+        set(value) {
+            prefs
+                .edit()
+                .putString(KEY_UP_LAYOUT, value.layout.name)
+                .putBoolean(KEY_UP_DONE, value.showDone)
+                .putBoolean(KEY_UP_FUTURE, value.futureOccurrences)
+                .putString(KEY_UP_COLORING, value.coloring.name)
+                .putString(KEY_UP_SORT, value.sort.name)
+                .apply()
+        }
+
+    private inline fun <reified E : Enum<E>> enumPref(
+        key: String,
+        default: E,
+    ): E = enumValues<E>().firstOrNull { it.name == prefs.getString(key, null) } ?: default
+
     var launcherIcon: LauncherIcon
         get() = LauncherIcon.entries.firstOrNull { it.name == prefs.getString(KEY_ICON, null) } ?: LauncherIcon.DEFAULT
         set(value) {
@@ -79,6 +104,11 @@ class AppPrefs(
         const val KEY_LOCK = "lock"
         const val KEY_SOUND = "sound"
         const val KEY_ICON = "icon"
+        const val KEY_UP_LAYOUT = "upcoming_layout"
+        const val KEY_UP_DONE = "upcoming_done"
+        const val KEY_UP_FUTURE = "upcoming_future"
+        const val KEY_UP_COLORING = "upcoming_coloring"
+        const val KEY_UP_SORT = "upcoming_sort"
         const val TONE_VOLUME = 60
         const val TONE_MS = 150
     }
