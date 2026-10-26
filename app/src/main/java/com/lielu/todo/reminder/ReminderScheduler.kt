@@ -42,6 +42,22 @@ class ReminderScheduler(
             scheduleDaily()
         }
 
+    /** Heure du résumé quotidien (8 h par défaut), propre à cet appareil. Le changer reprogramme l'alarme. */
+    var dailyTime: java.time.LocalTime
+        get() =
+            java.time.LocalTime.of(
+                prefs.getInt(KEY_DAILY_HOUR, DAILY_HOUR),
+                prefs.getInt(KEY_DAILY_MINUTE, 0),
+            )
+        set(value) {
+            prefs
+                .edit()
+                .putInt(KEY_DAILY_HOUR, value.hour)
+                .putInt(KEY_DAILY_MINUTE, value.minute)
+                .apply()
+            scheduleDaily()
+        }
+
     /** Programme (ou annule, si désactivé) la prochaine alarme du résumé quotidien. */
     fun scheduleDaily() {
         val intent = Intent(context, ReminderReceiver::class.java).setAction(ReminderReceiver.ACTION_DAILY)
@@ -52,7 +68,7 @@ class ReminderScheduler(
             return
         }
         val now = java.time.ZonedDateTime.now()
-        var next = now.toLocalDate().atTime(DAILY_HOUR, 0).atZone(now.zone)
+        var next = now.toLocalDate().atTime(dailyTime).atZone(now.zone)
         if (!next.isAfter(now)) next = next.plusDays(1)
         alarms.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, next.toInstant().toEpochMilli(), pending)
     }
@@ -110,6 +126,8 @@ class ReminderScheduler(
         const val KEY_DAILY = "daily"
         const val DAILY_CODE = 7_008
         const val DAILY_HOUR = 8
+        const val KEY_DAILY_HOUR = "daily_hour"
+        const val KEY_DAILY_MINUTE = "daily_minute"
         const val SNOOZE_SALT = -1L
     }
 }

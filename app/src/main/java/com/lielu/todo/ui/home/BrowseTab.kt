@@ -70,6 +70,7 @@ import com.lielu.todo.data.settings.LauncherIcon
 import com.lielu.todo.data.todo.TodoRepository
 import com.lielu.todo.data.todo.TodoState
 import com.lielu.todo.reminder.ReminderScheduler
+import com.lielu.todo.ui.common.TimePickerDialog
 import com.lielu.todo.ui.deviceHasSecureLock
 import com.lielu.todo.ui.theme.ProjectPalette
 import com.lielu.todo.ui.theme.parseHexColor
@@ -250,16 +251,37 @@ fun BrowseTab(
         }
         item {
             var daily by remember { mutableStateOf(reminderScheduler.dailyEnabled) }
+            var dailyTime by remember { mutableStateOf(reminderScheduler.dailyTime) }
+            var pickTime by remember { mutableStateOf(false) }
+            if (pickTime) {
+                TimePickerDialog(
+                    initial = dailyTime,
+                    onPick = {
+                        dailyTime = it
+                        reminderScheduler.dailyTime = it
+                        pickTime = false
+                    },
+                    onDismiss = { pickTime = false },
+                )
+            }
             BrowseCard {
                 Row(
                     modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Text(
-                        "Résumé quotidien à 8 h",
-                        modifier = Modifier.weight(1f),
-                        style = MaterialTheme.typography.bodyLarge,
-                    )
+                    // Toucher l'heure la change ; l'interrupteur active ou coupe le résumé.
+                    Column(modifier = Modifier.weight(1f).clickable { pickTime = true }) {
+                        Text("Résumé quotidien", style = MaterialTheme.typography.bodyLarge)
+                        Text(
+                            "à ${dailyTime.format(
+                                java.time.format.DateTimeFormatter
+                                    .ofPattern("H'h'mm"),
+                            )}" +
+                                " · toucher pour changer",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.outline,
+                        )
+                    }
                     Switch(
                         checked = daily,
                         onCheckedChange = {
