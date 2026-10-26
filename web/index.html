@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>LieluTodo</title>
+  <meta name="description" content="Client web de vos tâches Vikunja, façon Todoist : hors ligne, ajout rapide en langage naturel.">
+  <meta name="theme-color" content="#db4c3f">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="icon.svg">
+  <link rel="stylesheet" href="styles.css">
+  <script>
+    // Appliqué avant le premier affichage pour éviter l'éclair clair en thème sombre.
+    try { var t = localStorage.getItem('lielutodo.theme'); if (t === 'light' || t === 'dark') document.documentElement.dataset.theme = t; } catch (e) {}
+  </script>
+</head>
+<body>
+  <div id="app"></div>
+  <div id="overlay-root"></div>
+  <div id="toast-root" aria-live="polite"></div>
+  <noscript>LieluTodo a besoin de JavaScript.</noscript>
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>

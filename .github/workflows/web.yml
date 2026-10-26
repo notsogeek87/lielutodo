@@ -1,0 +1,19 @@
+name: Web
+
+on:
+  push:
+    paths: ["web/**", ".github/workflows/web.yml"]
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Syntaxe des modules
+        run: for f in web/js/*.js web/sw.js; do node --check "$f"; done
+      - name: Tests
+        run: node --test web/test/
