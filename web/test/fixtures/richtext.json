@@ -1,0 +1,24 @@
+{
+  "_doc": "Cas partagés par RichTextTest.kt et richtext.test.mjs : les deux conversions HTML <-> texte doivent rester identiques.",
+  "toText": [
+    ["ligne 1\nligne 2", "ligne 1\nligne 2"],
+    ["<p>Bonjour</p><p>le monde</p>", "Bonjour\nle monde"],
+    ["<p>a</p><p></p><p>b</p>", "a\n\nb"],
+    ["<p><strong>gras</strong> et &amp; &lt;b&gt;&nbsp;!</p>", "gras et & <b> !"],
+    ["<p>a<br>b<br/>c</p>", "a\nb\nc"],
+    ["<h2>Titre</h2><p>texte</p>", "Titre\ntexte"],
+    ["<ul><li><p>un</p></li><li><p>deux</p></li></ul>", "- un\n- deux"],
+    ["<p>intro</p><ul><li><p>un</p></li></ul><p>fin</p>", "intro\n- un\nfin"],
+    ["<ul data-type=\"taskList\"><li data-checked=\"true\" data-type=\"taskItem\"><label><input type=\"checkbox\" checked=\"checked\"><span></span></label><div><p>fait</p></div></li><li data-checked=\"false\" data-type=\"taskItem\"><label><input type=\"checkbox\"><span></span></label><div><p>à faire</p></div></li></ul>", "- [x] fait\n- [ ] à faire"],
+    ["<p>Voir <a href=\"https://x.fr\" target=\"_blank\">le site</a></p>", "Voir le site (https://x.fr)"],
+    ["<p><a href=\"https://x.fr\">https://x.fr</a></p>", "https://x.fr"],
+    ["<p>un</p>\n<p>deux</p>", "un\ndeux"],
+    ["a < b et c > d", "a < b et c > d"]
+  ],
+  "roundTrip": ["", "a", "a\n", "\nfoo", "a\n\nb", "x < y && <b>gras</b>", "&nbsp; &amp; &lt;", "  espaces  ", "- [x] fait\n- [ ] pas fait", "tab\tici \"guillemets\" 'apostrophe'"],
+  "toHtml": [
+    ["", ""],
+    ["a\nb", "<p>a</p><p>b</p>"],
+    ["x < y & \"z\"", "<p>x &lt; y &amp; &quot;z&quot;</p>"]
+  ]
+}

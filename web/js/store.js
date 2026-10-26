@@ -4,6 +4,7 @@
 // lisible et modifiable hors ligne.
 import { ApiError, NetworkError, fetchPaged } from './api.js';
 import { nextOccurrence } from './dates.js';
+import { textToHtml } from './richtext.js';
 import {
   commentFromJson, isRecurring, labelFromJson, labelToJson, projectFromJson, taskFromJson, taskToRequest,
 } from './model.js';
@@ -561,7 +562,7 @@ export function createStore(api) {
         break;
       }
       case 'comment':
-        await api('PUT', `/tasks/${op.taskId}/comments`, { body: { comment: op.text } });
+        await api('PUT', `/tasks/${op.taskId}/comments`, { body: { comment: textToHtml(op.text) } });
         // Le commentaire local temporaire est remplacé par la vraie liste du serveur.
         try {
           const list = (await api('GET', `/tasks/${op.taskId}/comments`)).json().map(commentFromJson);

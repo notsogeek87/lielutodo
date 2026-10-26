@@ -166,7 +166,8 @@ data class Task(
         o.put("id", id)
         o.put("project_id", projectId)
         o.put("title", title)
-        o.put("description", description)
+        // Vikunja stocke du HTML : renvoyé tel quel si le texte n'a pas changé (mise en forme du site gardée).
+        o.put("description", htmlForServer(description, o.optString("description")))
         o.put("done", done)
         o.put("due_date", dueDate?.toString() ?: ZERO_DATE)
         o.put("priority", priority)
@@ -225,7 +226,7 @@ fun Label.toJson(): JSONObject = JSONObject().put("id", id).put("title", title).
 fun User.toJson(): JSONObject = JSONObject().put("id", id).put("username", username).put("name", name)
 
 fun Comment.toJson(): JSONObject =
-    JSONObject().put("id", id).put("comment", text).put("author", JSONObject().put("name", author)).put(
+    JSONObject().put("id", id).put("comment", textToHtml(text)).put("author", JSONObject().put("name", author)).put(
         "created",
         created?.toString() ?: ZERO_DATE,
     )
@@ -325,7 +326,7 @@ fun taskFromJson(o: JSONObject): Task {
         id = o.getLong("id"),
         projectId = o.optLong("project_id"),
         title = o.optString("title"),
-        description = o.optString("description"),
+        description = htmlToText(o.optString("description")),
         done = o.optBoolean("done"),
         dueDate = parseDate(o.optString("due_date")),
         priority = o.optInt("priority"),
@@ -352,7 +353,7 @@ fun commentFromJson(o: JSONObject): Comment {
     val author = o.optJSONObject("author")
     return Comment(
         id = o.getLong("id"),
-        text = o.optString("comment"),
+        text = htmlToText(o.optString("comment")),
         author = author?.optString("name").orEmpty().ifBlank { author?.optString("username").orEmpty() },
         created = parseDate(o.optString("created")),
     )

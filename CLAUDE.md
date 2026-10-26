@@ -137,6 +137,9 @@ rester lisible ET modifiable hors ligne.
   sauvegarde (`TodoBackupSection`). Une panne serveur (502/503/504, 408, 429, ou 500 partout) = hors ligne, les écritures sont gardées. Une écriture refusée (4xx, ou 500 répété alors que `GET /user` répond) sort de la file vers `TodoState.failed` : jamais effacée en silence, elle ne bloque pas les suivantes, l'utilisateur la renvoie ou l'abandonne (Parcourir > « Modifications non envoyées »). Au rafraîchissement, la version locale prime pour tout objet visé par une écriture en file ou refusée (`mergeTasks`/`mergeProjects`/`mergeLabels`).
 - Une `Task` garde son JSON serveur (`raw`) : Vikunja remplace la tâche entière à chaque mise à jour, renvoyer
   seulement nos champs effacerait les autres.
+- Descriptions et commentaires : Vikunja stocke du HTML, l'app manipule du texte. Conversion à la frontière du modèle
+  (`RichText.kt` = `web/js/richtext.js`, cas partagés `web/test/fixtures/richtext.json`) ; une description inchangée
+  est renvoyée avec son HTML d'origine (`htmlForServer`), pour ne pas perdre la mise en forme du site.
 - `QuickAddParser` : ajout rapide en langage naturel (dates, heure, `#projet`, `@étiquette`, `p1`-`p4`, récurrence).
   Une date seule est stockée à midi (heure « sans heure » masquée dans l'UI).
 - `reminder/` (AlarmManager, notifications Terminer/Reporter, résumé quotidien), `widget/` (liste + ajout rapide),

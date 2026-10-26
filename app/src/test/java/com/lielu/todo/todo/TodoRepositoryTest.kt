@@ -511,7 +511,7 @@ class TodoRepositoryTest {
             assertTrue(s.tasks.all { it.projectId == 50L })
             assertTrue(s.tasks.flatMap { it.labels }.all { it.id == 60L })
             assertEquals(1, server.created.count { it.startsWith("relation:") })
-            assertEquals(listOf("penser aux billets"), server.comments.values.single())
+            assertEquals(listOf("<p>penser aux billets</p>"), server.comments.values.single())
         }
 
     @Test
@@ -746,8 +746,9 @@ class TodoRepositoryTest {
             server.online = true
             repo.refresh()
             assertEquals(0, repo.state.value.pending)
-            assertTrue("comment-edit:${remote.id}:corrigé" in server.created)
-            assertEquals(listOf("du serveur", "brouillon corrigé"), server.comments.getValue(5))
+            assertTrue("comment-edit:${remote.id}:<p>corrigé</p>" in server.created)
+            // Envoyés en HTML, comme ceux écrits sur le site Vikunja.
+            assertEquals(listOf("du serveur", "<p>brouillon corrigé</p>"), server.comments.getValue(5))
 
             repo.deleteComment(5, remote)
             repo.refresh()

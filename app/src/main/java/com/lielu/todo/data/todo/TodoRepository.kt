@@ -19,6 +19,7 @@ import com.lielu.todo.data.model.objects
 import com.lielu.todo.data.model.projectFromJson
 import com.lielu.todo.data.model.resetUnreadableDate
 import com.lielu.todo.data.model.taskFromJson
+import com.lielu.todo.data.model.textToHtml
 import com.lielu.todo.data.model.userFromJson
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -715,7 +716,7 @@ class TodoRepository(
                 }
             }
             PendingOp.Kind.COMMENT -> {
-                api.call("PUT", "/tasks/${op.taskId}/comments", body = JSONObject().put("comment", op.text))
+                api.call("PUT", "/tasks/${op.taskId}/comments", body = JSONObject().put("comment", textToHtml(op.text)))
                 // Le commentaire local temporaire est remplacé par la vraie liste, au prochain affichage.
                 _state.update { s ->
                     s.copy(comments = s.comments + (op.taskId to s.comments[op.taskId].orEmpty().filter { it.id > 0 }))
@@ -742,7 +743,7 @@ class TodoRepository(
                 api.call(
                     "POST",
                     "/tasks/${op.taskId}/comments/${op.otherId}",
-                    body = JSONObject().put("comment", op.text),
+                    body = JSONObject().put("comment", textToHtml(op.text)),
                 )
             PendingOp.Kind.COMMENT_DELETE ->
                 ignoringMissing { api.call("DELETE", "/tasks/${op.taskId}/comments/${op.otherId}") }

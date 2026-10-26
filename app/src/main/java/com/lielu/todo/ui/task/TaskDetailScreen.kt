@@ -473,11 +473,11 @@ fun TaskDetailScreen(
                         style = MaterialTheme.typography.labelMedium,
                         color = MaterialTheme.colorScheme.outline,
                     )
-                    // Vikunja stocke les commentaires en HTML ; on affiche le texte sans les balises.
-                    Text(stripHtml(c.text), style = MaterialTheme.typography.bodyMedium)
+                    // Déjà converti en texte à la lecture (Vikunja stocke du HTML, voir RichText.kt).
+                    Text(c.text, style = MaterialTheme.typography.bodyMedium)
                     Row {
                         androidx.compose.material3.TextButton(onClick = {
-                            editText = stripHtml(c.text)
+                            editText = c.text
                             editingComment = c
                         }) { Text("Modifier") }
                         androidx.compose.material3.TextButton(onClick = { repository.deleteComment(task.id, c) }) {
@@ -736,16 +736,6 @@ private fun DetailRow(
         )
     }
 }
-
-private fun stripHtml(html: String): String =
-    html
-        .replace(Regex("(?i)<br\\s*/?>|</p>"), "\n")
-        .replace(Regex("<[^>]+>"), "")
-        .replace("&nbsp;", " ")
-        .replace("&amp;", "&")
-        .replace("&lt;", "<")
-        .replace("&gt;", ">")
-        .trim()
 
 private fun newCameraUri(context: android.content.Context): android.net.Uri {
     val dir = java.io.File(context.cacheDir, "camera").also { it.mkdirs() }

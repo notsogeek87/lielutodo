@@ -1,3 +1,4 @@
+import { htmlForServer, htmlToText } from './richtext.js';
 import { parseDate, toIso, ZERO_DATE } from './dates.js';
 
 export const REPEAT_MONTHLY = 1;
@@ -32,7 +33,7 @@ export function taskFromJson(o) {
     id: o.id,
     projectId: o.project_id || 0,
     title: o.title || '',
-    description: o.description || '',
+    description: htmlToText(o.description || ''),
     done: !!o.done,
     due: parseDate(o.due_date),
     priority: o.priority || 0,
@@ -70,7 +71,8 @@ export function taskToRequest(t) {
     id: t.id,
     project_id: t.projectId,
     title: t.title,
-    description: t.description,
+    // Vikunja stocke du HTML : renvoyé tel quel si le texte n'a pas changé (mise en forme du site gardée).
+    description: htmlForServer(t.description, (t.raw || {}).description),
     done: t.done,
     due_date: toIso(t.due),
     priority: t.priority,
@@ -86,7 +88,7 @@ export function taskToRequest(t) {
 
 export function commentFromJson(o) {
   const a = o.author || {};
-  return { id: o.id, text: o.comment || '', author: a.name || a.username || '', created: parseDate(o.created) };
+  return { id: o.id, text: htmlToText(o.comment || ''), author: a.name || a.username || '', created: parseDate(o.created) };
 }
 
 export const isRecurring = (t) => t.repeatAfter > 0 || t.repeatMode === REPEAT_MONTHLY;
