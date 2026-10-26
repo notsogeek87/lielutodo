@@ -94,7 +94,7 @@ private enum class HomeTab(
     val label: String,
     val icon: ImageVector,
 ) {
-    INBOX("Boîte", Icons.Outlined.Inbox),
+    INBOX("Tâches", Icons.Outlined.Inbox),
     TODAY("Auj", Icons.Outlined.Today),
     UPCOMING("Prochainement", Icons.Outlined.CalendarMonth),
     BROWSE("Parcourir", Icons.Filled.Menu),
@@ -486,24 +486,23 @@ private fun InboxTab(
             )
     val projects = state.projects.associate { it.id to it.title }
     val projectColors = projectColors(state.projects)
-    val scope =
-        when (filter) {
-            0L -> null
-            ALL_PROJECTS -> "Tous les projets"
-            else -> projects[filter]?.let { "Projet : $it" }
-        }
+    // Titre = projet sélectionné (avec sa couleur) ; « Tâches personnelles » pour tous les projets, sans couleur.
+    val titleProject = if (filter == 0L) state.inboxId else filter
+    val title = if (filter == ALL_PROJECTS) "Tâches personnelles" else projects[titleProject] ?: "Tâches"
+    val titleColor =
+        if (filter == ALL_PROJECTS) null else projectColors[titleProject] ?: MaterialTheme.colorScheme.outline
     LazyColumn(modifier = Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 96.dp)) {
         item {
             val openCount = tasks.count { !it.done }
             val count = if (openCount == 0) null else "$openCount tâche${if (openCount > 1) "s" else ""}"
             ScreenTitle(
-                "Boîte de réception",
+                title,
                 listOfNotNull(
                     count,
-                    scope,
                     if (showDone) "achevées affichées" else null,
                 ).joinToString(" · ").ifEmpty { null },
                 actions = actions,
+                hashColor = titleColor,
             )
         }
         items(tasks, key = { it.id }) {

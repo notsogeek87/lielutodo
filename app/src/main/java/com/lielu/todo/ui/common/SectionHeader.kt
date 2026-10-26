@@ -53,13 +53,25 @@ fun ScreenTitle(
     modifier: Modifier = Modifier,
     /** Boutons à droite du titre (recherche, filtre…). */
     actions: @Composable () -> Unit = {},
+    /** Couleur du « # » placé devant le titre d'un projet ; null = titre sans « # ». */
+    hashColor: Color? = null,
 ) {
     Row(
         modifier = modifier.fillMaxWidth().padding(start = 16.dp, end = 4.dp, top = 8.dp, bottom = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Column(modifier = Modifier.weight(1f)) {
-            Text(title, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                if (hashColor != null) {
+                    Text(
+                        "# ",
+                        style = MaterialTheme.typography.headlineSmall,
+                        fontWeight = FontWeight.Bold,
+                        color = hashColor,
+                    )
+                }
+                Text(title, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+            }
             if (subtitle != null) {
                 Text(subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline)
             }
