@@ -24,6 +24,28 @@ data class DeviceCalendar(
     val account: String,
 )
 
+/** Ce qu'une passe a fait, pour le montrer à l'utilisateur : sans ça, un échec de l'agenda resterait invisible. */
+data class SyncReport(
+    val planned: Int = 0,
+    val inserted: Int = 0,
+    val updated: Int = 0,
+    val deleted: Int = 0,
+    /** Premier message d'erreur de l'agenda, `null` si tout s'est bien passé. */
+    val error: String? = null,
+    /** Pourquoi rien n'a été tenté (désactivé, autorisation manquante, état pas encore chargé…). */
+    val skipped: String? = null,
+) {
+    fun describe(calendarName: String): String =
+        when {
+            skipped != null -> skipped
+            error != null -> "L'agenda a refusé l'ajout : $error"
+            inserted + updated + deleted > 0 ->
+                "Agenda « $calendarName » : $inserted ajouté(s), $updated modifié(s), $deleted retiré(s)."
+            planned == 0 -> "Aucune tâche non terminée avec une date : rien à ajouter."
+            else -> "Agenda « $calendarName » à jour ($planned événement(s))."
+        }
+}
+
 /**
  * Recopie les tâches datées dans un agenda de l'appareil (sens tâche -> agenda uniquement). Les événements sont créés
  * sans rappel : seule l'app sonne, avec ses boutons Terminer/Reporter. La correspondance tâche -> événement est
@@ -37,6 +59,9 @@ class CalendarSync(
     private val resolver = this.context.contentResolver
     private val store = this.context.getSharedPreferences("calendar_sync", Context.MODE_PRIVATE)
     private val lock = Mutex()
+
+    /** Dernière erreur de l'agenda pendant la passe en cours (la passe est sérialisée par [lock]). */
+    private var lastError: String? = null
 
     fun hasPermission(): Boolean =
         listOf(Manifest.permission.READ_CALENDAR, Manifest.permission.WRITE_CALENDAR).all {
@@ -73,47 +98,71 @@ class CalendarSync(
     suspend fun sync(
         state: TodoState,
         zone: ZoneId = ZoneId.systemDefault(),
-    ) = lock.withLock {
-        withContext(Dispatchers.IO) {
-            if (!state.loaded) return@withContext
-            val calendarId = prefs.calendarId
-            val active = prefs.calendarSyncEnabled && calendarId > 0 && hasPermission()
-            var synced = readSynced()
-            // Autre agenda choisi : on vide l'ancien avant de remplir le nouveau.
-            if (store.getLong(KEY_CALENDAR, 0) != calendarId) {
-                if (hasPermission()) {
-                    synced.forEach { (_, e) -> deleteEvent(e.eventId) }
-                    synced = emptyMap()
-                }
-            }
-            if (!active) {
-                if (hasPermission()) synced.forEach { (_, e) -> deleteEvent(e.eventId) }
-                writeSynced(emptyMap(), if (hasPermission()) 0 else calendarId)
-                return@withContext
-            }
-            // Un événement supprimé à la main dans l'agenda est recréé à la passe suivante.
-            val alive = existingEventIds(calendarId)
-            val current = synced.filterValues { it.eventId in alive }.toMutableMap()
-            reconcileEvents(planCalendarEvents(state.tasks, zone), current).forEach { action ->
-                when (action) {
-                    is CalendarAction.Delete -> {
-                        deleteEvent(action.eventId)
-                        current.remove(action.taskId)
-                    }
-                    is CalendarAction.Update -> {
-                        if (updateEvent(action.eventId, action.event)) {
-                            current[action.event.taskId] = SyncedEvent(action.eventId, action.event.fingerprint)
-                        }
-                    }
-                    is CalendarAction.Insert -> {
-                        insertEvent(calendarId, action.event)?.let {
-                            current[action.event.taskId] = SyncedEvent(it, action.event.fingerprint)
-                        }
-                    }
-                }
-            }
-            writeSynced(current, calendarId)
+    ): SyncReport =
+        lock.withLock {
+            withContext(Dispatchers.IO) { syncLocked(state, zone) }
         }
+
+    private fun syncLocked(
+        state: TodoState,
+        zone: ZoneId,
+    ): SyncReport {
+        if (!state.loaded) return SyncReport(skipped = "Tâches pas encore chargées, réessayez dans un instant.")
+        val calendarId = prefs.calendarId
+        val permitted = hasPermission()
+        val active = prefs.calendarSyncEnabled && calendarId > 0 && permitted
+        var synced = readSynced()
+        var deleted = 0
+        // Autre agenda choisi : on vide l'ancien avant de remplir le nouveau.
+        if (permitted && store.getLong(KEY_CALENDAR, 0) != calendarId) {
+            synced.forEach { (_, e) -> deleteEvent(e.eventId) }
+            deleted += synced.size
+            synced = emptyMap()
+        }
+        if (!active) {
+            if (permitted) {
+                synced.forEach { (_, e) -> deleteEvent(e.eventId) }
+                deleted += synced.size
+            }
+            writeSynced(emptyMap(), if (permitted) 0 else calendarId)
+            val why =
+                when {
+                    !prefs.calendarSyncEnabled -> "Recopie dans l'agenda désactivée."
+                    !permitted -> "Autorisation Agenda manquante : accordez-la dans les réglages d'Android."
+                    else -> "Aucun agenda choisi."
+                }
+            return SyncReport(deleted = deleted, skipped = why)
+        }
+        // Un événement supprimé à la main dans l'agenda est recréé à la passe suivante.
+        val alive = existingEventIds(calendarId)
+        val current = synced.filterValues { it.eventId in alive }.toMutableMap()
+        val planned = planCalendarEvents(state.tasks, zone)
+        var inserted = 0
+        var updated = 0
+        lastError = null
+        reconcileEvents(planned, current).forEach { action ->
+            when (action) {
+                is CalendarAction.Delete -> {
+                    deleteEvent(action.eventId)
+                    current.remove(action.taskId)
+                    deleted++
+                }
+                is CalendarAction.Update -> {
+                    if (updateEvent(action.eventId, action.event)) {
+                        current[action.event.taskId] = SyncedEvent(action.eventId, action.event.fingerprint)
+                        updated++
+                    }
+                }
+                is CalendarAction.Insert -> {
+                    insertEvent(calendarId, action.event)?.let {
+                        current[action.event.taskId] = SyncedEvent(it, action.event.fingerprint)
+                        inserted++
+                    }
+                }
+            }
+        }
+        writeSynced(current, calendarId)
+        return SyncReport(planned.size, inserted, updated, deleted, error = lastError)
     }
 
     private fun existingEventIds(calendarId: Long): Set<Long> {
@@ -151,7 +200,14 @@ class CalendarSync(
         runCatching {
             val v = values(event).apply { put(CalendarContract.Events.CALENDAR_ID, calendarId) }
             resolver.insert(CalendarContract.Events.CONTENT_URI, v)?.let { ContentUris.parseId(it) }
-        }.getOrNull()
+                ?: run {
+                    lastError = lastError ?: "l'agenda n'a rien créé"
+                    null
+                }
+        }.getOrElse {
+            lastError = lastError ?: "${it.javaClass.simpleName} ${it.message.orEmpty()}".trim()
+            null
+        }
 
     private fun updateEvent(
         eventId: Long,

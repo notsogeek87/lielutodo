@@ -630,6 +630,11 @@ private fun CalendarSyncCard(
     var calendarName by remember { mutableStateOf(prefs.calendarName) }
     var choices by remember { mutableStateOf<List<DeviceCalendar>?>(null) }
 
+    suspend fun report(name: String) {
+        val result = calendarSync.sync(repository.state.value)
+        snackbar.showSnackbar(result.describe(name))
+    }
+
     fun openChoices() {
         scope.launch {
             val found = calendarSync.calendars()
@@ -673,6 +678,11 @@ private fun CalendarSyncCard(
                 "Agenda : ${calendarName.ifBlank { "à choisir" }}",
                 onClick = { openChoices() },
             )
+            BrowseRow(
+                Icons.Outlined.CalendarMonth,
+                "Synchroniser maintenant",
+                onClick = { scope.launch { report(calendarName) } },
+            )
         }
     }
 
@@ -700,7 +710,7 @@ private fun CalendarSyncCard(
                                         calendarName = calendar.name
                                         enabled = true
                                         choices = null
-                                        scope.launch { calendarSync.sync(repository.state.value) }
+                                        scope.launch { report(calendar.name) }
                                     }.padding(vertical = 10.dp),
                         ) {
                             Column {
