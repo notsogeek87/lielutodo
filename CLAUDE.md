@@ -170,3 +170,11 @@ Même serveur Vikunja, même logique « local d'abord » que l'APK, en site stat
 l'un se répercute sur l'autre), `js/model.js` = `Models.kt`. Déployée sur Vercel (Root Directory `web`, réécriture
 `/vk/*` -> `task.lielu.eu`). Tests : `node --test web/test/*.test.mjs` ; faux serveur : `web/dev/fake-server.mjs`.
 Un nouveau type d'écriture se branche dans `store.js` (action + `apply`) ET dans le faux serveur.
+
+## Règle : l'heure est obligatoire avec une date
+
+Toute date d'échéance saisie (ajout rapide depuis n'importe où, détail d'une tâche) doit être suivie d'un choix
+d'heure : jamais de « Sans heure », jamais de date seule enregistrée à midi par un nouveau chemin
+(`DATE_ONLY_TIME` ne sert qu'à lire d'anciennes tâches). `QuickAdd.needsTime` décide, `QuickAddSheet` demande
+l'heure après la date ou à l'envoi. Tout nouveau `DatePickerSheet` doit être accompagné d'un `TimePickerDialog` ;
+`TimeRequiredTest` échoue sinon. Cas encore à midi : récurrence ajoutée à une tâche sans date (`withDefaultDue`).

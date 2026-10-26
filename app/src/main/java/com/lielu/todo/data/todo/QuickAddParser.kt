@@ -22,6 +22,9 @@ data class QuickAdd(
     val repeatAfter: Long = 0,
     val repeatMode: Int = 0,
 ) {
+    /** L'heure est obligatoire : une date sans heure ne doit jamais être enregistrée, il faut la demander. */
+    val needsTime: Boolean get() = date != null && time == null
+
     /**
      * Échéance à enregistrer. Vikunja n'a qu'un instant, sans « date seule » : sans heure on prend [DATE_ONLY_TIME]
      * (midi, comme son interface web) et l'affichage masque cette heure. Une heure sans date = aujourd'hui, ou
