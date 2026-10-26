@@ -5,12 +5,17 @@ import com.lielu.todo.data.api.HttpApi
 import com.lielu.todo.data.model.Comment
 import com.lielu.todo.data.model.Label
 import com.lielu.todo.data.model.Project
+import com.lielu.todo.data.model.SavedFilter
 import com.lielu.todo.data.model.Task
+import com.lielu.todo.data.model.User
 import com.lielu.todo.data.model.commentFromJson
 import com.lielu.todo.data.model.labelFromJson
+import com.lielu.todo.data.model.lastUnreadableDate
 import com.lielu.todo.data.model.objects
 import com.lielu.todo.data.model.projectFromJson
+import com.lielu.todo.data.model.resetUnreadableDate
 import com.lielu.todo.data.model.taskFromJson
+import com.lielu.todo.data.model.userFromJson
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.FlowPreview
@@ -29,9 +34,11 @@ import java.time.Instant
 
 /**
  * Source de vérité de l'app, « local d'abord » comme Todoist : chaque action modifie l'état local tout de suite
- * (l'écran réagit sans attendre le réseau), met une écriture en file, puis l'envoie dès que possible. Au
- * rafraîchissement, le serveur reprend la main — sauf s'il reste des écritures non envoyées, pour ne jamais les
- * écraser.
+ * (l'écran réagit sans attendre le réseau), met une écriture en file, puis l'envoie dès que possible. Le serveur
+ * étant un serveur personnel qui peut être coupé, TOUT reste lisible et modifiable sans lui : tâches, projets,
+ * étiquettes, commentaires déjà vus, résultats des filtres, et même la création de projets et d'étiquettes.
+ * Au rafraîchissement, le serveur reprend la main — sauf s'il reste des écritures non envoyées, pour ne jamais
+ * les écraser.
  */
 @OptIn(FlowPreview::class)
 class TodoRepository(
@@ -39,17 +46,33 @@ class TodoRepository(
     private val cache: LocalCache,
     private val scope: CoroutineScope,
     private val onAuthExpired: () -> Unit = {},
+    private val clock: () -> Long = System::currentTimeMillis,
 ) {
     private val _state = MutableStateFlow(cache.load() ?: TodoState())
     val state: StateFlow<TodoState> = _state
 
     private val syncLock = Mutex()
-    private var nextTempId = -1L
+    private var positionsSyncedAt = 0L
+
+    // Les ids temporaires (objets créés hors ligne) sont négatifs. On repart sous le plus bas déjà utilisé : après
+    // un redémarrage, un compteur remis à -1 réattribuerait l'id d'une tâche encore en attente d'envoi.
+    private var nextTempId = (lowestTempId(_state.value) - 1).coerceAtMost(-1)
 
     init {
         scope.launch(Dispatchers.IO) {
-            _state.drop(1).debounce(SAVE_DELAY_MS).collect { runCatching { cache.save(it) } }
+            _state.drop(1).debounce(SAVE_DELAY_MS).collect { saveNow() }
         }
+    }
+
+    private fun lowestTempId(s: TodoState): Long =
+        (
+            s.tasks.map { it.id } + s.projects.map { it.id } + s.labels.map { it.id } +
+                s.ops.flatMap { listOf(it.taskId, it.otherId) }
+        ).minOrNull()?.coerceAtMost(0) ?: 0
+
+    /** Écrit le cache tout de suite (arrêt de l'app, rappel reçu) au lieu d'attendre la temporisation. */
+    fun saveNow() {
+        runCatching { cache.save(_state.value) }
     }
 
     // ---- Lecture ----
@@ -65,25 +88,36 @@ class TodoRepository(
         priority: Int = 0,
         labels: List<Label> = emptyList(),
         description: String = "",
+        parentId: Long = 0,
+        repeatAfter: Long = 0,
+        repeatMode: Int = 0,
     ): Long {
         val id = nextTempId--
         val raw = JSONObject().put("id", id).put("project_id", projectId).toString()
-        val task =
-            Task(
-                id = id,
-                projectId = projectId,
-                title = title,
-                description = description,
-                done = false,
-                dueDate = due,
-                priority = priority,
-                labels = labels,
-                isFavorite = false,
-                position = 0.0,
-                commentCount = 0,
-                raw = raw,
-            )
-        _state.update { it.copy(tasks = it.tasks + task, ops = it.ops + PendingOp(PendingOp.Kind.CREATE, id)) }
+        _state.update { s ->
+            val last = s.tasks.filter { it.projectId == projectId }.maxOfOrNull { it.position } ?: 0.0
+            val task =
+                Task(
+                    id = id,
+                    projectId = projectId,
+                    title = title,
+                    description = description,
+                    done = false,
+                    dueDate = due,
+                    priority = priority,
+                    labels = labels,
+                    isFavorite = false,
+                    position = last + POSITION_STEP,
+                    commentCount = 0,
+                    raw = raw,
+                    repeatAfter = repeatAfter,
+                    repeatMode = repeatMode,
+                    parentId = parentId,
+                )
+            var ops = enqueue(s.ops, PendingOp(PendingOp.Kind.CREATE, id))
+            if (parentId != 0L) ops = enqueue(ops, PendingOp(PendingOp.Kind.RELATE, id, otherId = parentId))
+            s.copy(tasks = s.tasks + task, ops = ops)
+        }
         flushSoon()
         return id
     }
@@ -95,7 +129,7 @@ class TodoRepository(
     ) {
         _state.update { s ->
             val tasks = s.tasks.map { if (it.id == task.id) task else it }
-            s.copy(tasks = tasks, ops = enqueueUpdate(s.ops, task.id, labelsChanged))
+            s.copy(tasks = tasks, ops = enqueue(s.ops, PendingOp(PendingOp.Kind.UPDATE, task.id, flag = labelsChanged)))
         }
         flushSoon()
     }
@@ -111,35 +145,136 @@ class TodoRepository(
     fun deleteTask(id: Long) {
         _state.update { s ->
             val tasks = s.tasks.filterNot { it.id == id }
+            val related = { op: PendingOp -> op.taskId == id || (op.kind == PendingOp.Kind.RELATE && op.otherId == id) }
             val ops =
                 if (id < 0) {
                     // Jamais envoyée : on oublie simplement toutes ses écritures.
-                    s.ops.filterNot { it.taskId == id }
+                    s.ops.filterNot(related)
                 } else {
-                    s.ops.filterNot { it.taskId == id } + PendingOp(PendingOp.Kind.DELETE, id)
+                    s.ops.filterNot(related) + PendingOp(PendingOp.Kind.DELETE, id)
                 }
             s.copy(tasks = tasks, ops = ops)
         }
         flushSoon()
     }
 
-    private fun enqueueUpdate(
-        ops: List<PendingOp>,
+    /** Range une tâche à une nouvelle [position] (ordre manuel de la liste de son projet). */
+    fun reorder(
         id: Long,
-        labelsChanged: Boolean,
+        position: Double,
+    ) {
+        val task = task(id) ?: return
+        _state.update { s ->
+            s.copy(
+                tasks = s.tasks.map { if (it.id == id) it.copy(position = position) else it },
+                ops = enqueue(s.ops, PendingOp(PendingOp.Kind.POSITION, task.id)),
+            )
+        }
+        flushSoon()
+    }
+
+    fun assign(
+        taskId: Long,
+        user: User,
+        add: Boolean,
+    ) {
+        _state.update { s ->
+            val tasks =
+                s.tasks.map { t ->
+                    if (t.id != taskId) {
+                        t
+                    } else if (add) {
+                        t.copy(assignees = t.assignees.filter { it.id != user.id } + user)
+                    } else {
+                        t.copy(assignees = t.assignees.filter { it.id != user.id })
+                    }
+                }
+            s.copy(tasks = tasks, ops = enqueue(s.ops, PendingOp(PendingOp.Kind.ASSIGN, taskId, user.id, flag = add)))
+        }
+        flushSoon()
+    }
+
+    /** Crée un projet, même hors ligne (id temporaire, remplacé à l'envoi). Renvoie l'id local. */
+    fun createProject(title: String): Long {
+        val id = nextTempId--
+        _state.update { s ->
+            val position = (s.projects.maxOfOrNull { it.position } ?: 0.0) + POSITION_STEP
+            val project = Project(id, title, 0, "", false, false, position)
+            s.copy(
+                projects = s.projects + project,
+                ops = enqueue(s.ops, PendingOp(PendingOp.Kind.CREATE_PROJECT, id, text = title)),
+            )
+        }
+        flushSoon()
+        return id
+    }
+
+    /** Crée une étiquette, même hors ligne. Renvoie l'étiquette locale. */
+    fun createLabel(title: String): Label {
+        val label = Label(nextTempId--, title, "")
+        _state.update { s ->
+            s.copy(
+                labels = s.labels + label,
+                ops = enqueue(s.ops, PendingOp(PendingOp.Kind.CREATE_LABEL, label.id, text = title)),
+            )
+        }
+        flushSoon()
+        return label
+    }
+
+    fun addComment(
+        taskId: Long,
+        text: String,
+    ) {
+        _state.update { s ->
+            val local = Comment(nextTempId--, text, "Moi", Instant.ofEpochMilli(clock()))
+            s.copy(
+                comments = s.comments + (taskId to (s.comments[taskId].orEmpty() + local)),
+                tasks = s.tasks.map { if (it.id == taskId) it.copy(commentCount = it.commentCount + 1) else it },
+                ops = enqueue(s.ops, PendingOp(PendingOp.Kind.COMMENT, taskId, text = text)),
+            )
+        }
+        flushSoon()
+    }
+
+    private fun enqueue(
+        ops: List<PendingOp>,
+        op: PendingOp,
     ): List<PendingOp> {
-        // Une tâche pas encore créée porte déjà tout dans son CREATE ; un UPDATE existant est fusionné.
-        if (ops.any { it.kind == PendingOp.Kind.CREATE && it.taskId == id }) return ops
-        val existing = ops.firstOrNull { it.kind == PendingOp.Kind.UPDATE && it.taskId == id }
-        if (existing == null) return ops + PendingOp(PendingOp.Kind.UPDATE, id, labelsChanged)
-        return ops.map { if (it === existing) it.copy(labelsChanged = it.labelsChanged || labelsChanged) else it }
+        val sameTask = { o: PendingOp -> o.kind == op.kind && o.taskId == op.taskId }
+        return when (op.kind) {
+            PendingOp.Kind.UPDATE -> {
+                // Une tâche pas encore créée porte déjà tout dans son CREATE ; un UPDATE existant est fusionné.
+                if (ops.any { it.kind == PendingOp.Kind.CREATE && it.taskId == op.taskId }) return ops
+                val existing = ops.firstOrNull(sameTask) ?: return ops + op
+                ops.map { if (it === existing) it.copy(flag = it.flag || op.flag) else it }
+            }
+            PendingOp.Kind.POSITION -> if (ops.any(sameTask)) ops else ops + op
+            PendingOp.Kind.ASSIGN -> {
+                val opposite = ops.firstOrNull { sameTask(it) && it.otherId == op.otherId && it.flag != op.flag }
+                // Ajouter puis retirer le même utilisateur avant envoi ne laisse rien à envoyer.
+                if (opposite != null) ops.filterNot { it === opposite } else ops + op
+            }
+            else -> ops + op
+        }
     }
 
     // ---- Réseau ----
 
     private fun flushSoon() {
-        scope.launch { syncLock.withLock { runCatching { flush() }.onFailure(::reportError) } }
+        scope.launch { syncPending() }
     }
+
+    /** Envoie les écritures en attente sans relire le serveur. `true` si la file est vide ensuite. */
+    suspend fun syncPending(): Boolean =
+        syncLock.withLock {
+            try {
+                flush()
+            } catch (e: IOException) {
+                reportError(e)
+                false
+            }
+        }
 
     /** Synchronisation complète : envoie les écritures en attente puis relit le serveur. */
     suspend fun refresh() {
@@ -147,28 +282,8 @@ class TodoRepository(
             _state.update { it.copy(syncing = true) }
             try {
                 val clean = flush()
-                val projects = fetchPaged("/projects", mapOf("is_archived" to "false")).map(::projectFromJson)
-                val labels = fetchPaged("/labels").map(::labelFromJson)
-                val defaultProject =
-                    JSONObject(api.call("GET", "/user").body)
-                        .optJSONObject("settings")
-                        ?.optLong("default_project_id") ?: 0L
-                val tasks =
-                    if (clean) {
-                        fetchPaged("/tasks", mapOf("filter" to "done = false", "sort_by" to "id")).map(::taskFromJson)
-                    } else {
-                        null
-                    }
-                _state.update {
-                    it.copy(
-                        projects = projects,
-                        labels = labels,
-                        tasks = tasks ?: it.tasks,
-                        defaultProjectId = defaultProject,
-                        error = null,
-                        loaded = true,
-                    )
-                }
+                pull(clean)
+                _state.update { it.copy(loaded = true, offline = false, lastSync = clock()) }
             } catch (e: IOException) {
                 reportError(e)
                 _state.update { it.copy(loaded = true) }
@@ -176,6 +291,114 @@ class TodoRepository(
                 _state.update { it.copy(syncing = false) }
             }
         }
+    }
+
+    private suspend fun pull(clean: Boolean) {
+        resetUnreadableDate()
+        val projectJson = fetchPaged("/projects", mapOf("is_archived" to "false"))
+        val projects = projectJson.filter { it.getLong("id") > 0 }.map(::projectFromJson)
+        val labels = fetchPaged("/labels").map(::labelFromJson)
+        val defaultProject =
+            JSONObject(api.call("GET", "/user").body).optJSONObject("settings")?.optLong("default_project_id") ?: 0L
+
+        // Les filtres enregistrés apparaissent dans /projects avec un id négatif : -(id du filtre) - 1.
+        val filters =
+            fetchFilters(projectJson.map { it.getLong("id") to it.optString("title") }.filter { it.first < -1 })
+
+        var tasks: List<Task>? = null
+        if (clean) {
+            val open = fetchPaged("/tasks", mapOf("filter" to "done = false", "sort_by" to "id")).map(::taskFromJson)
+            // L'historique récent reste consultable ; s'il échoue (filtre non supporté), on garde l'ancien.
+            val recentDone =
+                runCatching {
+                    fetchPaged("/tasks", mapOf("filter" to "done = true && done_at > now-30d", "sort_by" to "id"))
+                        .map(::taskFromJson)
+                }.getOrElse { _state.value.tasks.filter { it.done && it.id > 0 } }
+            val openIds = open.map { it.id }.toSet()
+            tasks = withPositions(open + recentDone.filter { it.id !in openIds }, projects)
+        }
+        val results = if (clean) fetchFilterResults(filters) else null
+        tasks?.let(::diagnoseDates)
+        _state.update {
+            it.copy(
+                projects = projects,
+                labels = labels,
+                tasks = tasks ?: it.tasks,
+                filters = filters,
+                filterResults = results ?: it.filterResults,
+                defaultProjectId = defaultProject,
+            )
+        }
+    }
+
+    /** Des tâches sans date alors que le serveur en envoie : on le dit, avec la valeur reçue, pour pouvoir corriger. */
+    private fun diagnoseDates(tasks: List<Task>) {
+        val bad = lastUnreadableDate
+        val missingKey = tasks.isNotEmpty() && tasks.none { it.raw.contains("\"due_date\"") }
+        val message =
+            when {
+                bad != null -> "Date d'échéance illisible reçue du serveur : « $bad »"
+                missingKey -> "Le serveur n'a envoyé aucune date d'échéance"
+                else -> return
+            }
+        _state.update { it.copy(error = message) }
+    }
+
+    private suspend fun fetchFilters(pseudoProjects: List<Pair<Long, String>>): List<SavedFilter> =
+        pseudoProjects.mapNotNull { (pseudoId, title) ->
+            val id = -pseudoId - 1
+            try {
+                val o = JSONObject(api.call("GET", "/filters/$id").body)
+                val f = o.optJSONObject("filters")
+                SavedFilter(
+                    id,
+                    o.optString("title", title),
+                    f?.optString("filter").orEmpty(),
+                    f?.optBoolean("filter_include_nulls") ?: false,
+                )
+            } catch (e: ApiException) {
+                _state.value.filters.firstOrNull { it.id == id }
+            }
+        }
+
+    private suspend fun fetchFilterResults(filters: List<SavedFilter>): Map<Long, List<Task>> =
+        filters.associate { f ->
+            f.id to
+                try {
+                    fetchPaged(
+                        "/tasks",
+                        mapOf("filter" to f.query, "filter_include_nulls" to f.includeNulls.toString()),
+                    ).map(::taskFromJson)
+                } catch (e: ApiException) {
+                    _state.value.filterResults[f.id].orEmpty()
+                }
+        }
+
+    /**
+     * `/tasks` ne donne pas l'ordre manuel : celui-ci vit dans la vue « liste » de chaque projet. On le relit au
+     * plus toutes les [POSITIONS_EVERY_MS], et une erreur sur un projet n'empêche pas les autres.
+     */
+    private suspend fun withPositions(
+        tasks: List<Task>,
+        projects: List<Project>,
+    ): List<Task> {
+        val now = clock()
+        if (now - positionsSyncedAt < POSITIONS_EVERY_MS) {
+            val known = _state.value.tasks.associate { it.id to it.position }
+            return tasks.map { t -> known[t.id]?.let { t.copy(position = it) } ?: t }
+        }
+        val positions = mutableMapOf<Long, Double>()
+        var complete = true
+        projects.filter { it.listViewId > 0 }.forEach { p ->
+            try {
+                fetchPaged("/projects/${p.id}/views/${p.listViewId}/tasks", mapOf("filter" to "done = false"))
+                    .forEach { positions[it.getLong("id")] = it.optDouble("position", 0.0) }
+            } catch (e: ApiException) {
+                complete = false
+            }
+        }
+        if (complete) positionsSyncedAt = now
+        return tasks.map { t -> positions[t.id]?.let { t.copy(position = it) } ?: t }
     }
 
     private suspend fun fetchPaged(
@@ -206,6 +429,11 @@ class TodoRepository(
                 apply(op)
             } catch (e: ApiException) {
                 if (e.code == HTTP_UNAUTHORIZED) throw e
+                // Serveur en panne (502/503 derrière le proxy) : on garde l'écriture pour plus tard.
+                if (e.code >= HTTP_SERVER_ERROR) {
+                    reportError(e)
+                    return false
+                }
                 // Refus définitif (tâche supprimée côté serveur, droits…) : réessayer ne servirait à rien.
                 reportError(e)
             } catch (e: IOException) {
@@ -218,50 +446,8 @@ class TodoRepository(
 
     private suspend fun apply(op: PendingOp) {
         when (op.kind) {
-            PendingOp.Kind.CREATE -> {
-                val local = task(op.taskId) ?: return
-                val body = local.toRequestJson().also { it.remove("id") }
-                val created =
-                    taskFromJson(JSONObject(api.call("PUT", "/projects/${local.projectId}/tasks", body = body).body))
-                if (local.labels.isNotEmpty()) setLabels(created.id, local.labels)
-                _state.update { s ->
-                    s.copy(
-                        tasks =
-                            s.tasks.map {
-                                if (it.id ==
-                                    local.id
-                                ) {
-                                    created.copy(labels = it.labels, done = it.done)
-                                } else {
-                                    it
-                                }
-                            },
-                        ops =
-                            s.ops.map { if (it.taskId == local.id) it.copy(taskId = created.id) else it },
-                    )
-                }
-            }
-            PendingOp.Kind.UPDATE -> {
-                val local = task(op.taskId) ?: return
-                val saved =
-                    taskFromJson(JSONObject(api.call("POST", "/tasks/${local.id}", body = local.toRequestJson()).body))
-                if (op.labelsChanged) setLabels(local.id, local.labels)
-                // Une tâche répétée revient « non terminée » avec une nouvelle échéance : on prend la réponse.
-                _state.update { s ->
-                    s.copy(
-                        tasks =
-                            s.tasks.map {
-                                if (it.id == local.id &&
-                                    it == local
-                                ) {
-                                    saved.copy(labels = it.labels)
-                                } else {
-                                    it
-                                }
-                            },
-                    )
-                }
-            }
+            PendingOp.Kind.CREATE -> applyCreate(op)
+            PendingOp.Kind.UPDATE -> applyUpdate(op)
             PendingOp.Kind.DELETE -> {
                 try {
                     api.call("DELETE", "/tasks/${op.taskId}")
@@ -269,6 +455,150 @@ class TodoRepository(
                     if (e.code != HTTP_NOT_FOUND) throw e
                 }
             }
+            PendingOp.Kind.CREATE_PROJECT -> {
+                val created =
+                    projectFromJson(
+                        JSONObject(api.call("PUT", "/projects", body = JSONObject().put("title", op.text)).body),
+                    )
+                _state.update { s ->
+                    s.copy(
+                        projects = s.projects.map { if (it.id == op.taskId) created else it },
+                        tasks = s.tasks.map { if (it.projectId == op.taskId) it.copy(projectId = created.id) else it },
+                    )
+                }
+            }
+            PendingOp.Kind.CREATE_LABEL -> {
+                val created =
+                    labelFromJson(
+                        JSONObject(api.call("PUT", "/labels", body = JSONObject().put("title", op.text)).body),
+                    )
+                _state.update { s ->
+                    s.copy(
+                        labels = s.labels.map { if (it.id == op.taskId) created else it },
+                        tasks =
+                            s.tasks.map { t ->
+                                if (t.labels.any { it.id == op.taskId }) {
+                                    t.copy(
+                                        labels =
+                                            t.labels.map {
+                                                if (it.id ==
+                                                    op.taskId
+                                                ) {
+                                                    created
+                                                } else {
+                                                    it
+                                                }
+                                            },
+                                    )
+                                } else {
+                                    t
+                                }
+                            },
+                    )
+                }
+            }
+            PendingOp.Kind.COMMENT -> {
+                api.call("PUT", "/tasks/${op.taskId}/comments", body = JSONObject().put("comment", op.text))
+                // Le commentaire local temporaire est remplacé par la vraie liste, au prochain affichage.
+                _state.update { s ->
+                    s.copy(comments = s.comments + (op.taskId to s.comments[op.taskId].orEmpty().filter { it.id > 0 }))
+                }
+            }
+            PendingOp.Kind.RELATE -> {
+                val body = JSONObject().put("other_task_id", op.otherId).put("relation_kind", "parenttask")
+                api.call("PUT", "/tasks/${op.taskId}/relations", body = body)
+            }
+            PendingOp.Kind.ASSIGN ->
+                if (op.flag) {
+                    api.call("PUT", "/tasks/${op.taskId}/assignees", body = JSONObject().put("user_id", op.otherId))
+                } else {
+                    try {
+                        api.call("DELETE", "/tasks/${op.taskId}/assignees/${op.otherId}")
+                    } catch (e: ApiException) {
+                        if (e.code != HTTP_NOT_FOUND) throw e
+                    }
+                }
+            PendingOp.Kind.POSITION -> {
+                val task = task(op.taskId) ?: return
+                val view =
+                    _state.value.projects
+                        .firstOrNull { it.id == task.projectId }
+                        ?.listViewId ?: 0
+                if (view == 0L) return
+                val body = JSONObject().put("position", task.position).put("project_view_id", view)
+                api.call("POST", "/tasks/${task.id}/position", body = body)
+            }
+        }
+    }
+
+    private suspend fun applyCreate(op: PendingOp) {
+        val local = task(op.taskId) ?: return
+        val body = local.toRequestJson().also { it.remove("id") }
+        val created = taskFromJson(JSONObject(api.call("PUT", "/projects/${local.projectId}/tasks", body = body).body))
+        if (local.labels.isNotEmpty()) setLabels(created.id, local.labels)
+        _state.update { s ->
+            s.copy(
+                tasks =
+                    s.tasks.map {
+                        when {
+                            it.id == local.id ->
+                                it.copy(
+                                    id = created.id,
+                                    raw = created.raw,
+                                    commentCount = created.commentCount,
+                                )
+                            it.parentId == local.id -> it.copy(parentId = created.id)
+                            else -> it
+                        }
+                    },
+                ops =
+                    s.ops.map { o ->
+                        o.copy(
+                            taskId =
+                                if (o.taskId ==
+                                    local.id
+                                ) {
+                                    created.id
+                                } else {
+                                    o.taskId
+                                },
+                            otherId =
+                                if (o.otherId ==
+                                    local.id
+                                ) {
+                                    created.id
+                                } else {
+                                    o.otherId
+                                },
+                        )
+                    },
+                comments = s.comments.mapKeys { if (it.key == local.id) created.id else it.key },
+            )
+        }
+    }
+
+    private suspend fun applyUpdate(op: PendingOp) {
+        val local = task(op.taskId) ?: return
+        val saved = taskFromJson(JSONObject(api.call("POST", "/tasks/${local.id}", body = local.toRequestJson()).body))
+        if (op.flag) setLabels(local.id, local.labels)
+        // Une tâche répétée revient « non terminée » avec une nouvelle échéance : on prend la réponse, sauf si
+        // l'utilisateur a encore modifié la tâche pendant l'envoi.
+        _state.update { s ->
+            s.copy(
+                tasks =
+                    s.tasks.map {
+                        if (it.id == local.id && it == local) {
+                            saved.copy(
+                                labels = it.labels,
+                                assignees = it.assignees,
+                                parentId = it.parentId,
+                                position = it.position,
+                            )
+                        } else {
+                            it
+                        }
+                    },
+            )
         }
     }
 
@@ -285,36 +615,139 @@ class TodoRepository(
             onAuthExpired()
             return
         }
-        _state.update { it.copy(error = if (e is IOException && e !is ApiException) "Hors ligne" else e.message) }
+        val unreachable = (e is IOException && e !is ApiException) || (e is ApiException && e.code >= HTTP_SERVER_ERROR)
+        _state.update {
+            it.copy(
+                error = if (unreachable) "Serveur injoignable" else e.message,
+                offline = it.offline || unreachable,
+            )
+        }
     }
 
     fun clearError() = _state.update { it.copy(error = null) }
 
+    // ---- Lectures en ligne qui alimentent le cache ----
+
+    /** Relit les commentaires d'une tâche et les garde en cache ; [IOException] si le serveur ne répond pas. */
+    suspend fun refreshComments(taskId: Long) {
+        if (taskId < 0) return
+        val fromServer = JSONArray(api.call("GET", "/tasks/$taskId/comments").body).objects().map(::commentFromJson)
+        _state.update { s ->
+            // Les commentaires écrits hors ligne et pas encore envoyés restent visibles à la suite.
+            val unsent = s.ops.filter { it.kind == PendingOp.Kind.COMMENT && it.taskId == taskId }.map { it.text }
+            val local = s.comments[taskId].orEmpty().filter { it.id < 0 && it.text in unsent }
+            s.copy(comments = s.comments + (taskId to fromServer + local))
+        }
+    }
+
+    /** Utilisateurs ayant accès au projet (pour l'assignation) ; gardés en cache pour le hors ligne. */
+    suspend fun refreshProjectUsers(projectId: Long) {
+        if (projectId < 0) return
+        val users = JSONArray(api.call("GET", "/projects/$projectId/projectusers").body).objects().map(::userFromJson)
+        _state.update { it.copy(projectUsers = it.projectUsers + (projectId to users)) }
+    }
+
     // ---- Opérations en ligne uniquement (rares) ----
 
-    suspend fun createProject(title: String): Project {
-        val p = projectFromJson(JSONObject(api.call("PUT", "/projects", body = JSONObject().put("title", title)).body))
-        _state.update { it.copy(projects = it.projects + p) }
-        return p
-    }
-
-    suspend fun createLabel(title: String): Label {
-        val l = labelFromJson(JSONObject(api.call("PUT", "/labels", body = JSONObject().put("title", title)).body))
-        _state.update { it.copy(labels = it.labels + l) }
-        return l
-    }
-
-    suspend fun comments(taskId: Long): List<Comment> =
-        JSONArray(api.call("GET", "/tasks/$taskId/comments").body).objects().map(::commentFromJson)
-
-    suspend fun addComment(
-        taskId: Long,
-        text: String,
+    suspend fun createFilter(
+        title: String,
+        query: String,
     ) {
-        api.call("PUT", "/tasks/$taskId/comments", body = JSONObject().put("comment", text))
-        _state.update { s ->
-            s.copy(tasks = s.tasks.map { if (it.id == taskId) it.copy(commentCount = it.commentCount + 1) else it })
+        val body =
+            JSONObject()
+                .put("title", title)
+                .put("filters", JSONObject().put("filter", query).put("filter_include_nulls", false))
+        api.call("PUT", "/filters", body = body)
+        refresh()
+    }
+
+    /** Donne accès à un projet. [permission] : 0 lecture, 1 lecture et écriture, 2 administrateur. */
+    suspend fun shareProject(
+        projectId: Long,
+        username: String,
+        permission: Int,
+    ) {
+        api.call(
+            "PUT",
+            "/projects/$projectId/users",
+            body = JSONObject().put("username", username).put("permission", permission),
+        )
+    }
+
+    /**
+     * Reporte à [today] les tâches en retard, en gardant l'heure de chacune (comme « Reporter » dans Todoist).
+     * Renvoie le nombre de tâches déplacées.
+     */
+    fun rescheduleOverdue(
+        today: java.time.LocalDate,
+        zone: java.time.ZoneId = java.time.ZoneId.systemDefault(),
+    ): Int {
+        val overdue =
+            _state.value.tasks.filter { t ->
+                !t.done &&
+                    t.dueDate != null &&
+                    t.dueDate
+                        .atZone(zone)
+                        .toLocalDate()
+                        .isBefore(today)
+            }
+        overdue.forEach { t ->
+            val time = t.dueDate!!.atZone(zone).toLocalTime()
+            updateTask(t.copy(dueDate = today.atTime(time).atZone(zone).toInstant()))
         }
+        return overdue.size
+    }
+
+    /** Copie une tâche (même projet, mêmes réglages, non terminée). Renvoie l'id local de la copie. */
+    fun duplicateTask(id: Long): Long? {
+        val t = task(id) ?: return null
+        return addTask(
+            title = t.title,
+            projectId = t.projectId,
+            due = t.dueDate,
+            priority = t.priority,
+            labels = t.labels,
+            description = t.description,
+            parentId = t.parentId,
+            repeatAfter = t.repeatAfter,
+            repeatMode = t.repeatMode,
+        )
+    }
+
+    // ---- Gestion d'un projet (en ligne : rare, et le serveur doit valider) ----
+
+    /** Modifie un projet : relit sa version du serveur (pour ne rien effacer), applique [change], renvoie. */
+    suspend fun updateProject(
+        id: Long,
+        change: (JSONObject) -> Unit,
+    ) {
+        val json = JSONObject(api.call("GET", "/projects/$id").body)
+        change(json)
+        api.call("POST", "/projects/$id", body = json)
+        refresh()
+    }
+
+    /** Supprime un projet ET ses tâches côté serveur. */
+    suspend fun deleteProject(id: Long) {
+        api.call("DELETE", "/projects/$id")
+        _state.update { s ->
+            s.copy(
+                projects = s.projects.filter { it.id != id },
+                tasks =
+                    s.tasks.filter {
+                        it.projectId !=
+                            id
+                    },
+            )
+        }
+        refresh()
+    }
+
+    /** Remplace tout l'état local (restauration d'une sauvegarde), puis tente de resynchroniser. */
+    fun restore(restored: TodoState) {
+        _state.value = restored.copy(syncing = false, error = null, loaded = true)
+        saveNow()
+        flushSoon()
     }
 
     /** Déconnexion : le cache d'un compte ne doit jamais se retrouver chez le suivant. */
@@ -324,9 +757,12 @@ class TodoRepository(
     }
 
     private companion object {
-        const val SAVE_DELAY_MS = 300L
+        const val SAVE_DELAY_MS = 150L
         const val PAGE_SIZE = 50
+        const val POSITION_STEP = 65536.0
+        const val POSITIONS_EVERY_MS = 5 * 60 * 1000L
         const val HTTP_UNAUTHORIZED = 401
         const val HTTP_NOT_FOUND = 404
+        const val HTTP_SERVER_ERROR = 500
     }
 }

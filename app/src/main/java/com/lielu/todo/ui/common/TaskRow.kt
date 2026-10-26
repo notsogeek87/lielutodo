@@ -12,7 +12,10 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.Label
+import androidx.compose.material.icons.filled.Alarm
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.Repeat
 import androidx.compose.material.icons.outlined.CalendarToday
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -95,13 +98,22 @@ fun TaskRow(
     onToggle: (Boolean) -> Unit,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
+    /** Niveau d'imbrication (sous-tâches). */
+    indent: Int = 0,
+    /** « 1/3 » : sous-tâches terminées sur total. */
+    subtasks: String? = null,
 ) {
     val colors = LocalTodoColors.current
     val outline = MaterialTheme.colorScheme.outline
     val due = task.dueDate
     Column(modifier = modifier.fillMaxWidth()) {
         Row(
-            modifier = Modifier.fillMaxWidth().clickable(onClick = onClick).padding(start = 8.dp, end = 16.dp),
+            modifier =
+                Modifier
+                    .fillMaxWidth()
+                    .clickable(
+                        onClick = onClick,
+                    ).padding(start = 8.dp + 28.dp * indent, end = 16.dp),
             verticalAlignment = Alignment.Top,
         ) {
             TaskCheckbox(task.done, task.priority, onToggle)
@@ -112,7 +124,15 @@ fun TaskRow(
                     textDecoration = if (task.done) TextDecoration.LineThrough else null,
                     color = if (task.done) outline else MaterialTheme.colorScheme.onSurface,
                 )
-                if (due != null || task.labels.isNotEmpty() || projectName != null) {
+                val hasMeta =
+                    due != null ||
+                        task.labels.isNotEmpty() ||
+                        projectName != null ||
+                        task.isRecurring ||
+                        task.reminders.isNotEmpty() ||
+                        subtasks != null ||
+                        task.assignees.isNotEmpty()
+                if (hasMeta) {
                     Row(
                         horizontalArrangement = Arrangement.spacedBy(12.dp),
                         verticalAlignment = Alignment.CenterVertically,
@@ -121,6 +141,19 @@ fun TaskRow(
                         if (due != null) {
                             val tint = if (task.done) outline else colors.forDue(due.localDate(), today, outline)
                             MetaItem(Icons.Outlined.CalendarToday, dueLabel(due, today), tint)
+                        }
+                        if (task.isRecurring) SmallIcon(Icons.Filled.Repeat, "Tâche répétée", outline)
+                        if (task.reminders.isNotEmpty()) SmallIcon(Icons.Filled.Alarm, "Rappel", outline)
+                        if (subtasks != null) {
+                            Text(subtasks, style = MaterialTheme.typography.bodySmall, color = outline)
+                        }
+                        if (task.assignees.isNotEmpty()) {
+                            SmallIcon(Icons.Filled.Person, "Assignée", outline)
+                            Text(
+                                task.assignees.joinToString { it.display },
+                                style = MaterialTheme.typography.bodySmall,
+                                color = outline,
+                            )
                         }
                         if (task.labels.isNotEmpty()) {
                             MetaItem(Icons.AutoMirrored.Outlined.Label, task.labels.joinToString { it.title }, outline)
@@ -164,4 +197,26 @@ private fun MetaItem(
             modifier = Modifier.padding(start = 4.dp),
         )
     }
+}
+
+@Composable
+private fun SmallIcon(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    description: String,
+) {
+    Icon(
+        icon,
+        contentDescription = description,
+        tint = MaterialTheme.colorScheme.outline,
+        modifier = Modifier.size(14.dp),
+    )
+}
+
+@Composable
+private fun SmallIcon(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    description: String,
+    tint: Color,
+) {
+    Icon(icon, contentDescription = description, tint = tint, modifier = Modifier.size(14.dp))
 }

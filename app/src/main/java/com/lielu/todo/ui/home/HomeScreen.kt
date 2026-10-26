@@ -42,6 +42,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.lielu.todo.data.model.Task
 import com.lielu.todo.data.todo.TodoRepository
 import com.lielu.todo.data.todo.TodoState
+import com.lielu.todo.reminder.ReminderScheduler
 import com.lielu.todo.ui.common.AddFab
 import com.lielu.todo.ui.common.EmptyState
 import com.lielu.todo.ui.common.ScreenTitle
@@ -50,8 +51,10 @@ import com.lielu.todo.ui.common.TaskRow
 import com.lielu.todo.ui.common.dayHeader
 import com.lielu.todo.ui.common.dayLabel
 import com.lielu.todo.ui.common.localDate
+import com.lielu.todo.ui.common.syncSummary
 import com.lielu.todo.ui.common.toggleDone
 import com.lielu.todo.ui.task.QuickAddSheet
+import com.lielu.todo.ui.task.add
 import com.lielu.todo.ui.theme.LocalTodoColors
 import kotlinx.coroutines.launch
 import java.time.LocalDate
@@ -74,6 +77,10 @@ fun HomeScreen(
     onOpenTask: (Long) -> Unit,
     onOpenProject: (Long) -> Unit,
     onOpenLabel: (Long) -> Unit,
+    onOpenFilter: (Long) -> Unit,
+    onOpenFavorites: () -> Unit,
+    onSearch: () -> Unit,
+    reminderScheduler: ReminderScheduler,
     onSettings: () -> Unit,
     onLogout: () -> Unit,
 ) {
@@ -83,6 +90,8 @@ fun HomeScreen(
     var tab by rememberSaveable { mutableIntStateOf(HomeTab.TODAY.ordinal) }
     var showAdd by remember { mutableStateOf(false) }
     val today = LocalDate.now()
+
+    NotificationPermissionRequest()
 
     // Comme Todoist : on resynchronise à chaque retour au premier plan.
     LifecycleEventEffect(Lifecycle.Event.ON_RESUME) { scope.launch { repository.refresh() } }
@@ -143,7 +152,11 @@ fun HomeScreen(
             val onToggle: (Task, Boolean) -> Unit = { task, done -> scope.toggleDone(repository, snackbar, task, done) }
             when (HomeTab.entries[tab]) {
                 HomeTab.INBOX -> InboxTab(state, today, onToggle, onOpenTask)
-                HomeTab.TODAY -> TodayTab(state, today, onToggle, onOpenTask)
+                HomeTab.TODAY ->
+                    TodayTab(state, today, onToggle, onOpenTask, onReschedule = {
+                        val moved = repository.rescheduleOverdue(today)
+                        scope.launch { snackbar.showSnackbar("$moved tâche(s) reportée(s) à aujourd'hui") }
+                    })
                 HomeTab.UPCOMING -> UpcomingTab(state, today, onToggle, onOpenTask)
                 HomeTab.BROWSE ->
                     BrowseTab(
@@ -154,6 +167,9 @@ fun HomeScreen(
                         snackbar = snackbar,
                         onOpenProject = onOpenProject,
                         onOpenLabel = onOpenLabel,
+                        onOpenFilter = onOpenFilter,
+                        onOpenFavorites = onOpenFavorites,
+                        reminderScheduler = reminderScheduler,
                         onSettings = onSettings,
                         onLogout = onLogout,
                     )
@@ -166,9 +182,7 @@ fun HomeScreen(
             state = state,
             defaultProjectId = state.inboxId,
             defaultDate = if (HomeTab.entries[tab] == HomeTab.TODAY) today else null,
-            onAdd = { title, projectId, due, priority, labels ->
-                repository.addTask(title, projectId, due, priority, labels)
-            },
+            onAdd = { repository.add(it) },
             onDismiss = { showAdd = false },
         )
     }
@@ -180,6 +194,7 @@ private fun TodayTab(
     today: LocalDate,
     onToggle: (Task, Boolean) -> Unit,
     onOpenTask: (Long) -> Unit,
+    onReschedule: () -> Unit,
 ) {
     val colors = LocalTodoColors.current
     val dated = state.tasks.filter { !it.done && it.dueDate != null }
@@ -196,10 +211,20 @@ private fun TodayTab(
     LazyColumn(modifier = Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 96.dp)) {
         item {
             val count = overdue.size + dueToday.size
-            ScreenTitle("Aujourd'hui", if (count == 0) null else "$count tâche${if (count > 1) "s" else ""}")
+            val summary = if (count == 0) null else "$count tâche${if (count > 1) "s" else ""}"
+            val sync = syncSummary(state, System.currentTimeMillis())
+            ScreenTitle("Aujourd'hui", listOfNotNull(summary, sync).joinToString(" · ").ifEmpty { null })
         }
         if (overdue.isNotEmpty()) {
-            item { SectionHeader("En retard", color = colors.overdue, count = overdue.size) }
+            item {
+                SectionHeader(
+                    "En retard",
+                    color = colors.overdue,
+                    count = overdue.size,
+                    actionLabel = "Reporter",
+                    onAction = onReschedule,
+                )
+            }
             items(overdue, key = {
                 it.id
             }) { TaskRow(it, today, projects[it.projectId], { d -> onToggle(it, d) }, { onOpenTask(it.id) }) }
@@ -296,5 +321,26 @@ internal fun LoadingState() {
             color = MaterialTheme.colorScheme.outline,
             modifier = Modifier.padding(top = 12.dp),
         )
+    }
+}
+
+/** Android 13+ : les rappels ne s'affichent qu'avec cette autorisation, demandée une fois à l'ouverture. */
+@Composable
+private fun NotificationPermissionRequest() {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val launcher =
+        androidx.activity.compose.rememberLauncherForActivityResult(
+            androidx.activity.result.contract.ActivityResultContracts
+                .RequestPermission(),
+        ) {}
+    LaunchedEffect(Unit) {
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU &&
+            androidx.core.content.ContextCompat.checkSelfPermission(
+                context,
+                android.Manifest.permission.POST_NOTIFICATIONS,
+            ) != android.content.pm.PackageManager.PERMISSION_GRANTED
+        ) {
+            launcher.launch(android.Manifest.permission.POST_NOTIFICATIONS)
+        }
     }
 }

@@ -2,4 +2,12 @@
     <style name="Theme.LieluApp" parent="android:Theme.Material.Light.NoActionBar">
         <item name="android:windowBackground">@color/window_background</item>
     </style>
+
+    <!-- Fenêtre transparente : QuickAddActivity n'affiche que la feuille d'ajout rapide par-dessus l'écran d'avant. -->
+    <style name="Theme.LieluApp.Translucent" parent="Theme.LieluApp">
+        <item name="android:windowIsTranslucent">true</item>
+        <item name="android:windowBackground">@android:color/transparent</item>
+        <item name="android:backgroundDimEnabled">false</item>
+        <item name="android:windowNoTitle">true</item>
+    </style>
 </resources>

@@ -53,7 +53,7 @@ class VikunjaClient(
             val connection = url.openConnection() as HttpURLConnection
             try {
                 connection.requestMethod = method
-                connection.connectTimeout = TIMEOUT_MS
+                connection.connectTimeout = CONNECT_TIMEOUT_MS
                 connection.readTimeout = TIMEOUT_MS
                 connection.setRequestProperty("Accept", "application/json")
                 if (token != null) connection.setRequestProperty("Authorization", "Bearer $token")
@@ -85,6 +85,8 @@ class VikunjaClient(
             ?: "Erreur $code"
 
     companion object {
+        // Court : serveur coupé = on veut passer au cache vite, pas attendre 20 s à chaque ouverture.
+        private const val CONNECT_TIMEOUT_MS = 6_000
         private const val TIMEOUT_MS = 20_000
         private const val HTTP_ERROR = 400
 

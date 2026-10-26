@@ -1,6 +1,7 @@
 package com.lielu.todo.ui.navigation
 
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -13,6 +14,8 @@ import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.lielu.todo.AppContainer
 import com.lielu.todo.ui.home.HomeScreen
+import com.lielu.todo.ui.home.ListTarget
+import com.lielu.todo.ui.home.SearchScreen
 import com.lielu.todo.ui.home.TaskListScreen
 import com.lielu.todo.ui.login.LoginScreen
 import com.lielu.todo.ui.settings.SettingsScreen
@@ -24,11 +27,16 @@ object AppDestinations {
     const val SETTINGS = "settings"
     const val PROJECT = "project/{id}"
     const val LABEL = "label/{id}"
+    const val FILTER = "filter/{id}"
+    const val FAVORITES = "favorites"
+    const val SEARCH = "search"
     const val TASK = "task/{id}"
 
     fun project(id: Long) = "project/$id"
 
     fun label(id: Long) = "label/$id"
+
+    fun filter(id: Long) = "filter/$id"
 
     fun task(id: Long) = "task/$id"
 }
@@ -36,7 +44,11 @@ object AppDestinations {
 private val idArgument = listOf(navArgument("id") { type = NavType.LongType })
 
 @Composable
-fun AppNavHost(container: AppContainer) {
+fun AppNavHost(
+    container: AppContainer,
+    openTaskId: Long? = null,
+    onTaskOpened: () -> Unit = {},
+) {
     val loggedIn by container.session.loggedIn.collectAsStateWithLifecycle()
     if (!loggedIn) {
         LoginScreen(container.session, container.vikunjaClient, container.todoRepository)
@@ -45,6 +57,14 @@ fun AppNavHost(container: AppContainer) {
 
     val navController = rememberNavController()
     val repository = container.todoRepository
+
+    // Notification de rappel ou ligne de widget : on ouvre la tâche par-dessus l'écran d'accueil.
+    LaunchedEffect(openTaskId) {
+        if (openTaskId != null) {
+            navController.navigate(AppDestinations.task(openTaskId))
+            onTaskOpened()
+        }
+    }
 
     NavHost(navController = navController, startDestination = AppDestinations.HOME) {
         composable(AppDestinations.HOME) {
@@ -55,6 +75,10 @@ fun AppNavHost(container: AppContainer) {
                 onOpenTask = { navController.navigate(AppDestinations.task(it)) },
                 onOpenProject = { navController.navigate(AppDestinations.project(it)) },
                 onOpenLabel = { navController.navigate(AppDestinations.label(it)) },
+                onOpenFilter = { navController.navigate(AppDestinations.filter(it)) },
+                onOpenFavorites = { navController.navigate(AppDestinations.FAVORITES) },
+                onSearch = { navController.navigate(AppDestinations.SEARCH) },
+                reminderScheduler = container.reminderScheduler,
                 onSettings = { navController.navigate(AppDestinations.SETTINGS) },
                 onLogout = { container.session.clear() },
             )
@@ -63,8 +87,7 @@ fun AppNavHost(container: AppContainer) {
         composable(AppDestinations.PROJECT, arguments = idArgument) { entry ->
             TaskListScreen(
                 repository = repository,
-                projectId = entry.arguments?.getLong("id"),
-                labelId = null,
+                target = ListTarget(projectId = entry.arguments?.getLong("id")),
                 onOpenTask = { navController.navigate(AppDestinations.task(it)) },
                 onBack = { navController.popBackStack() },
             )
@@ -73,8 +96,33 @@ fun AppNavHost(container: AppContainer) {
         composable(AppDestinations.LABEL, arguments = idArgument) { entry ->
             TaskListScreen(
                 repository = repository,
-                projectId = null,
-                labelId = entry.arguments?.getLong("id"),
+                target = ListTarget(labelId = entry.arguments?.getLong("id")),
+                onOpenTask = { navController.navigate(AppDestinations.task(it)) },
+                onBack = { navController.popBackStack() },
+            )
+        }
+
+        composable(AppDestinations.FILTER, arguments = idArgument) { entry ->
+            TaskListScreen(
+                repository = repository,
+                target = ListTarget(filterId = entry.arguments?.getLong("id")),
+                onOpenTask = { navController.navigate(AppDestinations.task(it)) },
+                onBack = { navController.popBackStack() },
+            )
+        }
+
+        composable(AppDestinations.FAVORITES) {
+            TaskListScreen(
+                repository = repository,
+                target = ListTarget(favorites = true),
+                onOpenTask = { navController.navigate(AppDestinations.task(it)) },
+                onBack = { navController.popBackStack() },
+            )
+        }
+
+        composable(AppDestinations.SEARCH) {
+            SearchScreen(
+                repository = repository,
                 onOpenTask = { navController.navigate(AppDestinations.task(it)) },
                 onBack = { navController.popBackStack() },
             )
@@ -84,6 +132,7 @@ fun AppNavHost(container: AppContainer) {
             TaskDetailScreen(
                 repository = repository,
                 taskId = entry.arguments?.getLong("id") ?: 0L,
+                onOpenTask = { navController.navigate(AppDestinations.task(it)) },
                 onBack = { navController.popBackStack() },
             )
         }

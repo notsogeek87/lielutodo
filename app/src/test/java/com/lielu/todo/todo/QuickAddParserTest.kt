@@ -81,4 +81,16 @@ class QuickAddParserTest {
         assertEquals(LocalDateTime.of(2026, 10, 27, 9, 0).atZone(zone).toInstant(), evening)
         assertNull(parse("Rien").dueInstant(LocalDateTime.of(2026, 10, 26, 8, 0), zone))
     }
+
+    @Test
+    fun recurrence() {
+        assertEquals(86_400L, parse("Vitamines tous les jours").repeatAfter)
+        assertEquals(today, parse("Vitamines tous les jours").date)
+        assertEquals(2 * 604_800L, parse("Arroser tous les 2 semaines").repeatAfter)
+        assertEquals(1, parse("Loyer chaque mois").repeatMode)
+        val weekly = parse("Sport chaque lundi")
+        assertEquals(604_800L, weekly.repeatAfter)
+        assertEquals(today.plusDays(7), weekly.date)
+        assertEquals("Sport", weekly.title)
+    }
 }

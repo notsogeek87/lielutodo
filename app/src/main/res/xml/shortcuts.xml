@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
+    <shortcut
+        android:shortcutId="add_task"
+        android:enabled="true"
+        android:icon="@drawable/ic_add"
+        android:shortcutShortLabel="@string/widget_add_task">
+        <intent
+            android:action="android.intent.action.VIEW"
+            android:targetClass="com.lielu.todo.QuickAddActivity"
+            android:targetPackage="${applicationId}" />
+    </shortcut>
+</shortcuts>

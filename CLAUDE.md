@@ -124,3 +124,22 @@ Changer de signature casse la mise à jour (désinstallation nécessaire).
   ligne max 120, exception de nommage pour les fonctions `@Composable`. `kotlin.code.style=official`.
 - Aucune couleur en dur dans un écran : tout passe par `ui/theme/Theme.kt`.
 - Textes de l'interface en français.
+
+## LieluTodo : client Vikunja « façon Todoist » (ce dépôt)
+
+Serveur : `https://task.lielu.eu` (Vikunja, API `/api/v1`). Le serveur est personnel et peut être coupé : tout doit
+rester lisible ET modifiable hors ligne.
+
+- `data/api` : `HttpApi` (abstrait pour les tests), `VikunjaClient` (HttpURLConnection + org.json, connexion 6 s),
+  `SessionStore` (jeton dans SharedPreferences, volontairement hors sauvegarde Android).
+- `data/todo/TodoRepository` : source de vérité « local d'abord ». Chaque action modifie l'état local puis met une
+  `PendingOp` en file (envoyée dans l'ordre, ids temporaires négatifs remappés à la création). `refresh()` n'écrase
+  jamais une écriture en attente. Cache : `FileLocalCache` (JSON atomique + copie `.bak`), codec partagé avec la
+  sauvegarde (`TodoBackupSection`). Une panne serveur (5xx) = hors ligne, les écritures sont gardées.
+- Une `Task` garde son JSON serveur (`raw`) : Vikunja remplace la tâche entière à chaque mise à jour, renvoyer
+  seulement nos champs effacerait les autres.
+- `QuickAddParser` : ajout rapide en langage naturel (dates, heure, `#projet`, `@étiquette`, `p1`-`p4`, récurrence).
+  Une date seule est stockée à midi (heure « sans heure » masquée dans l'UI).
+- `reminder/` (AlarmManager, notifications Terminer/Reporter, résumé quotidien), `widget/` (liste + ajout rapide),
+  `work/SyncWorker` (30 min), `QuickAddActivity` (widget, tuile, raccourci, « Partager »).
+- Tests : `TodoRepositoryTest` joue contre un faux serveur en mémoire ; tout nouveau type d'écriture y ajoute sa route.

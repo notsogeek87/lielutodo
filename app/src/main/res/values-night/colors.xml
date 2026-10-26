@@ -1,4 +1,8 @@
 <resources>
     <!-- Pendant sombre de window_background : doit suivre `background` du thème Compose (BackgroundDark). -->
     <color name="window_background">#1E1E1E</color>
+    <color name="widget_background">#F21E1E1E</color>
+    <color name="widget_text">#F2F2F2</color>
+    <color name="widget_text_secondary">#8C8C8C</color>
+    <color name="widget_accent">#E5574B</color>
 </resources>

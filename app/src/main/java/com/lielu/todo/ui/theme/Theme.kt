@@ -146,3 +146,7 @@ fun parseHexColor(
     val value = clean.toLongOrNull(16) ?: return fallback
     return Color(0xFF000000 or value)
 }
+
+/** Couleurs proposées pour un projet (hex sans « # », comme Vikunja les stocke). */
+val ProjectPalette =
+    listOf("db4c3f", "eb8909", "fad000", "7ecc49", "299438", "158fad", "246fe0", "884dff", "b8256f", "808080")

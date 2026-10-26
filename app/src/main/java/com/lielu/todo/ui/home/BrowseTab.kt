@@ -20,7 +20,9 @@ import androidx.compose.material.icons.automirrored.outlined.Logout
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
+import androidx.compose.material.icons.outlined.FilterList
 import androidx.compose.material.icons.outlined.Settings
+import androidx.compose.material.icons.outlined.StarOutline
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -29,6 +31,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -50,11 +53,12 @@ import androidx.compose.ui.unit.dp
 import com.lielu.todo.data.model.Project
 import com.lielu.todo.data.todo.TodoRepository
 import com.lielu.todo.data.todo.TodoState
+import com.lielu.todo.reminder.ReminderScheduler
 import com.lielu.todo.ui.theme.parseHexColor
 import kotlinx.coroutines.launch
 import java.io.IOException
 
-private enum class Creating { PROJECT, LABEL }
+private enum class Creating { PROJECT, LABEL, FILTER }
 
 @Composable
 fun BrowseTab(
@@ -65,6 +69,9 @@ fun BrowseTab(
     snackbar: SnackbarHostState,
     onOpenProject: (Long) -> Unit,
     onOpenLabel: (Long) -> Unit,
+    onOpenFilter: (Long) -> Unit,
+    onOpenFavorites: () -> Unit,
+    reminderScheduler: ReminderScheduler,
     onSettings: () -> Unit,
     onLogout: () -> Unit,
 ) {
@@ -72,6 +79,7 @@ fun BrowseTab(
     var creating by remember { mutableStateOf<Creating?>(null) }
     var projectsOpen by rememberSaveable { mutableStateOf(true) }
     var labelsOpen by rememberSaveable { mutableStateOf(true) }
+    var filtersOpen by rememberSaveable { mutableStateOf(true) }
     val openCount =
         state.tasks
             .filter { !it.done }
@@ -84,6 +92,13 @@ fun BrowseTab(
         item { BrowseTopBar(userName.ifBlank { "Mon compte" }, onSettings) }
         item {
             BrowseCard {
+                val favorites = state.tasks.count { it.isFavorite && !it.done }
+                BrowseRow(
+                    Icons.Outlined.StarOutline,
+                    "Favoris",
+                    count = favorites.takeIf { it > 0 },
+                    onClick = onOpenFavorites,
+                )
                 BrowseRow(Icons.Outlined.Settings, "Paramètres et sauvegarde", onClick = onSettings)
                 BrowseRow(Icons.AutoMirrored.Outlined.Logout, "Se déconnecter", onClick = onLogout)
             }
@@ -153,6 +168,59 @@ fun BrowseTab(
             }
         }
         item {
+            BrowseHeader(
+                "Filtres",
+                expanded = filtersOpen,
+                onToggle = { filtersOpen = !filtersOpen },
+                onAdd = { creating = Creating.FILTER },
+            )
+        }
+        if (filtersOpen) {
+            item {
+                BrowseCard {
+                    if (state.filters.isEmpty()) {
+                        Text(
+                            "Aucun filtre pour l'instant.",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = muted,
+                            modifier = Modifier.padding(16.dp),
+                        )
+                    }
+                    state.filters.forEach { filter ->
+                        val count = state.filterResults[filter.id].orEmpty().count { !it.done }
+                        BrowseRow(
+                            Icons.Outlined.FilterList,
+                            filter.title,
+                            count = count.takeIf { it > 0 },
+                            onClick = { onOpenFilter(filter.id) },
+                        )
+                    }
+                }
+            }
+        }
+        item {
+            var daily by remember { mutableStateOf(reminderScheduler.dailyEnabled) }
+            BrowseCard {
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        "Résumé quotidien à 8 h",
+                        modifier = Modifier.weight(1f),
+                        style = MaterialTheme.typography.bodyLarge,
+                    )
+                    Switch(
+                        checked = daily,
+                        onCheckedChange = {
+                            daily = it
+                            reminderScheduler.dailyEnabled = it
+                        },
+                    )
+                }
+            }
+        }
+        item {
             Text(
                 serverLabel,
                 style = MaterialTheme.typography.bodySmall,
@@ -163,20 +231,33 @@ fun BrowseTab(
     }
 
     creating?.let { kind ->
-        NameDialog(
-            title = if (kind == Creating.PROJECT) "Nouveau projet" else "Nouvelle étiquette",
-            onConfirm = { name ->
-                creating = null
-                scope.launch {
-                    try {
-                        if (kind == Creating.PROJECT) repository.createProject(name) else repository.createLabel(name)
-                    } catch (e: IOException) {
-                        snackbar.showSnackbar("Création impossible : ${e.message}")
+        if (kind == Creating.FILTER) {
+            FilterDialog(
+                onConfirm = { name, query ->
+                    creating = null
+                    scope.launch {
+                        try {
+                            repository.createFilter(name, query)
+                        } catch (e: IOException) {
+                            snackbar.showSnackbar(
+                                "Création impossible (serveur injoignable ou requête refusée) : ${e.message}",
+                            )
+                        }
                     }
-                }
-            },
-            onDismiss = { creating = null },
-        )
+                },
+                onDismiss = { creating = null },
+            )
+        } else {
+            NameDialog(
+                title = if (kind == Creating.PROJECT) "Nouveau projet" else "Nouvelle étiquette",
+                onConfirm = { name ->
+                    creating = null
+                    // Hors ligne aussi : le projet ou l'étiquette existe tout de suite et part au prochain envoi.
+                    if (kind == Creating.PROJECT) repository.createProject(name) else repository.createLabel(name)
+                },
+                onDismiss = { creating = null },
+            )
+        }
     }
 }
 
@@ -315,6 +396,46 @@ private fun BrowseRow(
 }
 
 @Composable
+private fun FilterDialog(
+    onConfirm: (String, String) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    var name by remember { mutableStateOf("") }
+    var query by remember { mutableStateOf("done = false && priority >= 3") }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Nouveau filtre") },
+        text = {
+            Column {
+                OutlinedTextField(
+                    value = name,
+                    onValueChange = { name = it },
+                    singleLine = true,
+                    label = { Text("Nom") },
+                )
+                OutlinedTextField(
+                    value = query,
+                    onValueChange = { query = it },
+                    label = { Text("Requête Vikunja") },
+                    supportingText = {
+                        Text("Ex. : due_date < now && done = false  ·  labels in urgent  ·  priority >= 3")
+                    },
+                    modifier = Modifier.padding(top = 8.dp),
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = { onConfirm(name.trim(), query.trim()) },
+                enabled =
+                    name.isNotBlank() && query.isNotBlank(),
+            ) { Text("Créer") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Annuler") } },
+    )
+}
+
+@Composable
 private fun NameDialog(
     title: String,
     onConfirm: (String) -> Unit,
@@ -341,3 +462,11 @@ private fun NameDialog(
         dismissButton = { TextButton(onClick = onDismiss) { Text("Annuler") } },
     )
 }
+
+/** Couleur d'un projet : hex sans « # » tel que Vikunja le stocke ; `null` si vide ou invalide (couleur du thème). */
+internal fun hexColor(hex: String): androidx.compose.ui.graphics.Color? =
+    hex.removePrefix("#").takeIf { it.length == 6 }?.toLongOrNull(16)?.let {
+        androidx.compose.ui.graphics.Color(
+            0xFF000000 or it,
+        )
+    }
