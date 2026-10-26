@@ -1,9 +1,13 @@
 package com.lielu.todo.ui.home
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
@@ -26,10 +30,14 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.NavigationBarItemDefaults
+import androidx.compose.material3.NavigationRail
+import androidx.compose.material3.NavigationRailItem
+import androidx.compose.material3.NavigationRailItemDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
+import androidx.compose.material3.VerticalDivider
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -43,6 +51,8 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
@@ -63,18 +73,24 @@ import com.lielu.todo.ui.common.localDate
 import com.lielu.todo.ui.common.syncSummary
 import com.lielu.todo.ui.common.toggleDone
 import com.lielu.todo.ui.task.QuickAddSheet
+import com.lielu.todo.ui.task.TaskDetailScreen
 import com.lielu.todo.ui.task.add
 import com.lielu.todo.ui.theme.LocalTodoColors
 import kotlinx.coroutines.launch
 import java.time.LocalDate
 
+private const val RAIL_MIN_WIDTH_DP = 600
+private const val TWO_PANE_MIN_WIDTH_DP = 840
+private const val LIST_PANE_WEIGHT = 0.8f
+
 private enum class HomeTab(
     val label: String,
+    val icon: ImageVector,
 ) {
-    INBOX("Boîte"),
-    TODAY("Auj"),
-    UPCOMING("Prochainement"),
-    BROWSE("Parcourir"),
+    INBOX("Boîte", Icons.Outlined.Inbox),
+    TODAY("Auj", Icons.Outlined.Today),
+    UPCOMING("Prochainement", Icons.Outlined.CalendarMonth),
+    BROWSE("Parcourir", Icons.Filled.Menu),
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -106,6 +122,14 @@ fun HomeScreen(
     // Boîte de réception : 0 = la boîte elle-même (défaut), ALL_PROJECTS = toutes les tâches, sinon un projet.
     var inboxFilter by rememberSaveable { mutableLongStateOf(0L) }
     val today = LocalDate.now()
+    // Écran large (Fold déplié, tablette) : rail latéral au lieu de la barre du bas ; en très large, liste à gauche
+    // et tâche ouverte dans un volet à droite (au lieu d'une liste étirée sur toute la largeur).
+    val widthDp = LocalConfiguration.current.screenWidthDp
+    val useRail = widthDp >= RAIL_MIN_WIDTH_DP
+    val showPane = widthDp >= TWO_PANE_MIN_WIDTH_DP && HomeTab.entries[tab] != HomeTab.BROWSE
+    var selectedTaskId by rememberSaveable { mutableLongStateOf(0L) }
+    BackHandler(enabled = showPane && selectedTaskId != 0L) { selectedTaskId = 0L }
+    val openTask: (Long) -> Unit = if (showPane) ({ selectedTaskId = it }) else onOpenTask
     // Un projet supprimé ou archivé ailleurs ne doit pas laisser un filtre fantôme qui vide les listes.
     val activeFilter = projectFilter.takeIf { id -> state.projects.any { it.id == id } } ?: 0L
     val visible =
@@ -160,70 +184,119 @@ fun HomeScreen(
 
     Scaffold(
         bottomBar = {
-            NavigationBar(containerColor = MaterialTheme.colorScheme.background, tonalElevation = 0.dp) {
-                HomeTab.entries.forEachIndexed { index, item ->
-                    NavigationBarItem(
-                        selected = tab == index,
-                        onClick = { tab = index },
-                        icon = {
-                            Icon(
-                                when (item) {
-                                    HomeTab.INBOX -> Icons.Outlined.Inbox
-                                    HomeTab.TODAY -> Icons.Outlined.Today
-                                    HomeTab.UPCOMING -> Icons.Outlined.CalendarMonth
-                                    HomeTab.BROWSE -> Icons.Filled.Menu
-                                },
-                                contentDescription = null,
-                            )
-                        },
-                        label = { Text(item.label, maxLines = 1) },
-                        colors =
-                            NavigationBarItemDefaults.colors(
-                                selectedIconColor = MaterialTheme.colorScheme.primary,
-                                selectedTextColor = MaterialTheme.colorScheme.primary,
-                                indicatorColor = MaterialTheme.colorScheme.primaryContainer,
-                                unselectedIconColor = MaterialTheme.colorScheme.outline,
-                                unselectedTextColor = MaterialTheme.colorScheme.outline,
-                            ),
-                    )
+            if (!useRail) {
+                NavigationBar(containerColor = MaterialTheme.colorScheme.background, tonalElevation = 0.dp) {
+                    HomeTab.entries.forEachIndexed { index, item ->
+                        NavigationBarItem(
+                            selected = tab == index,
+                            onClick = { tab = index },
+                            icon = {
+                                Icon(
+                                    when (item) {
+                                        HomeTab.INBOX -> Icons.Outlined.Inbox
+                                        HomeTab.TODAY -> Icons.Outlined.Today
+                                        HomeTab.UPCOMING -> Icons.Outlined.CalendarMonth
+                                        HomeTab.BROWSE -> Icons.Filled.Menu
+                                    },
+                                    contentDescription = null,
+                                )
+                            },
+                            label = { Text(item.label, maxLines = 1) },
+                            colors =
+                                NavigationBarItemDefaults.colors(
+                                    selectedIconColor = MaterialTheme.colorScheme.primary,
+                                    selectedTextColor = MaterialTheme.colorScheme.primary,
+                                    indicatorColor = MaterialTheme.colorScheme.primaryContainer,
+                                    unselectedIconColor = MaterialTheme.colorScheme.outline,
+                                    unselectedTextColor = MaterialTheme.colorScheme.outline,
+                                ),
+                        )
+                    }
                 }
             }
         },
-        floatingActionButton = { AddFab(onClick = { showAdd = true }) },
+        floatingActionButton = { if (!showPane) AddFab(onClick = { showAdd = true }) },
         snackbarHost = { SnackbarHost(snackbar) },
     ) { padding ->
-        PullToRefreshBox(
-            isRefreshing = state.syncing,
-            onRefresh = { scope.launch { repository.refresh() } },
-            modifier = Modifier.padding(padding).fillMaxSize(),
-        ) {
-            val onToggle: (Task, Boolean) -> Unit = { task, done -> scope.toggleDone(repository, snackbar, task, done) }
-            when (HomeTab.entries[tab]) {
-                HomeTab.INBOX -> InboxTab(state, today, activeInbox, onToggle, onOpenTask, titleActions)
-                HomeTab.TODAY ->
-                    TodayTab(visible, today, onToggle, onOpenTask, titleActions, filterTitle, onReschedule = {
-                        val moved = repository.rescheduleOverdue(today)
-                        scope.launch { snackbar.showSnackbar("$moved tâche(s) reportée(s) à aujourd'hui") }
-                    })
-                HomeTab.UPCOMING -> UpcomingTab(visible, today, onToggle, onOpenTask, titleActions, filterTitle)
-                HomeTab.BROWSE ->
-                    BrowseTab(
-                        repository = repository,
-                        state = state,
-                        userName = userName,
-                        serverLabel = serverLabel,
-                        snackbar = snackbar,
-                        onOpenProject = onOpenProject,
-                        onOpenLabel = onOpenLabel,
-                        onOpenFilter = onOpenFilter,
-                        onOpenFavorites = onOpenFavorites,
-                        reminderScheduler = reminderScheduler,
-                        prefs = prefs,
-                        onOpenNotifications = onOpenNotifications,
-                        onOpenActivity = onOpenActivity,
-                        onSettings = onSettings,
-                        onLogout = onLogout,
+        Row(modifier = Modifier.padding(padding).fillMaxSize()) {
+            if (useRail) {
+                NavigationRail(containerColor = MaterialTheme.colorScheme.background) {
+                    Spacer(Modifier.weight(1f))
+                    HomeTab.entries.forEachIndexed { index, item ->
+                        NavigationRailItem(
+                            selected = tab == index,
+                            onClick = { tab = index },
+                            icon = { Icon(item.icon, contentDescription = null) },
+                            label = { Text(item.label, maxLines = 1) },
+                            colors =
+                                NavigationRailItemDefaults.colors(
+                                    selectedIconColor = MaterialTheme.colorScheme.primary,
+                                    selectedTextColor = MaterialTheme.colorScheme.primary,
+                                    indicatorColor = MaterialTheme.colorScheme.primaryContainer,
+                                    unselectedIconColor = MaterialTheme.colorScheme.outline,
+                                    unselectedTextColor = MaterialTheme.colorScheme.outline,
+                                ),
+                        )
+                    }
+                    Spacer(Modifier.weight(1f))
+                }
+            }
+            Box(modifier = Modifier.weight(if (showPane) LIST_PANE_WEIGHT else 1f).fillMaxHeight()) {
+                PullToRefreshBox(
+                    isRefreshing = state.syncing,
+                    onRefresh = { scope.launch { repository.refresh() } },
+                    modifier = Modifier.fillMaxSize(),
+                ) {
+                    val onToggle = { task: Task, done: Boolean -> scope.toggleDone(repository, snackbar, task, done) }
+                    when (HomeTab.entries[tab]) {
+                        HomeTab.INBOX -> InboxTab(state, today, activeInbox, onToggle, openTask, titleActions)
+                        HomeTab.TODAY ->
+                            TodayTab(visible, today, onToggle, openTask, titleActions, filterTitle, onReschedule = {
+                                val moved = repository.rescheduleOverdue(today)
+                                scope.launch { snackbar.showSnackbar("$moved tâche(s) reportée(s) à aujourd'hui") }
+                            })
+                        HomeTab.UPCOMING -> UpcomingTab(visible, today, onToggle, openTask, titleActions, filterTitle)
+                        HomeTab.BROWSE ->
+                            BrowseTab(
+                                repository = repository,
+                                state = state,
+                                userName = userName,
+                                serverLabel = serverLabel,
+                                snackbar = snackbar,
+                                onOpenProject = onOpenProject,
+                                onOpenLabel = onOpenLabel,
+                                onOpenFilter = onOpenFilter,
+                                onOpenFavorites = onOpenFavorites,
+                                reminderScheduler = reminderScheduler,
+                                prefs = prefs,
+                                onOpenNotifications = onOpenNotifications,
+                                onOpenActivity = onOpenActivity,
+                                onSettings = onSettings,
+                                onLogout = onLogout,
+                            )
+                    }
+                }
+                if (showPane) {
+                    AddFab(
+                        onClick = { showAdd = true },
+                        modifier = Modifier.align(Alignment.BottomEnd).padding(16.dp),
                     )
+                }
+            }
+            if (showPane) {
+                VerticalDivider()
+                Box(modifier = Modifier.weight(1f).fillMaxHeight()) {
+                    if (selectedTaskId == 0L) {
+                        EmptyState("Sélectionne une tâche pour l'afficher ici", Modifier.align(Alignment.Center))
+                    } else {
+                        TaskDetailScreen(
+                            repository = repository,
+                            taskId = selectedTaskId,
+                            onOpenTask = { selectedTaskId = it },
+                            onBack = { selectedTaskId = 0L },
+                        )
+                    }
+                }
             }
         }
     }
