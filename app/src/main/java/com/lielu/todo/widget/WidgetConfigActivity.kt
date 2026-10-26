@@ -121,7 +121,7 @@ private fun WidgetConfigScreen(
             Slider(
                 value = config.opacityPercent.toFloat(),
                 onValueChange = { onChange(config.copy(opacityPercent = it.roundToInt())) },
-                valueRange = 0f..100f,
+                valueRange = MIN_OPACITY_PERCENT.toFloat()..100f,
             )
             if (config.projectId != 0L) {
                 Row(

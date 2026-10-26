@@ -16,7 +16,12 @@ class WidgetConfigStore(
             projectId = prefs.getLong("project_$widgetId", 0),
             includeSubProjects = prefs.getBoolean("sub_$widgetId", true),
             fontPercent = prefs.getInt("font_$widgetId", DEFAULT_FONT_PERCENT),
-            opacityPercent = prefs.getInt("opacity_$widgetId", DEFAULT_OPACITY_PERCENT),
+            opacityPercent =
+                prefs
+                    .getInt(
+                        "opacity_$widgetId",
+                        DEFAULT_OPACITY_PERCENT,
+                    ).coerceAtLeast(MIN_OPACITY_PERCENT),
         )
 
     fun set(

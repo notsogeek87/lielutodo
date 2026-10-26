@@ -31,6 +31,9 @@ data class WidgetConfig(
 const val DEFAULT_FONT_PERCENT = 100
 const val DEFAULT_OPACITY_PERCENT = 100
 
+/** En dessous, le texte devient illisible sur un fond d'écran chargé. */
+const val MIN_OPACITY_PERCENT = 60
+
 /** Tâches du widget : filtrées selon [config], triées comme dans l'app : date prévue (échéance, sinon rappel ; sans date en dernier), priorité, position. */
 fun widgetTasks(
     tasks: List<Task>,
