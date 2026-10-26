@@ -1,5 +1,6 @@
-// Client Vikunja (fetch). Sur le site déployé, le serveur par défaut est joint via la réécriture Vercel `/vk/*`
-// (même origine : pas de CORS). Sans elle (dev local, autre serveur), on tombe sur l'appel direct.
+// Client Vikunja (fetch). Le serveur est appelé EN DIRECT dès qu'il l'autorise (CORS : VIKUNJA_CORS_ORIGINS), pour
+// que jetons et tâches ne transitent pas par un tiers. Sinon, pour le serveur par défaut, repli sur la réécriture
+// Vercel `/vk/*` (même origine : pas de CORS).
 export const DEFAULT_SERVER = 'https://task.lielu.eu';
 const PROXY_PREFIX = '/vk';
 const TIMEOUT_MS = 20_000;
@@ -93,16 +94,29 @@ export async function login(serverUrl, username, password, totp) {
     const res = await request(s, 'POST', '/login', { body });
     return { ...s, token: res.json().token };
   };
-  if (baseUrl === DEFAULT_SERVER && location.protocol.startsWith('http')) {
-    try {
-      return await tryVia(true);
-    } catch (e) {
-      // 404/405/HTML = pas de réécriture ici (dev local) ; une vraie réponse du serveur (401, 412…) est définitive.
-      const noProxy = e instanceof NetworkError || (e instanceof ApiError && [404, 405, 502, 504].includes(e.code));
-      if (!noProxy) throw e;
-    }
+  try {
+    return await tryVia(false);
+  } catch (e) {
+    // Appel direct bloqué (CORS pas encore autorisé côté serveur : le navigateur n'envoie même pas la requête) :
+    // repli sur la réécriture du site. Une vraie réponse du serveur (401, 412…) est définitive.
+    const canProxy = baseUrl === DEFAULT_SERVER && location.protocol.startsWith('http');
+    if (!(e instanceof NetworkError) || !canProxy) throw e;
   }
-  return tryVia(false);
+  return tryVia(true);
+}
+
+/**
+ * Session passée par la réécriture : le serveur autorise-t-il maintenant l'appel direct ? Renvoie la session à
+ * utiliser (directe si oui). Un échec n'a aucune conséquence : on reste sur la réécriture.
+ */
+export async function preferDirect(s) {
+  if (!s?.viaProxy || !s.token) return s;
+  try {
+    await request({ ...s, viaProxy: false }, 'GET', '/user');
+    return { ...s, viaProxy: false };
+  } catch {
+    return s;
+  }
 }
 
 export async function fetchPaged(api, path, query = {}) {
