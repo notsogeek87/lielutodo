@@ -442,7 +442,13 @@ private fun InboxTab(
                         ALL_PROJECTS -> true
                         else -> it.projectId == filter
                     }
-            }.sortedWith(compareBy<Task> { it.projectId != state.inboxId }.thenBy { it.position }.thenBy { it.id })
+            }.sortedWith(
+                compareBy<Task> { it.projectId != state.inboxId }
+                    .thenBy(nullsLast()) { it.plannedAt }
+                    .thenByDescending { it.priority }
+                    .thenBy { it.position }
+                    .thenBy { it.id },
+            )
     val projects = state.projects.associate { it.id to it.title }
     val scope =
         when (filter) {
