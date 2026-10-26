@@ -51,6 +51,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.lielu.todo.data.model.Reminder
 import com.lielu.todo.data.todo.QuickAdd
 import com.lielu.todo.data.todo.TodoRepository
 import com.lielu.todo.ui.common.AssigneesDialog
@@ -100,6 +101,7 @@ fun TaskDetailScreen(
     var description by remember(task.id) { mutableStateOf(task.description) }
     var dialog by remember { mutableStateOf<Dialog?>(null) }
     var pendingReminderDate by remember { mutableStateOf<LocalDate?>(null) }
+    var pendingDueDate by remember { mutableStateOf<LocalDate?>(null) }
     var showPriority by remember { mutableStateOf(false) }
     var showProject by remember { mutableStateOf(false) }
     var commentNote by remember { mutableStateOf<String?>(null) }
@@ -472,13 +474,44 @@ fun TaskDetailScreen(
             DatePickerSheet(
                 initial = task.dueDate?.localDate(),
                 onPick = { date ->
-                    dialog = null
-                    // On garde l'heure existante ; une nouvelle date seule reprend « midi » (date sans heure).
-                    val time = task.dueDate?.atZone(zone)?.toLocalTime() ?: QuickAdd.DATE_ONLY_TIME
-                    repository.updateTask(task.copy(dueDate = date?.atTime(time)?.atZone(zone)?.toInstant()))
+                    if (date == null) {
+                        dialog = null
+                        repository.updateTask(task.copy(dueDate = null))
+                    } else {
+                        // Une seule date à modifier : le jour, puis l'heure juste après.
+                        pendingDueDate = date
+                        dialog = Dialog.DUE_TIME
+                    }
                 },
                 onDismiss = { dialog = null },
             )
+        Dialog.DUE_TIME -> {
+            val current = task.dueDate?.atZone(zone)?.toLocalTime()
+
+            fun saveDue(
+                time: LocalTime,
+                withTime: Boolean,
+            ) {
+                val date = pendingDueDate ?: today
+                dialog = null
+                val due = date.atTime(time).atZone(zone).toInstant()
+                val atDue = { r: Reminder -> r.relativeTo == Reminder.RELATIVE_TO_DUE && r.relativePeriod == 0L }
+                // Avec une heure, la notification tombe à l'échéance sans autre geste ; sans heure, on la retire.
+                val reminders =
+                    when {
+                        !withTime -> task.reminders.filterNot(atDue)
+                        task.reminders.isEmpty() -> listOf(Reminder.beforeDue(0))
+                        else -> task.reminders
+                    }
+                repository.updateTask(task.copy(dueDate = due, reminders = reminders))
+            }
+            TimePickerDialog(
+                initial = current?.takeIf { it != QuickAdd.DATE_ONLY_TIME } ?: LocalTime.of(9, 0),
+                onPick = { saveDue(it, withTime = true) },
+                onDismiss = { dialog = null },
+                onNoTime = { saveDue(QuickAdd.DATE_ONLY_TIME, withTime = false) },
+            )
+        }
         Dialog.LABELS ->
             LabelsDialog(
                 all = state.labels,
@@ -564,7 +597,7 @@ fun TaskDetailScreen(
     }
 }
 
-private enum class Dialog { DATE, LABELS, REPEAT, REMINDERS, REMINDER_DATE, REMINDER_TIME, ASSIGNEES }
+private enum class Dialog { DATE, DUE_TIME, LABELS, REPEAT, REMINDERS, REMINDER_DATE, REMINDER_TIME, ASSIGNEES }
 
 @Composable
 private fun SectionTitle(text: String) {
