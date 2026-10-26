@@ -103,6 +103,9 @@ fun TaskDetailScreen(
     var dialog by remember { mutableStateOf<Dialog?>(null) }
     var pendingReminderDate by remember { mutableStateOf<LocalDate?>(null) }
     var pendingDueDate by remember { mutableStateOf<LocalDate?>(null) }
+
+    // Répétition choisie sur une tâche sans date : enregistrée seulement une fois la date et l'heure données.
+    var pendingRepeat by remember { mutableStateOf<Pair<Long, String>?>(null) }
     var showPriority by remember { mutableStateOf(false) }
     var showProject by remember { mutableStateOf(false) }
     var commentNote by remember { mutableStateOf<String?>(null) }
@@ -181,9 +184,6 @@ fun TaskDetailScreen(
                 }
         }
     }
-
-    /** Date d'échéance donnée : on la crée à midi (« date seule ») si la tâche n'en avait pas. */
-    fun withDefaultDue() = task.dueDate ?: today.atTime(QuickAdd.DATE_ONLY_TIME).atZone(zone).toInstant()
 
     Scaffold(
         snackbarHost = { androidx.compose.material3.SnackbarHost(snackbar) },
@@ -477,6 +477,7 @@ fun TaskDetailScreen(
                 onPick = { date ->
                     if (date == null) {
                         dialog = null
+                        pendingRepeat = null
                         // « Aucune date » efface aussi le rappel qui tenait lieu de date, et ceux liés à l'échéance.
                         val kept = task.reminders.filterNot { it.isStandIn(task) || it.relativeTo.isNotBlank() }
                         repository.updateTask(task.copy(dueDate = null, reminders = kept))
@@ -486,7 +487,10 @@ fun TaskDetailScreen(
                         dialog = Dialog.DUE_TIME
                     }
                 },
-                onDismiss = { dialog = null },
+                onDismiss = {
+                    dialog = null
+                    pendingRepeat = null
+                },
             )
         Dialog.DUE_TIME -> {
             val current = task.plannedAt?.atZone(zone)?.toLocalTime()
@@ -508,12 +512,24 @@ fun TaskDetailScreen(
                         others.isEmpty() -> listOf(Reminder.beforeDue(0))
                         else -> others
                     }
-                repository.updateTask(task.copy(dueDate = due, reminders = reminders))
+                val repeat = pendingRepeat
+                pendingRepeat = null
+                repository.updateTask(
+                    task.copy(
+                        dueDate = due,
+                        reminders = reminders,
+                        repeatAfter = repeat?.first ?: task.repeatAfter,
+                        repeatMode = repeat?.second ?: task.repeatMode,
+                    ),
+                )
             }
             TimePickerDialog(
                 initial = current?.takeIf { it != QuickAdd.DATE_ONLY_TIME } ?: LocalTime.of(9, 0),
                 onPick = { saveDue(it, withTime = true) },
-                onDismiss = { dialog = null },
+                onDismiss = {
+                    dialog = null
+                    pendingRepeat = null
+                },
             )
         }
         Dialog.LABELS ->
@@ -533,13 +549,31 @@ fun TaskDetailScreen(
                     dialog = null
                     // Vikunja ne répète que les tâches qui ont une échéance.
                     val repeats = after > 0 || mode == com.lielu.todo.data.model.Task.REPEAT_MONTHLY
-                    repository.updateTask(
-                        task.copy(
-                            repeatAfter = after,
-                            repeatMode = mode,
-                            dueDate = if (repeats) withDefaultDue() else task.dueDate,
-                        ),
-                    )
+                    if (repeats && task.plannedAt == null) {
+                        // Pas de date : on la demande (jour puis heure) avant d'enregistrer la répétition.
+                        pendingRepeat = after to mode
+                        dialog = Dialog.DATE
+                    } else {
+                        // Un rappel qui tenait lieu de date devient l'échéance.
+                        val standIn = repeats && task.dueDate == null
+                        repository.updateTask(
+                            task.copy(
+                                repeatAfter = after,
+                                repeatMode = mode,
+                                dueDate = if (standIn) task.plannedAt else task.dueDate,
+                                reminders =
+                                    if (standIn) {
+                                        task.reminders.filterNot {
+                                            it.isStandIn(
+                                                task,
+                                            )
+                                        }
+                                    } else {
+                                        task.reminders
+                                    },
+                            ),
+                        )
+                    }
                 },
                 onDismiss = { dialog = null },
             )

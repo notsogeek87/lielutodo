@@ -176,4 +176,4 @@ Toute date d'échéance saisie (ajout rapide depuis n'importe où, détail d'une
 d'heure : jamais de « Sans heure », jamais de date seule enregistrée à midi par un nouveau chemin
 (`DATE_ONLY_TIME` ne sert qu'à lire d'anciennes tâches). `QuickAdd.needsTime` décide, `QuickAddSheet` demande
 l'heure après la date ou à l'envoi. Tout nouveau `DatePickerSheet` doit être accompagné d'un `TimePickerDialog` ;
-`TimeRequiredTest` échoue sinon. Cas encore à midi : récurrence ajoutée à une tâche sans date (`withDefaultDue`).
+`TimeRequiredTest` échoue sinon. Récurrence ajoutée à une tâche sans date : le détail demande d'abord la date puis l'heure (`pendingRepeat`).
