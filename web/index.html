@@ -10,10 +10,7 @@
   <link rel="icon" href="icon.svg" type="image/svg+xml">
   <link rel="apple-touch-icon" href="icon.svg">
   <link rel="stylesheet" href="styles.css">
-  <script>
-    // Appliqué avant le premier affichage pour éviter l'éclair clair en thème sombre.
-    try { var t = localStorage.getItem('lielutodo.theme'); if (t === 'light' || t === 'dark') document.documentElement.dataset.theme = t; } catch (e) {}
-  </script>
+  <script src="js/theme-init.js"></script>
 </head>
 <body>
   <div id="app"></div>

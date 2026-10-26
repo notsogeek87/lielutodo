@@ -93,6 +93,7 @@ export const isRecurring = (t) => t.repeatAfter > 0 || t.repeatMode === REPEAT_M
 
 /** Couleur CSS d'un projet/étiquette (Vikunja stocke l'hex sans « # »). */
 export function colorOf(hex, fallback = '#808080') {
-  if (!hex) return fallback;
+  // Valeur du serveur insérée dans des attributs style : on n'accepte qu'une couleur hexadécimale.
+  if (typeof hex !== 'string' || !/^#?[0-9a-f]{3,8}$/i.test(hex)) return fallback;
   return hex.startsWith('#') ? hex : `#${hex}`;
 }

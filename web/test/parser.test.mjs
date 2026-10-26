@@ -61,3 +61,12 @@ test('prochaine occurrence', () => {
   assert.equal(nextOccurrence(due, 86400, 0, NOW), day(2025, 10, 15, 12));
   assert.equal(nextOccurrence(due, 0, 1, NOW), day(2025, 11, 10, 12));
 });
+
+test('colorOf n’accepte que de l’hexadécimal (valeur serveur insérée dans un style)', async () => {
+  const { colorOf } = await import('../js/model.js');
+  assert.equal(colorOf('1973ff'), '#1973ff');
+  assert.equal(colorOf('#abc'), '#abc');
+  assert.equal(colorOf('red;background:url(x)'), '#808080');
+  assert.equal(colorOf('"><img src=x onerror=alert(1)>', '#000'), '#000');
+  assert.equal(colorOf(''), '#808080');
+});
