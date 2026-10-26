@@ -486,9 +486,15 @@ private fun InboxTab(
             )
     val projects = state.projects.associate { it.id to it.title }
     val projectColors = projectColors(state.projects)
-    // Titre = projet sélectionné (avec sa couleur) ; « Tâches personnelles » pour tous les projets, sans couleur.
+    // Titre = projet sélectionné (avec sa couleur) ; la boîte de réception s'appelle « Tâches personnelles » ;
+    // « Tous les projets » n'a pas de couleur.
     val titleProject = if (filter == 0L) state.inboxId else filter
-    val title = if (filter == ALL_PROJECTS) "Tâches personnelles" else projects[titleProject] ?: "Tâches"
+    val title =
+        when (filter) {
+            ALL_PROJECTS -> "Tous les projets"
+            0L -> "Tâches personnelles"
+            else -> projects[titleProject] ?: "Tâches"
+        }
     val titleColor =
         if (filter == ALL_PROJECTS) null else projectColors[titleProject] ?: MaterialTheme.colorScheme.outline
     LazyColumn(modifier = Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 96.dp)) {
