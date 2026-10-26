@@ -3,38 +3,33 @@ package com.lielu.todo.ui.home
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.FilterList
-import androidx.compose.material.icons.filled.Folder
-import androidx.compose.material.icons.filled.Inbox
+import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.Search
-import androidx.compose.material.icons.filled.Today
+import androidx.compose.material.icons.outlined.CalendarMonth
+import androidx.compose.material.icons.outlined.Inbox
+import androidx.compose.material.icons.outlined.Today
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -56,7 +51,9 @@ import com.lielu.todo.data.model.Task
 import com.lielu.todo.data.todo.TodoRepository
 import com.lielu.todo.data.todo.TodoState
 import com.lielu.todo.reminder.ReminderScheduler
+import com.lielu.todo.ui.common.AddFab
 import com.lielu.todo.ui.common.EmptyState
+import com.lielu.todo.ui.common.ScreenTitle
 import com.lielu.todo.ui.common.SectionHeader
 import com.lielu.todo.ui.common.TaskRow
 import com.lielu.todo.ui.common.dayHeader
@@ -71,11 +68,11 @@ import kotlinx.coroutines.launch
 import java.time.LocalDate
 
 private enum class HomeTab(
-    val title: String,
+    val label: String,
 ) {
-    INBOX("Boîte de réception"),
-    TODAY("Aujourd'hui"),
-    UPCOMING("À venir"),
+    INBOX("Boîte"),
+    TODAY("Auj"),
+    UPCOMING("Prochainement"),
     BROWSE("Parcourir"),
 }
 
@@ -83,6 +80,7 @@ private enum class HomeTab(
 @Composable
 fun HomeScreen(
     repository: TodoRepository,
+    userName: String,
     serverLabel: String,
     onOpenTask: (Long) -> Unit,
     onOpenProject: (Long) -> Unit,
@@ -98,23 +96,22 @@ fun HomeScreen(
     val scope = rememberCoroutineScope()
     val snackbar = remember { SnackbarHostState() }
     var tab by rememberSaveable { mutableIntStateOf(HomeTab.TODAY.ordinal) }
-    // 0 = tous les projets ; sinon n'affiche dans Aujourd'hui et À venir que les tâches de ce projet.
-    var projectFilter by rememberSaveable { mutableLongStateOf(0L) }
-    var showFilter by remember { mutableStateOf(false) }
     var showAdd by remember { mutableStateOf(false) }
+    // 0 = tous les projets ; sinon Aujourd'hui et Prochainement n'affichent que les tâches de ce projet.
+    var projectFilter by rememberSaveable { mutableLongStateOf(0L) }
     val today = LocalDate.now()
     // Un projet supprimé ou archivé ailleurs ne doit pas laisser un filtre fantôme qui vide les listes.
     val activeFilter = projectFilter.takeIf { id -> state.projects.any { it.id == id } } ?: 0L
     val visible =
-        if (activeFilter ==
-            0L
-        ) {
-            state
-        } else {
-            state.copy(tasks = state.tasks.filter { it.projectId == activeFilter })
-        }
+        if (activeFilter == 0L) state else state.copy(tasks = state.tasks.filter { it.projectId == activeFilter })
     val filterTitle = state.projects.firstOrNull { it.id == activeFilter }?.title
     val filterable = HomeTab.entries[tab] == HomeTab.TODAY || HomeTab.entries[tab] == HomeTab.UPCOMING
+    val titleActions: @Composable () -> Unit = {
+        IconButton(onClick = onSearch) { Icon(Icons.Filled.Search, contentDescription = "Rechercher") }
+        if (filterable) {
+            ProjectFilterButton(state, activeFilter, onPick = { projectFilter = it })
+        }
+    }
 
     NotificationPermissionRequest()
 
@@ -136,87 +133,8 @@ fun HomeScreen(
     }
 
     Scaffold(
-        topBar = {
-            TopAppBar(
-                title = {
-                    Column {
-                        Text(HomeTab.entries[tab].title)
-                        if (filterable && filterTitle != null) {
-                            Text(
-                                "Projet : $filterTitle",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.primary,
-                            )
-                        }
-                        syncSummary(state, System.currentTimeMillis())?.let {
-                            Text(
-                                it,
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.outline,
-                            )
-                        }
-                    }
-                },
-                actions = {
-                    if (state.syncing) {
-                        CircularProgressIndicator(
-                            modifier = Modifier.padding(end = 8.dp).size(24.dp),
-                        )
-                    }
-                    if (filterable) {
-                        Box {
-                            IconButton(onClick = { showFilter = true }) {
-                                Icon(
-                                    Icons.Filled.FilterList,
-                                    contentDescription = "Filtrer par projet",
-                                    tint =
-                                        if (activeFilter != 0L) {
-                                            MaterialTheme.colorScheme.primary
-                                        } else {
-                                            MaterialTheme.colorScheme.onSurfaceVariant
-                                        },
-                                )
-                            }
-                            DropdownMenu(expanded = showFilter, onDismissRequest = { showFilter = false }) {
-                                DropdownMenuItem(
-                                    text = { Text("Tous les projets") },
-                                    leadingIcon = {
-                                        if (activeFilter ==
-                                            0L
-                                        ) {
-                                            Icon(Icons.Filled.Check, contentDescription = null)
-                                        }
-                                    },
-                                    onClick = {
-                                        projectFilter = 0L
-                                        showFilter = false
-                                    },
-                                )
-                                orderedProjects(state.projects).forEach { (project, depth) ->
-                                    DropdownMenuItem(
-                                        text = { Text("  ".repeat(depth) + project.title) },
-                                        leadingIcon = {
-                                            if (activeFilter ==
-                                                project.id
-                                            ) {
-                                                Icon(Icons.Filled.Check, contentDescription = null)
-                                            }
-                                        },
-                                        onClick = {
-                                            projectFilter = project.id
-                                            showFilter = false
-                                        },
-                                    )
-                                }
-                            }
-                        }
-                    }
-                    IconButton(onClick = onSearch) { Icon(Icons.Filled.Search, contentDescription = "Rechercher") }
-                },
-            )
-        },
         bottomBar = {
-            NavigationBar {
+            NavigationBar(containerColor = MaterialTheme.colorScheme.background, tonalElevation = 0.dp) {
                 HomeTab.entries.forEachIndexed { index, item ->
                     NavigationBarItem(
                         selected = tab == index,
@@ -224,24 +142,28 @@ fun HomeScreen(
                         icon = {
                             Icon(
                                 when (item) {
-                                    HomeTab.INBOX -> Icons.Filled.Inbox
-                                    HomeTab.TODAY -> Icons.Filled.Today
-                                    HomeTab.UPCOMING -> Icons.Filled.CalendarMonth
-                                    HomeTab.BROWSE -> Icons.Filled.Folder
+                                    HomeTab.INBOX -> Icons.Outlined.Inbox
+                                    HomeTab.TODAY -> Icons.Outlined.Today
+                                    HomeTab.UPCOMING -> Icons.Outlined.CalendarMonth
+                                    HomeTab.BROWSE -> Icons.Filled.Menu
                                 },
                                 contentDescription = null,
                             )
                         },
-                        label = { Text(item.title) },
+                        label = { Text(item.label, maxLines = 1) },
+                        colors =
+                            NavigationBarItemDefaults.colors(
+                                selectedIconColor = MaterialTheme.colorScheme.primary,
+                                selectedTextColor = MaterialTheme.colorScheme.primary,
+                                indicatorColor = MaterialTheme.colorScheme.primaryContainer,
+                                unselectedIconColor = MaterialTheme.colorScheme.outline,
+                                unselectedTextColor = MaterialTheme.colorScheme.outline,
+                            ),
                     )
                 }
             }
         },
-        floatingActionButton = {
-            FloatingActionButton(
-                onClick = { showAdd = true },
-            ) { Icon(Icons.Filled.Add, contentDescription = "Ajouter une tâche") }
-        },
+        floatingActionButton = { AddFab(onClick = { showAdd = true }) },
         snackbarHost = { SnackbarHost(snackbar) },
     ) { padding ->
         PullToRefreshBox(
@@ -251,17 +173,18 @@ fun HomeScreen(
         ) {
             val onToggle: (Task, Boolean) -> Unit = { task, done -> scope.toggleDone(repository, snackbar, task, done) }
             when (HomeTab.entries[tab]) {
-                HomeTab.INBOX -> InboxTab(state, today, onToggle, onOpenTask)
+                HomeTab.INBOX -> InboxTab(state, today, onToggle, onOpenTask, titleActions)
                 HomeTab.TODAY ->
-                    TodayTab(visible, today, onToggle, onOpenTask, onReschedule = {
+                    TodayTab(visible, today, onToggle, onOpenTask, titleActions, filterTitle, onReschedule = {
                         val moved = repository.rescheduleOverdue(today)
                         scope.launch { snackbar.showSnackbar("$moved tâche(s) reportée(s) à aujourd'hui") }
                     })
-                HomeTab.UPCOMING -> UpcomingTab(visible, today, onToggle, onOpenTask)
+                HomeTab.UPCOMING -> UpcomingTab(visible, today, onToggle, onOpenTask, titleActions, filterTitle)
                 HomeTab.BROWSE ->
                     BrowseTab(
                         repository = repository,
                         state = state,
+                        userName = userName,
                         serverLabel = serverLabel,
                         snackbar = snackbar,
                         onOpenProject = onOpenProject,
@@ -293,6 +216,8 @@ private fun TodayTab(
     today: LocalDate,
     onToggle: (Task, Boolean) -> Unit,
     onOpenTask: (Long) -> Unit,
+    actions: @Composable () -> Unit,
+    filterTitle: String?,
     onReschedule: () -> Unit,
 ) {
     val colors = LocalTodoColors.current
@@ -307,20 +232,34 @@ private fun TodayTab(
         return
     }
     val projects = state.projects.associate { it.id to it.title }
-    LazyColumn(modifier = Modifier.fillMaxSize()) {
+    LazyColumn(modifier = Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 96.dp)) {
+        item {
+            val count = overdue.size + dueToday.size
+            val summary = if (count == 0) null else "$count tâche${if (count > 1) "s" else ""}"
+            val sync = syncSummary(state, System.currentTimeMillis())
+            val project = filterTitle?.let { "Projet : $it" }
+            ScreenTitle(
+                "Aujourd'hui",
+                listOfNotNull(summary, project, sync).joinToString(" · ").ifEmpty { null },
+                actions = actions,
+            )
+        }
         if (overdue.isNotEmpty()) {
             item {
-                Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                    SectionHeader("En retard", color = colors.overdue, modifier = Modifier.weight(1f))
-                    TextButton(onClick = onReschedule) { Text("Reporter") }
-                }
+                SectionHeader(
+                    "En retard",
+                    color = colors.overdue,
+                    count = overdue.size,
+                    actionLabel = "Reporter",
+                    onAction = onReschedule,
+                )
             }
             items(overdue, key = {
                 it.id
             }) { TaskRow(it, today, projects[it.projectId], { d -> onToggle(it, d) }, { onOpenTask(it.id) }) }
         }
         if (dueToday.isNotEmpty()) {
-            item { SectionHeader("Aujourd'hui") }
+            item { SectionHeader(if (overdue.isEmpty()) dayHeader(today) else "Aujourd'hui", count = dueToday.size) }
             items(dueToday, key = {
                 it.id
             }) { TaskRow(it, today, projects[it.projectId], { d -> onToggle(it, d) }, { onOpenTask(it.id) }) }
@@ -335,6 +274,8 @@ private fun UpcomingTab(
     today: LocalDate,
     onToggle: (Task, Boolean) -> Unit,
     onOpenTask: (Long) -> Unit,
+    actions: @Composable () -> Unit,
+    filterTitle: String?,
 ) {
     val colors = LocalTodoColors.current
     val dated = state.tasks.filter { !it.done && it.dueDate != null }
@@ -349,9 +290,10 @@ private fun UpcomingTab(
         return
     }
     val projects = state.projects.associate { it.id to it.title }
-    LazyColumn(modifier = Modifier.fillMaxSize()) {
+    LazyColumn(modifier = Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 96.dp)) {
+        item { ScreenTitle("Prochainement", filterTitle?.let { "Projet : $it" }, actions = actions) }
         if (overdue.isNotEmpty()) {
-            item { SectionHeader("En retard", color = colors.overdue) }
+            item { SectionHeader("En retard", color = colors.overdue, count = overdue.size) }
             items(overdue, key = {
                 it.id
             }) { TaskRow(it, today, projects[it.projectId], { d -> onToggle(it, d) }, { onOpenTask(it.id) }) }
@@ -367,6 +309,34 @@ private fun UpcomingTab(
             }
         }
         if (overdue.isEmpty() && byDay.isEmpty()) item { EmptyState("Aucune tâche planifiée.") }
+    }
+}
+
+@Composable
+private fun InboxTab(
+    state: TodoState,
+    today: LocalDate,
+    onToggle: (Task, Boolean) -> Unit,
+    onOpenTask: (Long) -> Unit,
+    actions: @Composable () -> Unit,
+) {
+    if (!state.loaded) {
+        LoadingState()
+        return
+    }
+    val tasks = state.tasks.filter { !it.done && it.projectId == state.inboxId }.sortedBy { it.position }
+    LazyColumn(modifier = Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 96.dp)) {
+        item {
+            ScreenTitle(
+                "Boîte de réception",
+                if (tasks.isEmpty()) null else "${tasks.size} tâche${if (tasks.size > 1) "s" else ""}",
+                actions = actions,
+            )
+        }
+        items(tasks, key = { it.id }) {
+            TaskRow(it, today, null, { d -> onToggle(it, d) }, { onOpenTask(it.id) })
+        }
+        if (tasks.isEmpty()) item { EmptyState("Votre boîte de réception est vide.") }
     }
 }
 
@@ -408,47 +378,48 @@ private fun NotificationPermissionRequest() {
     }
 }
 
-/** Boîte de réception : les tâches du projet par défaut du serveur, dans leur ordre manuel, sous-tâches imbriquées. */
+/** Filtre par projet : menu des projets (arborescence), « Tous les projets » remet à zéro. */
 @Composable
-private fun InboxTab(
+private fun ProjectFilterButton(
     state: TodoState,
-    today: LocalDate,
-    onToggle: (Task, Boolean) -> Unit,
-    onOpenTask: (Long) -> Unit,
+    active: Long,
+    onPick: (Long) -> Unit,
 ) {
-    if (!state.loaded) {
-        LoadingState()
-        return
-    }
-    val open = state.tasks.filter { !it.done && it.projectId == state.inboxId }
-    val ids = open.map { it.id }.toSet()
-    val ordered = open.sortedWith(compareBy<Task> { it.position }.thenBy { it.id })
-    val roots = ordered.filter { it.parentId == 0L || it.parentId !in ids }
-    val children = ordered.filter { it.parentId != 0L }.groupBy { it.parentId }
-    LazyColumn(modifier = Modifier.fillMaxSize()) {
-        items(roots, key = { it.id }) { task ->
-            val kids = children[task.id].orEmpty()
-            Column {
-                TaskRow(
-                    task = task,
-                    today = today,
-                    projectName = null,
-                    subtasks = if (kids.isNotEmpty()) "0/${kids.size}" else null,
-                    onToggle = { onToggle(task, it) },
-                    onClick = { onOpenTask(task.id) },
+    var open by remember { mutableStateOf(false) }
+    Box {
+        IconButton(onClick = { open = true }) {
+            Icon(
+                Icons.Filled.FilterList,
+                contentDescription = "Filtrer par projet",
+                tint =
+                    if (active !=
+                        0L
+                    ) {
+                        MaterialTheme.colorScheme.primary
+                    } else {
+                        MaterialTheme.colorScheme.onSurfaceVariant
+                    },
+            )
+        }
+        DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
+            DropdownMenuItem(
+                text = { Text("Tous les projets") },
+                leadingIcon = { if (active == 0L) Icon(Icons.Filled.Check, contentDescription = null) },
+                onClick = {
+                    onPick(0L)
+                    open = false
+                },
+            )
+            orderedProjects(state.projects).forEach { (project, depth) ->
+                DropdownMenuItem(
+                    text = { Text("  ".repeat(depth) + project.title) },
+                    leadingIcon = { if (active == project.id) Icon(Icons.Filled.Check, contentDescription = null) },
+                    onClick = {
+                        onPick(project.id)
+                        open = false
+                    },
                 )
-                kids.forEach { kid ->
-                    TaskRow(
-                        task = kid,
-                        today = today,
-                        projectName = null,
-                        indent = 1,
-                        onToggle = { onToggle(kid, it) },
-                        onClick = { onOpenTask(kid.id) },
-                    )
-                }
             }
         }
-        if (roots.isEmpty()) item { EmptyState("Boîte de réception vide.") }
     }
 }
