@@ -154,6 +154,12 @@ rester lisible ET modifiable hors ligne.
   est un `activity-alias` du manifest : un seul actif à la fois, le lanceur MAIN est sur l'alias, pas sur MainActivity.
 - Verrou : écran de confirmation de l'appareil (`KeyguardManager`), aucune donnée biométrique ne passe par l'app.
 - Productivité et journal d'activité : calculés sur les dates `done_at`/`created` des tâches en cache (`Productivity.kt`).
+- Agenda de l'appareil (option, Parcourir) : `calendar/CalendarSync` recopie les tâches datées non terminées dans un
+  agenda choisi (sens tâche -> agenda seulement, événements sans rappel pour ne pas doubler les alarmes de l'app).
+  `reconcileEvents` (pure, testée dans `CalendarPlanTest`) compare l'état des tâches à la table tâche -> événement
+  (SharedPreferences `calendar_sync`, hors sauvegarde) : date changée ici, sur le web ou par synchro, terminée,
+  supprimée -> même chemin. Date sans heure = événement « toute la journée ». Ne rien faire tant que `state.loaded`
+  est faux (une liste vide effacerait l'agenda).
 - Piège d'édition : après un reformatage ktlint, un `str.replace` sur du code déjà reformaté peut ne rien changer en
   silence. Vérifier chaque point d'entrée UI (grep) et préférer un remplacement qui échoue si l'ancre manque.
 

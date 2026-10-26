@@ -59,6 +59,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.lielu.todo.calendar.CalendarSync
 import com.lielu.todo.data.model.Task
 import com.lielu.todo.data.settings.AppPrefs
 import com.lielu.todo.data.todo.TodoRepository
@@ -108,6 +109,7 @@ fun HomeScreen(
     onOpenCompleted: () -> Unit,
     onSearch: () -> Unit,
     reminderScheduler: ReminderScheduler,
+    calendarSync: CalendarSync,
     prefs: AppPrefs,
     onOpenNotifications: () -> Unit,
     onOpenActivity: () -> Unit,
@@ -314,6 +316,7 @@ fun HomeScreen(
                                 onOpenFavorites = onOpenFavorites,
                                 onOpenCompleted = onOpenCompleted,
                                 reminderScheduler = reminderScheduler,
+                                calendarSync = calendarSync,
                                 prefs = prefs,
                                 onOpenNotifications = onOpenNotifications,
                                 onOpenActivity = onOpenActivity,

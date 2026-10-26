@@ -10,6 +10,7 @@ import com.lielu.todo.backup.BackupSection
 import com.lielu.todo.backup.SafBackupFolder
 import com.lielu.todo.backup.SettingsBackupSection
 import com.lielu.todo.backup.TodoBackupSection
+import com.lielu.todo.calendar.CalendarSync
 import com.lielu.todo.data.api.SessionStore
 import com.lielu.todo.data.api.VikunjaClient
 import com.lielu.todo.data.settings.AppPrefs
@@ -100,6 +101,9 @@ class AppContainer(
 
     val reminderScheduler = ReminderScheduler(appContext)
 
+    /** Tâches datées recopiées dans l'agenda de l'appareil, si l'utilisateur l'a activé. */
+    val calendarSync = CalendarSync(appContext, prefs)
+
     private val collaborationNotifier = CollaborationNotifier(appContext)
 
     // WorkManager n'accepte qu'une fabrique : on les enchaîne (sauvegarde automatique, synchronisation).
@@ -162,6 +166,13 @@ class AppContainer(
             todoRepository.state
                 .map { it.tasks }
                 .distinctUntilChanged()
+                .debounce(CALENDAR_DEBOUNCE_MS)
+                .collect { runCatching { calendarSync.sync(todoRepository.state.value) } }
+        }
+        applicationScope.launch {
+            todoRepository.state
+                .map { it.tasks }
+                .distinctUntilChanged()
                 .debounce(WIDGET_DEBOUNCE_MS)
                 .collect { tasks ->
                     runCatching { reminderScheduler.apply(planReminders(tasks, Instant.now())) }
@@ -172,5 +183,6 @@ class AppContainer(
 
     private companion object {
         const val WIDGET_DEBOUNCE_MS = 500L
+        const val CALENDAR_DEBOUNCE_MS = 1_000L
     }
 }
