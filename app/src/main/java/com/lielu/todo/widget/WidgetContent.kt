@@ -31,7 +31,7 @@ data class WidgetConfig(
 const val DEFAULT_FONT_PERCENT = 100
 const val DEFAULT_OPACITY_PERCENT = 100
 
-/** Tâches du widget : filtrées selon [config], triées par échéance (sans date en dernier) puis priorité. */
+/** Tâches du widget : filtrées selon [config], triées comme dans l'app : date prévue (échéance, sinon rappel ; sans date en dernier), priorité, position. */
 fun widgetTasks(
     tasks: List<Task>,
     today: LocalDate,
@@ -42,7 +42,10 @@ fun widgetTasks(
     return tasks
         .filter { !it.done && (projectIds == null || it.projectId in projectIds) && matchesPeriod(it, today, config) }
         .sortedWith(
-            compareBy<Task, java.time.Instant?>(nullsLast()) { it.dueDate }.thenByDescending { it.priority },
+            compareBy<Task, java.time.Instant?>(nullsLast()) { it.plannedAt }
+                .thenByDescending { it.priority }
+                .thenBy { it.position }
+                .thenBy { it.id },
         )
 }
 
@@ -51,7 +54,7 @@ private fun matchesPeriod(
     today: LocalDate,
     config: WidgetConfig,
 ): Boolean {
-    val due = task.dueDate?.localDate()
+    val due = task.plannedAt?.localDate()
     return when (config.period) {
         WidgetPeriod.OVERDUE_TODAY -> due != null && !due.isAfter(today)
         WidgetPeriod.TODAY -> due == today

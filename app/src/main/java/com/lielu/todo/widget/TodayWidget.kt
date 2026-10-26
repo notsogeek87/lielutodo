@@ -141,7 +141,7 @@ private class TodayWidgetFactory(
         views.setTextViewText(R.id.item_title, task.title)
         views.setTextViewTextSize(R.id.item_title, TypedValue.COMPLEX_UNIT_SP, scaled(ITEM_SP, config))
         views.setTextViewTextSize(R.id.item_due, TypedValue.COMPLEX_UNIT_SP, scaled(DUE_SP, config))
-        views.setTextViewText(R.id.item_due, task.dueDate?.let { dueLabel(it, LocalDate.now()) }.orEmpty())
+        views.setTextViewText(R.id.item_due, task.plannedAt?.let { dueLabel(it, LocalDate.now()) }.orEmpty())
         views.setOnClickFillInIntent(
             R.id.item_check,
             Intent()
