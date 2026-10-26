@@ -12,11 +12,11 @@ import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 
-// Palette façon Todoist : rouge corail sur fond neutre, cartes un ton au-dessus du fond. Les couleurs vivent
+// Palette LieluTodo : turquoise sur fond neutre, cartes un ton au-dessus du fond. Les couleurs vivent
 // ici et nulle part ailleurs : un écran ne code pas de couleur en dur. `BackgroundLight`/`BackgroundDark`
 // doivent suivre `window_background` dans res/values*/colors.xml.
-private val BrandLight = Color(0xFFDB4C3F)
-private val BrandDark = Color(0xFFE5574B)
+private val BrandLight = Color(0xFF0A8A78)
+private val BrandDark = Color(0xFF3CCBB6)
 private val BackgroundLight = Color(0xFFFFFFFF)
 private val BackgroundDark = Color(0xFF1E1E1E)
 
@@ -24,10 +24,10 @@ private val LightColors =
     lightColorScheme(
         primary = BrandLight,
         onPrimary = Color.White,
-        primaryContainer = Color(0xFFFCE4E1),
-        onPrimaryContainer = Color(0xFFB03A2E),
-        secondaryContainer = Color(0xFFFCE4E1),
-        onSecondaryContainer = Color(0xFFB03A2E),
+        primaryContainer = Color(0xFFD7F5EF),
+        onPrimaryContainer = Color(0xFF07584D),
+        secondaryContainer = Color(0xFFD7F5EF),
+        onSecondaryContainer = Color(0xFF07584D),
         background = BackgroundLight,
         onBackground = Color(0xFF202020),
         surface = BackgroundLight,
@@ -46,11 +46,11 @@ private val LightColors =
 private val DarkColors =
     darkColorScheme(
         primary = BrandDark,
-        onPrimary = Color.White,
-        primaryContainer = Color(0xFF4A2421),
-        onPrimaryContainer = Color(0xFFFFB4AB),
-        secondaryContainer = Color(0xFF4A2421),
-        onSecondaryContainer = Color(0xFFFFB4AB),
+        onPrimary = Color(0xFF00201B),
+        primaryContainer = Color(0xFF12433C),
+        onPrimaryContainer = Color(0xFFA6EDE0),
+        secondaryContainer = Color(0xFF12433C),
+        onSecondaryContainer = Color(0xFFA6EDE0),
         background = BackgroundDark,
         onBackground = Color(0xFFF2F2F2),
         surface = BackgroundDark,

@@ -1,6 +1,8 @@
 package com.lielu.todo.data.api
 
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
 import java.io.IOException
@@ -17,7 +19,35 @@ class VikunjaClient(
         path: String,
         query: Map<String, String>,
         body: JSONObject?,
-    ): ApiResponse = execute(session.baseUrl, session.token, method, path, query, body)
+    ): ApiResponse {
+        val sentToken = session.token
+        try {
+            return execute(session.baseUrl, sentToken, method, path, query, body)
+        } catch (e: ApiException) {
+            if (e.code != HTTP_UNAUTHORIZED || sentToken == null || !reauthenticate(sentToken)) throw e
+        }
+        return execute(session.baseUrl, session.token, method, path, query, body)
+    }
+
+    private val reauthLock = Mutex()
+
+    /**
+     * Jeton expiré : se reconnecte avec le mot de passe mémorisé. `false` si impossible (pas de mot de passe,
+     * refusé, TOTP exigé) ; une panne réseau remonte telle quelle (hors ligne, pas déconnecté).
+     */
+    private suspend fun reauthenticate(rejectedToken: String): Boolean =
+        reauthLock.withLock {
+            if (session.token != rejectedToken) return@withLock session.token != null
+            val password = session.password ?: return@withLock false
+            try {
+                session.updateToken(login(session.baseUrl, session.username, password, ""))
+                true
+            } catch (e: ApiException) {
+                if (e.code >= HTTP_SERVER_ERROR) throw e
+                session.forgetPassword()
+                false
+            }
+        }
 
     override suspend fun upload(
         path: String,
@@ -154,6 +184,8 @@ class VikunjaClient(
         private const val TIMEOUT_MS = 20_000
         private const val UPLOAD_TIMEOUT_MS = 120_000
         private const val HTTP_ERROR = 400
+        private const val HTTP_UNAUTHORIZED = 401
+        private const val HTTP_SERVER_ERROR = 500
 
         fun normalizeUrl(input: String): String {
             val trimmed = input.trim().trimEnd('/')

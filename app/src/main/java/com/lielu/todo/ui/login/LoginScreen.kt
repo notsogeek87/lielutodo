@@ -1,7 +1,6 @@
 package com.lielu.todo.ui.login
 
 import androidx.compose.foundation.Image
-import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -13,7 +12,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
@@ -29,7 +27,6 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.input.KeyboardType
@@ -68,7 +65,7 @@ fun LoginScreen(
                 val token = client.login(url, username.trim(), password, totp)
                 // Un autre compte ne doit pas voir le cache du précédent.
                 if (url != session.baseUrl || username.trim() != session.username) repository.reset()
-                session.save(url, token, username.trim())
+                session.save(url, token, username.trim(), password.takeIf { totp.isBlank() })
                 repository.refresh()
             } catch (e: ApiException) {
                 if (e.code == HTTP_PRECONDITION_FAILED) needsTotp = true
@@ -101,13 +98,11 @@ fun LoginScreen(
     ) {
         Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
             Image(
-                painter = painterResource(R.drawable.ic_launcher_foreground),
+                painter = painterResource(R.drawable.ic_logo),
                 contentDescription = "Logo",
                 modifier =
                     Modifier
                         .size(96.dp)
-                        .clip(RoundedCornerShape(24.dp))
-                        .background(MaterialTheme.colorScheme.surfaceVariant)
                         .pointerInput(Unit) { detectTapGestures(onDoubleTap = { showServer = !showServer }) },
             )
         }
