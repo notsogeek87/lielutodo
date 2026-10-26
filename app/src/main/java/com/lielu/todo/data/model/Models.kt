@@ -144,6 +144,9 @@ data class Task(
 ) {
     val isRecurring: Boolean get() = repeatAfter > 0 || repeatMode == REPEAT_MONTHLY
 
+    /** Date de planification : l'échéance, sinon le premier rappel (une tâche avec rappel seul reste planifiée). */
+    val plannedAt: Instant? get() = dueDate ?: reminders.mapNotNull { it.effective(null) }.minOrNull()
+
     /** Instants où la notifier : ses rappels, ou à l'échéance si elle a une heure et aucun rappel explicite. */
     fun notificationTimes(dueHasTime: Boolean): List<Instant> {
         val explicit = reminders.mapNotNull { it.effective(dueDate) }

@@ -17,6 +17,7 @@ import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TextFieldColors
@@ -33,6 +34,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import com.lielu.todo.data.model.Label
 import com.lielu.todo.data.model.Project
+import com.lielu.todo.ui.home.orderedProjects
 import com.lielu.todo.ui.theme.LocalTodoColors
 import com.lielu.todo.ui.theme.forPriority
 import java.time.Instant
@@ -101,6 +103,7 @@ fun PriorityMenu(
     }
 }
 
+/** Choix du projet dans une boîte de dialogue (comme les autres champs), sous-projets indentés. */
 @Composable
 fun ProjectMenu(
     expanded: Boolean,
@@ -108,11 +111,27 @@ fun ProjectMenu(
     onDismiss: () -> Unit,
     onPick: (Project) -> Unit,
 ) {
-    DropdownMenu(expanded = expanded, onDismissRequest = onDismiss) {
-        projects.forEach { project ->
-            DropdownMenuItem(text = { Text(project.title) }, onClick = { onPick(project) })
-        }
-    }
+    if (!expanded) return
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Projet") },
+        text = {
+            Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
+                orderedProjects(projects).forEach { (project, depth) ->
+                    Text(
+                        project.title,
+                        style = MaterialTheme.typography.bodyLarge,
+                        modifier =
+                            Modifier
+                                .fillMaxWidth()
+                                .clickable { onPick(project) }
+                                .padding(start = (depth * 16).dp, top = 12.dp, bottom = 12.dp),
+                    )
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = onDismiss) { Text("Annuler") } },
+    )
 }
 
 @Composable

@@ -255,12 +255,12 @@ private fun TodayTab(
     onReschedule: () -> Unit,
 ) {
     val colors = LocalTodoColors.current
-    val dated = state.tasks.filter { !it.done && it.dueDate != null }
-    val overdue = dated.filter { it.dueDate!!.localDate().isBefore(today) }.sortedBy { it.dueDate }
+    val dated = state.tasks.filter { !it.done && it.plannedAt != null }
+    val overdue = dated.filter { it.plannedAt!!.localDate().isBefore(today) }.sortedBy { it.plannedAt }
     val dueToday =
         dated
-            .filter { it.dueDate!!.localDate() == today }
-            .sortedWith(compareBy<Task> { it.dueDate }.thenByDescending { it.priority })
+            .filter { it.plannedAt!!.localDate() == today }
+            .sortedWith(compareBy<Task> { it.plannedAt }.thenByDescending { it.priority })
     if (!state.loaded) {
         LoadingState()
         return
@@ -312,12 +312,12 @@ private fun UpcomingTab(
     filterTitle: String?,
 ) {
     val colors = LocalTodoColors.current
-    val dated = state.tasks.filter { !it.done && it.dueDate != null }
-    val overdue = dated.filter { it.dueDate!!.localDate().isBefore(today) }.sortedBy { it.dueDate }
+    val dated = state.tasks.filter { !it.done && it.plannedAt != null }
+    val overdue = dated.filter { it.plannedAt!!.localDate().isBefore(today) }.sortedBy { it.plannedAt }
     val byDay =
         dated
-            .filter { !it.dueDate!!.localDate().isBefore(today) }
-            .groupBy { it.dueDate!!.localDate() }
+            .filter { !it.plannedAt!!.localDate().isBefore(today) }
+            .groupBy { it.plannedAt!!.localDate() }
             .toSortedMap()
     if (!state.loaded) {
         LoadingState()
@@ -338,7 +338,8 @@ private fun UpcomingTab(
                     dayHeader(day) + if (day == today) " · ${dayLabel(day, today)}" else "",
                 )
             }
-            items(tasks.sortedWith(compareBy<Task> { it.dueDate }.thenByDescending { it.priority }), key = { it.id }) {
+            val sorted = tasks.sortedWith(compareBy<Task> { it.plannedAt }.thenByDescending { it.priority })
+            items(sorted, key = { it.id }) {
                 TaskRow(it, today, projects[it.projectId], { d -> onToggle(it, d) }, { onOpenTask(it.id) })
             }
         }
