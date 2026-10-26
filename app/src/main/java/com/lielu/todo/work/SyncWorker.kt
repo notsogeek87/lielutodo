@@ -12,6 +12,7 @@ import androidx.work.WorkerFactory
 import androidx.work.WorkerParameters
 import com.lielu.todo.data.api.SessionStore
 import com.lielu.todo.data.todo.TodoRepository
+import com.lielu.todo.widget.refreshWidgets
 import java.util.concurrent.TimeUnit
 
 /**
@@ -28,6 +29,7 @@ class SyncWorker(
         if (session.token == null) return Result.success()
         repository.refresh()
         repository.saveNow()
+        runCatching { refreshWidgets(applicationContext) }
         // Serveur injoignable : ce n'est pas un échec à rejouer en boucle, le prochain passage réessaiera.
         return Result.success()
     }
