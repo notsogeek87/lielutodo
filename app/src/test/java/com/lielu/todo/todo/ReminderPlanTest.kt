@@ -3,6 +3,8 @@ package com.lielu.todo.todo
 import com.lielu.todo.data.model.Reminder
 import com.lielu.todo.data.model.taskFromJson
 import com.lielu.todo.reminder.planReminders
+import com.lielu.todo.widget.WidgetConfig
+import com.lielu.todo.widget.WidgetPeriod
 import com.lielu.todo.widget.widgetTasks
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
@@ -77,5 +79,28 @@ class ReminderPlanTest {
                 task(5, "2026-10-25T12:00:00Z", done = true),
             )
         assertEquals(listOf(1L, 2L), widgetTasks(tasks, today).map { it.id })
+    }
+
+    @Test
+    fun widgetConfigChoosesPeriodAndProject() {
+        val today = LocalDate.of(2026, 10, 25)
+        val tasks =
+            listOf(
+                task(1, "2026-10-24T12:00:00Z"),
+                task(2, "2026-10-25T12:00:00Z"),
+                task(3, "2026-10-28T12:00:00Z"),
+                task(4, "2026-12-01T12:00:00Z"),
+                task(5, null),
+            )
+
+        fun ids(period: WidgetPeriod) = widgetTasks(tasks, today, WidgetConfig(period)).map { it.id }
+        assertEquals(listOf(2L), ids(WidgetPeriod.TODAY))
+        assertEquals(listOf(1L, 2L, 3L), ids(WidgetPeriod.WEEK))
+        assertEquals(listOf(1L, 2L, 3L, 4L), ids(WidgetPeriod.DATED))
+        assertEquals(listOf(1L, 2L, 3L, 4L, 5L), ids(WidgetPeriod.ALL))
+        assertEquals(
+            emptyList<Long>(),
+            widgetTasks(tasks, today, WidgetConfig(WidgetPeriod.ALL, projectId = 9)).map { it.id },
+        )
     }
 }

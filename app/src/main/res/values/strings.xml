@@ -2,8 +2,8 @@
     <!-- Surchargé par les product flavors (build.gradle.kts), à partir de `appName` de gradle.properties. -->
     <string name="app_name" translatable="false">LieluTodo</string>
     <string name="widget_today_title">Aujourd\'hui</string>
-    <string name="widget_today_empty">Rien de prévu aujourd\'hui.</string>
-    <string name="widget_today_description">Les tâches d\'aujourd\'hui et en retard</string>
+    <string name="widget_today_empty">Aucune tâche à afficher.</string>
+    <string name="widget_today_description">Liste de tâches configurable : période et projet au choix</string>
     <string name="widget_add_task">Ajouter une tâche</string>
     <string name="widget_quick_add_description">Ajouter une tâche en un geste</string>
     <string name="widget_complete_task">Terminer la tâche</string>
