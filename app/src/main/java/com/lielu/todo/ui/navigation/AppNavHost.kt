@@ -39,6 +39,7 @@ object AppDestinations {
     const val LABEL = "label/{id}"
     const val FILTER = "filter/{id}"
     const val FAVORITES = "favorites"
+    const val COMPLETED = "completed"
     const val NOTIFICATIONS = "notifications"
     const val ACTIVITY = "activity"
     const val KANBAN = "kanban/{id}"
@@ -100,6 +101,7 @@ fun AppNavHost(
                 onOpenLabel = { navController.navigate(AppDestinations.label(it)) },
                 onOpenFilter = { navController.navigate(AppDestinations.filter(it)) },
                 onOpenFavorites = { navController.navigate(AppDestinations.FAVORITES) },
+                onOpenCompleted = { navController.navigate(AppDestinations.COMPLETED) },
                 onSearch = { navController.navigate(AppDestinations.SEARCH) },
                 reminderScheduler = container.reminderScheduler,
                 prefs = container.prefs,
@@ -149,6 +151,17 @@ fun AppNavHost(
                 TaskListScreen(
                     repository = repository,
                     target = ListTarget(favorites = true),
+                    onOpenTask = { navController.navigate(AppDestinations.task(it)) },
+                    onBack = { navController.popBackStack() },
+                )
+            }
+        }
+
+        composable(AppDestinations.COMPLETED) {
+            Centered {
+                TaskListScreen(
+                    repository = repository,
+                    target = ListTarget(completed = true),
                     onOpenTask = { navController.navigate(AppDestinations.task(it)) },
                     onBack = { navController.popBackStack() },
                 )

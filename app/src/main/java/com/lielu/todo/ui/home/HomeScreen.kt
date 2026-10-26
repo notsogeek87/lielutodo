@@ -18,6 +18,7 @@ import androidx.compose.material.icons.filled.FilterList
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.outlined.CalendarMonth
+import androidx.compose.material.icons.outlined.CheckCircle
 import androidx.compose.material.icons.outlined.Inbox
 import androidx.compose.material.icons.outlined.Today
 import androidx.compose.material3.CircularProgressIndicator
@@ -26,6 +27,7 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
@@ -68,7 +70,6 @@ import com.lielu.todo.ui.common.ScreenTitle
 import com.lielu.todo.ui.common.SectionHeader
 import com.lielu.todo.ui.common.TaskRow
 import com.lielu.todo.ui.common.dayHeader
-import com.lielu.todo.ui.common.dayLabel
 import com.lielu.todo.ui.common.localDate
 import com.lielu.todo.ui.common.syncSummary
 import com.lielu.todo.ui.common.toggleDone
@@ -104,6 +105,7 @@ fun HomeScreen(
     onOpenLabel: (Long) -> Unit,
     onOpenFilter: (Long) -> Unit,
     onOpenFavorites: () -> Unit,
+    onOpenCompleted: () -> Unit,
     onSearch: () -> Unit,
     reminderScheduler: ReminderScheduler,
     prefs: AppPrefs,
@@ -117,6 +119,8 @@ fun HomeScreen(
     val snackbar = remember { SnackbarHostState() }
     var tab by rememberSaveable { mutableIntStateOf(HomeTab.INBOX.ordinal) }
     var showAdd by remember { mutableStateOf(false) }
+    var upcomingSettings by remember { mutableStateOf(prefs.upcoming) }
+    var inboxShowDone by remember { mutableStateOf(prefs.inboxShowDone) }
     // 0 = tous les projets ; sinon Aujourd'hui et Prochainement n'affichent que les tâches de ce projet.
     var projectFilter by rememberSaveable { mutableLongStateOf(0L) }
     // Boîte de réception : 0 = la boîte elle-même (défaut), ALL_PROJECTS = toutes les tâches, sinon un projet.
@@ -140,7 +144,20 @@ fun HomeScreen(
     val titleActions: @Composable () -> Unit = {
         IconButton(onClick = onSearch) { Icon(Icons.Filled.Search, contentDescription = "Rechercher") }
         when (HomeTab.entries[tab]) {
-            HomeTab.INBOX ->
+            HomeTab.INBOX -> {
+                IconButton(
+                    onClick = {
+                        inboxShowDone = !inboxShowDone
+                        prefs.inboxShowDone = inboxShowDone
+                    },
+                ) {
+                    Icon(
+                        Icons.Outlined.CheckCircle,
+                        contentDescription =
+                            if (inboxShowDone) "Masquer les tâches achevées" else "Afficher les tâches achevées",
+                        tint = if (inboxShowDone) MaterialTheme.colorScheme.primary else LocalContentColor.current,
+                    )
+                }
                 ProjectFilterButton(
                     options =
                         listOf(Triple(0L, "Boîte de réception", 0), Triple(ALL_PROJECTS, "Tous les projets", 0)) +
@@ -150,6 +167,7 @@ fun HomeScreen(
                     default = 0L,
                     onPick = { inboxFilter = it },
                 )
+            }
             HomeTab.TODAY, HomeTab.UPCOMING ->
                 ProjectFilterButton(
                     options =
@@ -249,13 +267,35 @@ fun HomeScreen(
                 ) {
                     val onToggle = { task: Task, done: Boolean -> scope.toggleDone(repository, snackbar, task, done) }
                     when (HomeTab.entries[tab]) {
-                        HomeTab.INBOX -> InboxTab(state, today, activeInbox, onToggle, openTask, titleActions)
+                        HomeTab.INBOX ->
+                            InboxTab(
+                                state,
+                                today,
+                                activeInbox,
+                                inboxShowDone,
+                                onToggle,
+                                openTask,
+                                titleActions,
+                            )
                         HomeTab.TODAY ->
                             TodayTab(visible, today, onToggle, openTask, titleActions, filterTitle, onReschedule = {
                                 val moved = repository.rescheduleOverdue(today)
                                 scope.launch { snackbar.showSnackbar("$moved tâche(s) reportée(s) à aujourd'hui") }
                             })
-                        HomeTab.UPCOMING -> UpcomingTab(visible, today, onToggle, openTask, titleActions, filterTitle)
+                        HomeTab.UPCOMING ->
+                            UpcomingTab(
+                                visible,
+                                today,
+                                upcomingSettings,
+                                {
+                                    upcomingSettings = it
+                                    prefs.upcoming = it
+                                },
+                                onToggle,
+                                openTask,
+                                titleActions,
+                                filterTitle,
+                            )
                         HomeTab.BROWSE ->
                             BrowseTab(
                                 repository = repository,
@@ -267,6 +307,7 @@ fun HomeScreen(
                                 onOpenLabel = onOpenLabel,
                                 onOpenFilter = onOpenFilter,
                                 onOpenFavorites = onOpenFavorites,
+                                onOpenCompleted = onOpenCompleted,
                                 reminderScheduler = reminderScheduler,
                                 prefs = prefs,
                                 onOpenNotifications = onOpenNotifications,
@@ -376,55 +417,11 @@ private fun TodayTab(
 }
 
 @Composable
-private fun UpcomingTab(
-    state: TodoState,
-    today: LocalDate,
-    onToggle: (Task, Boolean) -> Unit,
-    onOpenTask: (Long) -> Unit,
-    actions: @Composable () -> Unit,
-    filterTitle: String?,
-) {
-    val colors = LocalTodoColors.current
-    val dated = state.tasks.filter { !it.done && it.plannedAt != null }
-    val overdue = dated.filter { it.plannedAt!!.localDate().isBefore(today) }.sortedBy { it.plannedAt }
-    val byDay =
-        dated
-            .filter { !it.plannedAt!!.localDate().isBefore(today) }
-            .groupBy { it.plannedAt!!.localDate() }
-            .toSortedMap()
-    if (!state.loaded) {
-        LoadingState()
-        return
-    }
-    val projects = state.projects.associate { it.id to it.title }
-    LazyColumn(modifier = Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 96.dp)) {
-        item { ScreenTitle("Prochainement", filterTitle?.let { "Projet : $it" }, actions = actions) }
-        if (overdue.isNotEmpty()) {
-            item { SectionHeader("En retard", color = colors.overdue, count = overdue.size) }
-            items(overdue, key = {
-                it.id
-            }) { TaskRow(it, today, projects[it.projectId], { d -> onToggle(it, d) }, { onOpenTask(it.id) }) }
-        }
-        byDay.forEach { (day, tasks) ->
-            item(key = "day-$day") {
-                SectionHeader(
-                    dayHeader(day) + if (day == today) " · ${dayLabel(day, today)}" else "",
-                )
-            }
-            val sorted = tasks.sortedWith(compareBy<Task> { it.plannedAt }.thenByDescending { it.priority })
-            items(sorted, key = { it.id }) {
-                TaskRow(it, today, projects[it.projectId], { d -> onToggle(it, d) }, { onOpenTask(it.id) })
-            }
-        }
-        if (overdue.isEmpty() && byDay.isEmpty()) item { EmptyState("Aucune tâche planifiée.") }
-    }
-}
-
-@Composable
 private fun InboxTab(
     state: TodoState,
     today: LocalDate,
     filter: Long,
+    showDone: Boolean,
     onToggle: (Task, Boolean) -> Unit,
     onOpenTask: (Long) -> Unit,
     actions: @Composable () -> Unit,
@@ -436,13 +433,20 @@ private fun InboxTab(
     val tasks =
         state.tasks
             .filter {
-                !it.done &&
+                (showDone || !it.done) &&
                     when (filter) {
                         0L -> it.projectId == state.inboxId
                         ALL_PROJECTS -> true
                         else -> it.projectId == filter
                     }
-            }.sortedWith(compareBy<Task> { it.projectId != state.inboxId }.thenBy { it.position }.thenBy { it.id })
+            }.sortedWith(
+                compareBy<Task> { it.done }
+                    .thenBy { it.projectId != state.inboxId }
+                    .thenBy(nullsLast()) { it.plannedAt }
+                    .thenByDescending { it.priority }
+                    .thenBy { it.position }
+                    .thenBy { it.id },
+            )
     val projects = state.projects.associate { it.id to it.title }
     val scope =
         when (filter) {
@@ -452,7 +456,8 @@ private fun InboxTab(
         }
     LazyColumn(modifier = Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 96.dp)) {
         item {
-            val count = if (tasks.isEmpty()) null else "${tasks.size} tâche${if (tasks.size > 1) "s" else ""}"
+            val openCount = tasks.count { !it.done }
+            val count = if (openCount == 0) null else "$openCount tâche${if (openCount > 1) "s" else ""}"
             ScreenTitle(
                 "Boîte de réception",
                 listOfNotNull(count, scope).joinToString(" · ").ifEmpty { null },

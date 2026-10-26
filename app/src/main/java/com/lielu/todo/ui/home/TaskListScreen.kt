@@ -72,6 +72,7 @@ data class ListTarget(
     val labelId: Long? = null,
     val filterId: Long? = null,
     val favorites: Boolean = false,
+    val completed: Boolean = false,
 )
 
 private const val POSITION_STEP = 65_536.0
@@ -90,7 +91,7 @@ fun TaskListScreen(
     val snackbar = remember { SnackbarHostState() }
     var showAdd by remember { mutableStateOf(false) }
     var showShare by remember { mutableStateOf(false) }
-    var showDone by remember { mutableStateOf(false) }
+    var showDone by remember { mutableStateOf(target.completed) }
     var showMenu by remember { mutableStateOf(false) }
     var projectDialog by remember { mutableStateOf<ProjectDialog?>(null) }
     val today = LocalDate.now()
@@ -100,6 +101,7 @@ fun TaskListScreen(
     val title =
         when {
             target.favorites -> "Favoris"
+            target.completed -> "Terminées"
             projectId != null -> state.projects.firstOrNull { it.id == projectId }?.title ?: "Projet"
             target.filterId != null -> state.filters.firstOrNull { it.id == target.filterId }?.title ?: "Filtre"
             else ->
@@ -111,6 +113,7 @@ fun TaskListScreen(
     val all: List<Task> =
         when {
             target.favorites -> state.tasks.filter { it.isFavorite }
+            target.completed -> state.tasks.filter { it.done }
             projectId != null -> state.tasks.filter { it.projectId == projectId }
             target.filterId != null -> state.filterResults[target.filterId].orEmpty().map { live[it.id] ?: it }
             else -> state.tasks.filter { t -> t.labels.any { it.id == target.labelId } }

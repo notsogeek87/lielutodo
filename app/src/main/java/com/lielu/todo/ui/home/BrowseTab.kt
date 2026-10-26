@@ -22,6 +22,7 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.outlined.BarChart
+import androidx.compose.material.icons.outlined.CheckCircle
 import androidx.compose.material.icons.outlined.FilterList
 import androidx.compose.material.icons.outlined.Notifications
 import androidx.compose.material.icons.outlined.Palette
@@ -82,6 +83,7 @@ fun BrowseTab(
     onOpenLabel: (Long) -> Unit,
     onOpenFilter: (Long) -> Unit,
     onOpenFavorites: () -> Unit,
+    onOpenCompleted: () -> Unit,
     reminderScheduler: ReminderScheduler,
     prefs: AppPrefs,
     onOpenNotifications: () -> Unit,
@@ -117,6 +119,7 @@ fun BrowseTab(
                     count = favorites.takeIf { it > 0 },
                     onClick = onOpenFavorites,
                 )
+                BrowseRow(Icons.Outlined.CheckCircle, "Terminées", onClick = onOpenCompleted)
                 BrowseRow(
                     Icons.Outlined.Notifications,
                     "Notifications",
