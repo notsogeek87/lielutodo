@@ -1,5 +1,10 @@
 package com.lielu.todo.ui.task
 
+import android.content.ActivityNotFoundException
+import android.content.Context
+import android.content.Intent
+import android.net.Uri
+import android.widget.Toast
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -20,6 +25,7 @@ import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Flag
 import androidx.compose.material.icons.filled.Inbox
+import androidx.compose.material.icons.filled.Link
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Repeat
 import androidx.compose.material.icons.filled.Star
@@ -49,6 +55,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.lielu.todo.data.model.Reminder
@@ -79,6 +86,28 @@ import java.io.IOException
 import java.time.LocalDate
 import java.time.LocalTime
 import java.time.ZoneId
+
+private val LINK_REGEX = Regex("""https?://[^\s<>"]+""", RegexOption.IGNORE_CASE)
+
+/** Liens http(s) d'un texte, dans l'ordre, sans doublon ni ponctuation finale. */
+internal fun extractLinks(text: String): List<String> =
+    LINK_REGEX
+        .findAll(text)
+        .map { it.value.trimEnd('.', ',', ';', ':', '!', '?', ')', ']', '\'') }
+        .filter { it.length > "https://".length }
+        .distinct()
+        .toList()
+
+private fun openLink(
+    context: Context,
+    url: String,
+) {
+    try {
+        context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+    } catch (_: ActivityNotFoundException) {
+        Toast.makeText(context, "Aucune application pour ouvrir ce lien", Toast.LENGTH_SHORT).show()
+    }
+}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -258,6 +287,28 @@ fun TaskDetailScreen(
                 modifier = Modifier.fillMaxWidth().padding(start = 52.dp, end = 4.dp, bottom = 8.dp),
                 minLines = 2,
             )
+            // Les liens de la description s'ouvrent d'un toucher (le champ reste éditable pour les modifier).
+            extractLinks(description).forEach { link ->
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier =
+                        Modifier
+                            .fillMaxWidth()
+                            .clickable { openLink(context, link) }
+                            .padding(start = 52.dp, end = 16.dp, top = 6.dp, bottom = 6.dp),
+                ) {
+                    Icon(Icons.Filled.Link, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                    Text(
+                        text = link,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.primary,
+                        textDecoration = TextDecoration.Underline,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.padding(start = 8.dp),
+                    )
+                }
+            }
 
             val due = task.dueDate
             // Une seule date visible : l'échéance, sinon le rappel qui en tient lieu (tâche avec rappel seul).
