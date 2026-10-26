@@ -12,7 +12,7 @@ private const val WEEK = 7 * DAY
 private const val MINUTE = 60L
 private const val HOUR = 3_600L
 
-/** État de synchro sous le titre : « Hors ligne · dernière synchro il y a 5 min · 2 en attente », ou `null`. */
+/** État de synchro sous le titre : « Hors ligne · dernière synchro il y a 5 min · 2 en attente · 1 refusée », ou `null`. */
 fun syncSummary(
     state: TodoState,
     nowMillis: Long,
@@ -23,6 +23,7 @@ fun syncSummary(
         if (state.lastSync > 0) parts += "synchro ${ago(nowMillis - state.lastSync)}"
     }
     if (state.pending > 0) parts += "${state.pending} en attente"
+    if (state.failed.isNotEmpty()) parts += "${state.failed.size} refusée${if (state.failed.size > 1) "s" else ""}"
     return parts.takeIf { it.isNotEmpty() }?.joinToString(" · ")
 }
 

@@ -8,6 +8,7 @@ import com.lielu.todo.data.todo.AttachmentFiles
 import com.lielu.todo.data.todo.LocalCache
 import com.lielu.todo.data.todo.TodoRepository
 import com.lielu.todo.data.todo.TodoState
+import com.lielu.todo.data.todo.TodoStateCodec
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.StandardTestDispatcher
@@ -38,6 +39,12 @@ private class FakeServer : HttpApi {
     val unreadNotifications = mutableSetOf(1L, 2L)
     private var nextId = 100L
 
+    /** Statut d'erreur à renvoyer pour un appel « MÉTHODE chemin », `null` pour répondre normalement. */
+    var refuse: (String) -> Int? = { null }
+
+    /** Appelé à chaque requête, avant la réponse : simule une action de l'utilisateur pendant une synchro. */
+    var onCall: (String) -> Unit = {}
+
     override suspend fun upload(
         path: String,
         fileName: String,
@@ -63,8 +70,10 @@ private class FakeServer : HttpApi {
         body: JSONObject?,
     ): ApiResponse {
         calls += "$method $path"
+        onCall("$method $path")
         if (!online) throw IOException("offline")
         if (serverError) throw ApiException(502, "Bad Gateway")
+        refuse("$method $path")?.let { throw ApiException(it, "refusé") }
         val ok = { text: String -> ApiResponse(200, text, mapOf("x-pagination-total-pages" to "1")) }
         return when {
             method == "GET" && path == "/projects" ->
@@ -773,5 +782,191 @@ class TodoRepositoryTest {
             repo.refresh()
             assertEquals(0, repo.state.value.pending)
             assertTrue(server.unreadNotifications.isEmpty())
+        }
+
+    @Test
+    fun refusedWriteIsSetAsideWithoutBlockingTheNextOnesAndCanBeResent() =
+        runTest {
+            val server = FakeServer()
+            server.tasks[5] = JSONObject("""{"id":5,"title":"Déjà là","project_id":2,"done":false}""")
+            val repo = repo(server)
+            repo.refresh()
+            server.refuse = { if (it == "PUT /projects/2/tasks") 400 else null }
+            val id = repo.addTask("Refusée", 2)
+            repo.setDone(5, true)
+            assertTrue(repo.syncPending())
+
+            var s = repo.state.value
+            assertEquals(0, s.pending)
+            assertEquals(1, s.failed.size)
+            assertEquals(400, s.failed.single().code)
+            assertTrue(server.tasks[5]!!.getBoolean("done"))
+            // Gardée en cache (format du cache et des sauvegardes) avec la raison du refus.
+            assertEquals(s.failed, TodoStateCodec.decode(TodoStateCodec.encode(s)).failed)
+
+            // Le rafraîchissement reprend (file vide) sans effacer la tâche refusée.
+            server.tasks[6] = JSONObject("""{"id":6,"title":"Créée sur le web","project_id":2,"done":false}""")
+            repo.refresh()
+            s = repo.state.value
+            assertTrue(s.tasks.any { it.id == id && it.title == "Refusée" })
+            assertTrue(s.tasks.any { it.id == 6L })
+
+            server.refuse = { null }
+            repo.retryFailed(s.failed.single())
+            repo.syncPending()
+            s = repo.state.value
+            assertTrue(s.failed.isEmpty())
+            assertTrue(server.tasks.values.any { it.getString("title") == "Refusée" })
+            assertTrue(s.tasks.none { it.id < 0 })
+        }
+
+    @Test
+    fun persistentServerErrorOnOneWriteIsSetAsideAfterAFewTries() =
+        runTest {
+            val server = FakeServer()
+            server.tasks[5] = JSONObject("""{"id":5,"title":"T","project_id":2,"done":false}""")
+            val repo = repo(server)
+            repo.refresh()
+            server.refuse = { if (it == "POST /tasks/5") 500 else null }
+            repo.updateTask(repo.task(5)!!.copy(title = "Modifiée ici"))
+            repo.addTask("Après", 2)
+
+            assertFalse(repo.syncPending())
+            assertFalse(repo.syncPending())
+            assertTrue(
+                repo.state.value.failed
+                    .isEmpty(),
+            )
+            assertEquals(2, repo.state.value.pending)
+            assertTrue(repo.syncPending())
+
+            val s = repo.state.value
+            assertEquals(500, s.failed.single().code)
+            assertTrue(server.tasks.values.any { it.getString("title") == "Après" })
+            repo.refresh()
+            // La modification refusée reste visible ici tant que l'utilisateur n'a pas décidé.
+            assertEquals("Modifiée ici", repo.task(5)!!.title)
+
+            repo.abandonFailed(
+                repo.state.value.failed
+                    .single(),
+            )
+            advanceUntilIdle()
+            assertEquals("T", repo.task(5)!!.title)
+        }
+
+    @Test
+    fun serverErrorsEverywhereMeanTheServerIsDownAndNothingIsSetAside() =
+        runTest {
+            val server = FakeServer()
+            server.tasks[5] = JSONObject("""{"id":5,"title":"T","project_id":2,"done":false}""")
+            val repo = repo(server)
+            repo.refresh()
+            server.refuse = { 500 }
+            repo.setDone(5, true)
+            repeat(5) { assertFalse(repo.syncPending()) }
+            assertTrue(
+                repo.state.value.failed
+                    .isEmpty(),
+            )
+            assertEquals(1, repo.state.value.pending)
+        }
+
+    @Test
+    fun abandoningARefusedProjectMovesItsTasksToTheInbox() =
+        runTest {
+            val server = FakeServer()
+            val repo = repo(server)
+            repo.refresh()
+            server.refuse = { if (it == "PUT /projects") 403 else null }
+            val project = repo.createProject("Interdit")
+            val task = repo.addTask("À garder", project)
+            repo.syncPending()
+            assertEquals(2, repo.state.value.failed.size)
+
+            server.refuse = { null }
+            repo.abandonFailed(
+                repo.state.value.failed
+                    .first { it.op.taskId == project },
+            )
+            assertTrue(
+                repo.state.value.projects
+                    .none { it.id == project },
+            )
+            assertEquals(1L, repo.task(task)!!.projectId)
+            repo.retryFailed(
+                repo.state.value.failed
+                    .single(),
+            )
+            repo.syncPending()
+            advanceUntilIdle()
+            assertTrue(
+                repo.state.value.failed
+                    .isEmpty(),
+            )
+            assertTrue(
+                server.tasks.values.any { it.getString("title") == "À garder" && it.getLong("project_id") == 1L },
+            )
+        }
+
+    @Test
+    fun taskCreatedButLabelsRefusedIsNeverCreatedTwice() =
+        runTest {
+            val server = FakeServer()
+            val repo = repo(server)
+            repo.refresh()
+            server.refuse = { if (it.endsWith("/labels/bulk")) 400 else null }
+            repo.addTask("Étiquetée", 2, labels = listOf(Label(10, "urgent", "")))
+            repo.syncPending()
+            assertEquals(1, repo.state.value.failed.size)
+            assertEquals(1, server.tasks.size)
+
+            server.refuse = { null }
+            repo.retryFailed(
+                repo.state.value.failed
+                    .single(),
+            )
+            repo.syncPending()
+            assertEquals(1, server.tasks.size)
+            assertEquals(1, server.labelCalls)
+            assertTrue(
+                repo.state.value.failed
+                    .isEmpty(),
+            )
+        }
+
+    @Test
+    fun projectCreatedOfflineSurvivesARefreshWhileItIsStillQueued() =
+        runTest {
+            val server = FakeServer()
+            server.tasks[5] = JSONObject("""{"id":5,"title":"T","project_id":2,"done":false}""")
+            val repo = repo(server)
+            repo.refresh()
+            // Une écriture en tête de file échoue (500, pas encore mise de côté) : la file reste non vide.
+            server.refuse = { if (it == "POST /tasks/5") 500 else null }
+            repo.setDone(5, true)
+            val project = repo.createProject("Voyage")
+            val label = repo.createLabel("valise")
+            repo.addTask("Passeport", project, labels = listOf(label))
+            repo.refresh()
+
+            val s = repo.state.value
+            assertTrue(s.projects.any { it.id == project && it.title == "Voyage" })
+            assertTrue(s.labels.any { it.id == label.id })
+            assertTrue(s.tasks.any { it.title == "Passeport" })
+        }
+
+    @Test
+    fun taskAddedWhileTheServerIsBeingReadIsKept() =
+        runTest {
+            val server = FakeServer()
+            val repo = repo(server)
+            var added = 0L
+            server.onCall = { if (it == "GET /tasks" && added == 0L) added = repo.addTask("Pendant la synchro", 2) }
+            repo.refresh()
+            assertTrue(
+                repo.state.value.tasks
+                    .any { it.id == added },
+            )
         }
 }

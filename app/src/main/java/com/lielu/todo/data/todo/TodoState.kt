@@ -24,6 +24,8 @@ data class PendingOp(
     val flag: Boolean = false,
     /** Second texte : couleur d'une étiquette, nom et type d'un fichier, projet:vue d'un ancien déplacement Kanban. */
     val extra: String = "",
+    /** Erreurs 500 de suite sur cette écriture alors que le serveur répond au reste (voir `TodoRepository.flush`). */
+    val attempts: Int = 0,
 ) {
     enum class Kind {
         CREATE,
@@ -47,6 +49,19 @@ data class PendingOp(
     }
 }
 
+/**
+ * Écriture que le serveur a refusée : retirée de la file pour ne pas bloquer les suivantes, mais gardée (avec la
+ * raison) jusqu'à ce que l'utilisateur la renvoie ou l'abandonne. Jamais effacée en silence.
+ */
+data class FailedOp(
+    val op: PendingOp,
+    /** Statut HTTP du refus. */
+    val code: Int,
+    val message: String,
+    /** Date du refus (ms depuis 1970). */
+    val at: Long,
+)
+
 data class TodoState(
     val projects: List<Project> = emptyList(),
     val labels: List<Label> = emptyList(),
@@ -62,6 +77,8 @@ data class TodoState(
     /** Id Vikunja de l'utilisateur connecté (0 si inconnu) : sert à repérer les tâches qui lui sont affectées. */
     val userId: Long = 0,
     val ops: List<PendingOp> = emptyList(),
+    /** Écritures refusées par le serveur, en attente d'une décision de l'utilisateur. */
+    val failed: List<FailedOp> = emptyList(),
     val syncing: Boolean = false,
     val error: String? = null,
     /** `false` tant que ni le cache ni le serveur n'ont répondu : évite d'afficher « rien à faire » à tort. */

@@ -75,7 +75,7 @@ class TodoRepository(
     private fun lowestTempId(s: TodoState): Long =
         (
             s.tasks.map { it.id } + s.projects.map { it.id } + s.labels.map { it.id } +
-                s.ops.flatMap { listOf(it.taskId, it.otherId) }
+                (s.ops + s.failed.map { it.op }).flatMap { listOf(it.taskId, it.otherId) }
         ).minOrNull()?.coerceAtMost(0) ?: 0
 
     /** Écrit le cache tout de suite (arrêt de l'app, rappel reçu) au lieu d'attendre la temporisation. */
@@ -152,12 +152,17 @@ class TodoRepository(
     }
 
     fun deleteTask(id: Long) {
-        _state.value.ops
+        (_state.value.ops + _state.value.failed.map { it.op })
             .filter { it.kind == PendingOp.Kind.ATTACH && it.taskId == id }
             .forEach { runCatching { files.deletePending(it.text) } }
         _state.update { s ->
             val tasks = s.tasks.filterNot { it.id == id }
-            val related = { op: PendingOp -> op.taskId == id || (op.kind == PendingOp.Kind.RELATE && op.otherId == id) }
+            val related = { op: PendingOp ->
+                op.kind in TASK_KINDS &&
+                    (op.taskId == id || (op.kind == PendingOp.Kind.RELATE && op.otherId == id))
+            }
+            // Une écriture refusée sur une tâche supprimée n'a plus d'objet.
+            val failed = s.failed.filterNot { related(it.op) }
             val ops =
                 if (id < 0) {
                     // Jamais envoyée : on oublie simplement toutes ses écritures.
@@ -165,7 +170,7 @@ class TodoRepository(
                 } else {
                     s.ops.filterNot(related) + PendingOp(PendingOp.Kind.DELETE, id)
                 }
-            s.copy(tasks = tasks, ops = ops)
+            s.copy(tasks = tasks, ops = ops, failed = failed)
         }
         flushSoon()
     }
@@ -346,9 +351,9 @@ class TodoRepository(
         pullExtras(clean)
         _state.update {
             it.copy(
-                projects = projects,
-                labels = labels,
-                tasks = tasks ?: it.tasks,
+                projects = mergeProjects(projects, it),
+                labels = mergeLabels(labels, it),
+                tasks = tasks?.let { server -> mergeTasks(server, it) } ?: it.tasks,
                 filters = filters,
                 filterResults = results ?: it.filterResults,
                 defaultProjectId = defaultProject,
@@ -356,6 +361,50 @@ class TodoRepository(
             )
         }
     }
+
+    /**
+     * La liste du serveur, sauf ce que des écritures non envoyées (en file ou refusées) contredisent : on garde la
+     * version locale des tâches qu'elles touchent (dont celles créées ici, encore sans id serveur) et on écarte
+     * celles supprimées ici. Vaut aussi pour une écriture faite PENDANT la lecture du serveur.
+     */
+    private fun mergeTasks(
+        server: List<Task>,
+        s: TodoState,
+    ): List<Task> {
+        val writes = (s.ops + s.failed.map { it.op }).filter { it.kind in TASK_FIELD_KINDS }
+        val deleted = writes.filter { it.kind == PendingOp.Kind.DELETE }.map { it.taskId }.toSet()
+        val touched = writes.map { it.taskId }.toSet()
+        val local = s.tasks.filter { it.id in touched }
+        val localIds = local.map { it.id }.toSet()
+        return server.filter { it.id !in deleted && it.id !in localIds } + local
+    }
+
+    /** Projets créés ici et pas encore acceptés par le serveur : gardés, sinon leurs tâches n'auraient plus de projet. */
+    private fun mergeProjects(
+        server: List<Project>,
+        s: TodoState,
+    ): List<Project> {
+        val unsent = unsentIds(s, PendingOp.Kind.CREATE_PROJECT)
+        return server + s.projects.filter { it.id < 0 && it.id in unsent }
+    }
+
+    /** Comme [mergeProjects], et une étiquette renommée ou supprimée ici garde sa version locale. */
+    private fun mergeLabels(
+        server: List<Label>,
+        s: TodoState,
+    ): List<Label> {
+        val created = unsentIds(s, PendingOp.Kind.CREATE_LABEL)
+        val renamed = unsentIds(s, PendingOp.Kind.LABEL_UPDATE)
+        val deleted = unsentIds(s, PendingOp.Kind.LABEL_DELETE)
+        val local = s.labels.filter { (it.id < 0 && it.id in created) || it.id in renamed }
+        val localIds = local.map { it.id }.toSet()
+        return server.filter { it.id !in deleted && it.id !in localIds } + local
+    }
+
+    private fun unsentIds(
+        s: TodoState,
+        kind: PendingOp.Kind,
+    ): Set<Long> = (s.ops + s.failed.map { it.op }).filter { it.kind == kind }.map { it.taskId }.toSet()
 
     /** Des tâches sans date alors que le serveur en envoie : on le dit, avec la valeur reçue, pour pouvoir corriger. */
     private fun diagnoseDates(tasks: List<Task>) {
@@ -447,21 +496,55 @@ class TodoRepository(
         }
     }
 
-    /** Envoie la file dans l'ordre. `true` si elle est vide à la fin ; s'arrête au premier problème réseau. */
+    /**
+     * Envoie la file dans l'ordre. `true` si elle est vide à la fin ; s'arrête au premier problème réseau.
+     *
+     * Une écriture que le serveur refuse ne doit ni disparaître (c'est une saisie de l'utilisateur) ni bloquer
+     * les suivantes : elle part dans [TodoState.failed]. Refus définitif (4xx) : tout de suite. Erreur 500 : le
+     * serveur peut être en panne (on attend) ou planter sur CETTE écriture seulement ; on ne la met de côté que
+     * s'il répond au reste, après [MAX_SERVER_ERRORS] essais.
+     */
     private suspend fun flush(): Boolean {
         while (true) {
             val op = _state.value.ops.firstOrNull() ?: return true
             try {
                 apply(op)
             } catch (e: ApiException) {
-                if (e.code == HTTP_UNAUTHORIZED) throw e
-                // Serveur en panne (502/503 derrière le proxy) : on garde l'écriture pour plus tard.
-                if (e.code >= HTTP_SERVER_ERROR) {
-                    reportError(e)
-                    return false
+                when {
+                    e.code == HTTP_UNAUTHORIZED -> throw e
+                    // Serveur coupé (502/503/504 derrière le proxy), surchargé ou lent : on garde pour plus tard.
+                    e.code in TRANSIENT_CODES -> {
+                        reportError(e)
+                        return false
+                    }
+                    e.code >= HTTP_SERVER_ERROR -> {
+                        if (!serverAnswers()) {
+                            reportError(e)
+                            return false
+                        }
+                        if (op.attempts + 1 < MAX_SERVER_ERRORS) {
+                            _state.update { s ->
+                                s.copy(
+                                    ops =
+                                        s.ops.mapIndexed { i, o ->
+                                            if (i ==
+                                                0
+                                            ) {
+                                                o.copy(attempts = o.attempts + 1)
+                                            } else {
+                                                o
+                                            }
+                                        },
+                                    error = "Le serveur refuse une modification (${e.message}), nouvel essai plus tard",
+                                )
+                            }
+                            return false
+                        }
+                        setAside(e)
+                    }
+                    else -> setAside(e)
                 }
-                // Refus définitif (tâche supprimée côté serveur, droits…) : réessayer ne servirait à rien.
-                reportError(e)
+                continue
             } catch (e: IOException) {
                 reportError(e)
                 return false
@@ -470,9 +553,95 @@ class TodoRepository(
         }
     }
 
+    /** Le serveur répond-il à une lecture simple ? Distingue une panne générale d'un refus de l'écriture en tête. */
+    private suspend fun serverAnswers(): Boolean =
+        try {
+            api.call("GET", "/user")
+            true
+        } catch (e: IOException) {
+            false
+        }
+
+    /** Sort l'écriture en tête de file (dans sa version à jour : ids remappés) et la garde avec la raison du refus. */
+    private fun setAside(e: ApiException) {
+        _state.update { s ->
+            val head = s.ops.firstOrNull() ?: return@update s
+            val failed = FailedOp(head.copy(attempts = 0), e.code, e.message.orEmpty(), clock())
+            s.copy(
+                ops = s.ops.drop(1),
+                failed = s.failed + failed,
+                error = "Modification refusée par le serveur (${e.message}) : à revoir dans Parcourir",
+            )
+        }
+    }
+
+    // ---- Écritures refusées : renvoyer ou abandonner ----
+
+    /** Remet une écriture refusée en file (à la fin), par exemple après correction côté serveur. */
+    fun retryFailed(failed: FailedOp) {
+        _state.update { s ->
+            if (failed !in s.failed) return@update s
+            s.copy(failed = s.failed - failed, ops = enqueue(s.ops, failed.op))
+        }
+        flushSoon()
+    }
+
+    fun retryAllFailed() {
+        _state.update { s -> s.copy(failed = emptyList(), ops = s.failed.fold(s.ops) { ops, f -> enqueue(ops, f.op) }) }
+        flushSoon()
+    }
+
+    /**
+     * Renonce à une écriture refusée. Ce qu'elle avait créé localement disparaît (une tâche dont la création est
+     * abandonnée, un commentaire, un fichier en attente) ; les tâches d'un projet abandonné passent dans la boîte
+     * de réception plutôt que d'être perdues. Le reste reprend la version du serveur au prochain rafraîchissement.
+     */
+    fun abandonFailed(failed: FailedOp) {
+        if (failed !in _state.value.failed) return
+        _state.update { it.copy(failed = it.failed - failed) }
+        val op = failed.op
+        when (op.kind) {
+            PendingOp.Kind.CREATE -> if (op.taskId < 0) deleteTask(op.taskId)
+            PendingOp.Kind.CREATE_LABEL -> if (op.taskId < 0) deleteLabel(op.taskId)
+            PendingOp.Kind.CREATE_PROJECT ->
+                _state.update { s ->
+                    val inbox = s.inboxId.takeIf { it != op.taskId } ?: s.projects.firstOrNull { it.id > 0 }?.id ?: 0
+                    s.copy(
+                        projects = s.projects.filter { it.id != op.taskId },
+                        tasks = s.tasks.map { if (it.projectId == op.taskId) it.copy(projectId = inbox) else it },
+                    )
+                }
+            PendingOp.Kind.COMMENT ->
+                _state.update { s ->
+                    val list = s.comments[op.taskId].orEmpty()
+                    val local = list.firstOrNull { it.id < 0 && it.text == op.text } ?: return@update s
+                    s.copy(
+                        comments = s.comments + (op.taskId to list.filter { it !== local }),
+                        tasks =
+                            s.tasks.map {
+                                if (it.id ==
+                                    op.taskId
+                                ) {
+                                    it.copy(commentCount = (it.commentCount - 1).coerceAtLeast(0))
+                                } else {
+                                    it
+                                }
+                            },
+                    )
+                }
+            PendingOp.Kind.ATTACH -> {
+                runCatching { files.deletePending(op.text) }
+                dropPlaceholder(op)
+            }
+            else -> Unit
+        }
+        scope.launch { refresh() }
+    }
+
     private suspend fun apply(op: PendingOp) {
         when (op.kind) {
-            PendingOp.Kind.CREATE -> applyCreate(op)
+            // Id déjà positif : la tâche a été créée, seule la suite (étiquettes) a échoué. La recréer la doublerait.
+            PendingOp.Kind.CREATE -> if (op.taskId > 0) applyUpdate(op.copy(flag = true)) else applyCreate(op)
             PendingOp.Kind.UPDATE -> applyUpdate(op)
             PendingOp.Kind.DELETE -> {
                 try {
@@ -672,7 +841,7 @@ class TodoRepository(
         val local = task(op.taskId) ?: return
         val body = local.toRequestJson().also { it.remove("id") }
         val created = taskFromJson(JSONObject(api.call("PUT", "/projects/${local.projectId}/tasks", body = body).body))
-        if (local.labels.isNotEmpty()) setLabels(created.id, local.labels)
+        // Remapper AVANT les étiquettes : si elles échouent, la tâche existe déjà sur le serveur sous son vrai id.
         _state.update { s ->
             s.copy(
                 tasks =
@@ -713,6 +882,7 @@ class TodoRepository(
                 attachments = s.attachments.mapKeys { if (it.key == local.id) created.id else it.key },
             )
         }
+        if (local.labels.isNotEmpty()) setLabels(created.id, local.labels)
     }
 
     private suspend fun applyUpdate(op: PendingOp) {
@@ -795,7 +965,10 @@ class TodoRepository(
         val fromServer = JSONArray(api.call("GET", "/tasks/$taskId/comments").body).objects().map(::commentFromJson)
         _state.update { s ->
             // Les commentaires écrits hors ligne et pas encore envoyés restent visibles à la suite.
-            val unsent = s.ops.filter { it.kind == PendingOp.Kind.COMMENT && it.taskId == taskId }.map { it.text }
+            val unsent =
+                (s.ops + s.failed.map { it.op })
+                    .filter { it.kind == PendingOp.Kind.COMMENT && it.taskId == taskId }
+                    .map { it.text }
             val local = s.comments[taskId].orEmpty().filter { it.id < 0 && it.text in unsent }
             s.copy(comments = s.comments + (taskId to fromServer + local))
         }
@@ -909,9 +1082,10 @@ class TodoRepository(
         taskId: Long,
         attachment: Attachment,
     ) {
+        val isUpload = { op: PendingOp -> op.kind == PendingOp.Kind.ATTACH && op.otherId == attachment.id }
         if (attachment.id < 0) {
-            _state.value.ops
-                .firstOrNull { it.kind == PendingOp.Kind.ATTACH && it.otherId == attachment.id }
+            (_state.value.ops + _state.value.failed.map { it.op })
+                .firstOrNull(isUpload)
                 ?.let { runCatching { files.deletePending(it.text) } }
         }
         _state.update { s ->
@@ -919,11 +1093,15 @@ class TodoRepository(
             val ops =
                 if (attachment.id < 0) {
                     // Jamais envoyé : on oublie simplement l'envoi.
-                    s.ops.filterNot { it.kind == PendingOp.Kind.ATTACH && it.otherId == attachment.id }
+                    s.ops.filterNot(isUpload)
                 } else {
                     enqueue(s.ops, PendingOp(PendingOp.Kind.DELETE_ATTACHMENT, taskId, otherId = attachment.id))
                 }
-            s.copy(attachments = s.attachments + (taskId to remaining), ops = ops)
+            s.copy(
+                attachments = s.attachments + (taskId to remaining),
+                ops = ops,
+                failed = s.failed.filterNot { isUpload(it.op) },
+            )
         }
         flushSoon()
     }
@@ -950,7 +1128,8 @@ class TodoRepository(
         val bytes =
             if (attachment.id < 0) {
                 val staged =
-                    _state.value.ops.firstOrNull { it.kind == PendingOp.Kind.ATTACH && it.otherId == attachment.id }
+                    (_state.value.ops + _state.value.failed.map { it.op })
+                        .firstOrNull { it.kind == PendingOp.Kind.ATTACH && it.otherId == attachment.id }
                         ?: throw IOException("Fichier introuvable")
                 files.readPending(staged.text)
             } else {
@@ -968,26 +1147,29 @@ class TodoRepository(
     ) {
         _state.update { s ->
             val local = s.comments[taskId].orEmpty().map { if (it.id == comment.id) it.copy(text = text) else it }
+            // Pas encore envoyé : on change le texte de son envoi (en file, ou refusé par le serveur).
+            var done = false
+            val retext = { op: PendingOp ->
+                if (!done &&
+                    comment.id < 0 &&
+                    op.kind == PendingOp.Kind.COMMENT &&
+                    op.taskId == taskId &&
+                    op.text == comment.text
+                ) {
+                    done = true
+                    op.copy(text = text)
+                } else {
+                    op
+                }
+            }
             val ops =
                 if (comment.id < 0) {
-                    // Pas encore envoyé : on change le texte de son envoi.
-                    var done = false
-                    s.ops.map {
-                        if (!done &&
-                            it.kind == PendingOp.Kind.COMMENT &&
-                            it.taskId == taskId &&
-                            it.text == comment.text
-                        ) {
-                            done = true
-                            it.copy(text = text)
-                        } else {
-                            it
-                        }
-                    }
+                    s.ops.map(retext)
                 } else {
                     enqueue(s.ops, PendingOp(PendingOp.Kind.COMMENT_EDIT, taskId, otherId = comment.id, text = text))
                 }
-            s.copy(comments = s.comments + (taskId to local), ops = ops)
+            val failed = s.failed.map { it.copy(op = retext(it.op)) }
+            s.copy(comments = s.comments + (taskId to local), ops = ops, failed = failed)
         }
         flushSoon()
     }
@@ -998,22 +1180,27 @@ class TodoRepository(
     ) {
         _state.update { s ->
             val local = s.comments[taskId].orEmpty().filter { it.id != comment.id }
+            // Pas encore envoyé : on oublie son envoi, qu'il soit en file ou refusé par le serveur.
+            var removed = false
+            val isItsSending = { op: PendingOp ->
+                val match =
+                    !removed &&
+                        comment.id < 0 &&
+                        op.kind == PendingOp.Kind.COMMENT &&
+                        op.taskId == taskId &&
+                        op.text == comment.text
+                if (match) removed = true
+                match
+            }
             val ops =
                 if (comment.id < 0) {
-                    var removed = false
-                    s.ops.filterNot {
-                        val match =
-                            !removed &&
-                                it.kind == PendingOp.Kind.COMMENT &&
-                                it.taskId == taskId &&
-                                it.text == comment.text
-                        if (match) removed = true
-                        match
-                    }
+                    s.ops.filterNot(isItsSending)
                 } else {
                     enqueue(s.ops, PendingOp(PendingOp.Kind.COMMENT_DELETE, taskId, otherId = comment.id))
                 }
+            val failed = s.failed.filterNot { isItsSending(it.op) }
             s.copy(
+                failed = failed,
                 comments = s.comments + (taskId to local),
                 tasks =
                     s.tasks.map {
@@ -1040,22 +1227,22 @@ class TodoRepository(
     ) {
         _state.update { s ->
             val updated = { l: Label -> if (l.id == id) l.copy(title = title, hexColor = hexColor) else l }
+            val retitle = { op: PendingOp ->
+                if (id < 0 && op.kind == PendingOp.Kind.CREATE_LABEL && op.taskId == id) {
+                    op.copy(text = title, extra = hexColor)
+                } else {
+                    op
+                }
+            }
             val ops =
                 if (id < 0) {
                     // Étiquette pas encore créée : sa création porte déjà le bon titre et la bonne couleur.
-                    s.ops.map {
-                        if (it.kind == PendingOp.Kind.CREATE_LABEL &&
-                            it.taskId == id
-                        ) {
-                            it.copy(text = title, extra = hexColor)
-                        } else {
-                            it
-                        }
-                    }
+                    s.ops.map(retitle)
                 } else {
                     enqueue(s.ops, PendingOp(PendingOp.Kind.LABEL_UPDATE, id, text = title, extra = hexColor))
                 }
             s.copy(
+                failed = s.failed.map { it.copy(op = retitle(it.op)) },
                 labels = s.labels.map(updated),
                 tasks =
                     s.tasks.map { t ->
@@ -1069,17 +1256,18 @@ class TodoRepository(
 
     fun deleteLabel(id: Long) {
         _state.update { s ->
+            // Ses créations et renommages, en file ou refusés, n'ont plus d'objet.
+            val obsolete = { op: PendingOp ->
+                op.taskId == id && (op.kind == PendingOp.Kind.CREATE_LABEL || op.kind == PendingOp.Kind.LABEL_UPDATE)
+            }
             val ops =
                 if (id < 0) {
-                    s.ops.filterNot {
-                        it.taskId == id &&
-                            (it.kind == PendingOp.Kind.CREATE_LABEL || it.kind == PendingOp.Kind.LABEL_UPDATE)
-                    }
+                    s.ops.filterNot(obsolete)
                 } else {
-                    s.ops.filterNot { it.kind == PendingOp.Kind.LABEL_UPDATE && it.taskId == id } +
-                        PendingOp(PendingOp.Kind.LABEL_DELETE, id)
+                    s.ops.filterNot(obsolete) + PendingOp(PendingOp.Kind.LABEL_DELETE, id)
                 }
             s.copy(
+                failed = s.failed.filterNot { obsolete(it.op) },
                 labels = s.labels.filter { it.id != id },
                 tasks =
                     s.tasks.map { t ->
@@ -1273,5 +1461,38 @@ class TodoRepository(
         const val HTTP_UNAUTHORIZED = 401
         const val HTTP_NOT_FOUND = 404
         const val HTTP_SERVER_ERROR = 500
+        const val MAX_SERVER_ERRORS = 3
+
+        /** Panne passagère : réessayer plus tard sans compter d'échec. 408 délai, 429 trop de requêtes, 502-504 proxy. */
+        val TRANSIENT_CODES = setOf(408, 429, 502, 503, 504)
+
+        /** Écritures qui changent les champs de la tâche elle-même : sa version locale prime sur celle du serveur. */
+        val TASK_FIELD_KINDS =
+            setOf(
+                PendingOp.Kind.CREATE,
+                PendingOp.Kind.UPDATE,
+                PendingOp.Kind.DELETE,
+                PendingOp.Kind.POSITION,
+                PendingOp.Kind.ASSIGN,
+                PendingOp.Kind.RELATE,
+                PendingOp.Kind.MOVE_BUCKET,
+            )
+
+        /** Écritures dont [PendingOp.taskId] est une tâche (pas une étiquette, un projet ou une notification). */
+        val TASK_KINDS =
+            setOf(
+                PendingOp.Kind.CREATE,
+                PendingOp.Kind.UPDATE,
+                PendingOp.Kind.DELETE,
+                PendingOp.Kind.POSITION,
+                PendingOp.Kind.ASSIGN,
+                PendingOp.Kind.RELATE,
+                PendingOp.Kind.MOVE_BUCKET,
+                PendingOp.Kind.COMMENT,
+                PendingOp.Kind.ATTACH,
+                PendingOp.Kind.DELETE_ATTACHMENT,
+                PendingOp.Kind.COMMENT_EDIT,
+                PendingOp.Kind.COMMENT_DELETE,
+            )
     }
 }

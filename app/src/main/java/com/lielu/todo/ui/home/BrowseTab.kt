@@ -30,6 +30,7 @@ import androidx.compose.material.icons.outlined.Notifications
 import androidx.compose.material.icons.outlined.Palette
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.outlined.StarOutline
+import androidx.compose.material.icons.outlined.SyncProblem
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -42,6 +43,7 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -101,6 +103,7 @@ fun BrowseTab(
     var managingLabel by remember { mutableStateOf<Label?>(null) }
     var managingFilter by remember { mutableStateOf<SavedFilter?>(null) }
     var showIcons by remember { mutableStateOf(false) }
+    var showFailed by remember { mutableStateOf(false) }
     val context = LocalContext.current
     var projectsOpen by rememberSaveable { mutableStateOf(true) }
     var labelsOpen by rememberSaveable { mutableStateOf(true) }
@@ -117,6 +120,15 @@ fun BrowseTab(
         item { BrowseTopBar(userName.ifBlank { "Mon compte" }, onSettings) }
         item {
             BrowseCard {
+                if (state.failed.isNotEmpty()) {
+                    BrowseRow(
+                        Icons.Outlined.SyncProblem,
+                        "Modifications non envoyées",
+                        count = state.failed.size,
+                        iconColor = MaterialTheme.colorScheme.error,
+                        onClick = { showFailed = true },
+                    )
+                }
                 val favorites = state.tasks.count { it.isFavorite && !it.done }
                 BrowseRow(
                     Icons.Outlined.StarOutline,
@@ -333,6 +345,11 @@ fun BrowseTab(
             },
             onDismiss = { managingFilter = null },
         )
+    }
+    // La fenêtre se ferme d'elle-même quand il n'y a plus rien à décider.
+    LaunchedEffect(state.failed.isEmpty()) { if (state.failed.isEmpty()) showFailed = false }
+    if (showFailed && state.failed.isNotEmpty()) {
+        FailedOpsDialog(state, repository, onDismiss = { showFailed = false })
     }
     if (showIcons) {
         AlertDialog(

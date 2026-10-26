@@ -134,7 +134,7 @@ rester lisible ET modifiable hors ligne.
 - `data/todo/TodoRepository` : source de vérité « local d'abord ». Chaque action modifie l'état local puis met une
   `PendingOp` en file (envoyée dans l'ordre, ids temporaires négatifs remappés à la création). `refresh()` n'écrase
   jamais une écriture en attente. Cache : `FileLocalCache` (JSON atomique + copie `.bak`), codec partagé avec la
-  sauvegarde (`TodoBackupSection`). Une panne serveur (5xx) = hors ligne, les écritures sont gardées.
+  sauvegarde (`TodoBackupSection`). Une panne serveur (502/503/504, 408, 429, ou 500 partout) = hors ligne, les écritures sont gardées. Une écriture refusée (4xx, ou 500 répété alors que `GET /user` répond) sort de la file vers `TodoState.failed` : jamais effacée en silence, elle ne bloque pas les suivantes, l'utilisateur la renvoie ou l'abandonne (Parcourir > « Modifications non envoyées »). Au rafraîchissement, la version locale prime pour tout objet visé par une écriture en file ou refusée (`mergeTasks`/`mergeProjects`/`mergeLabels`).
 - Une `Task` garde son JSON serveur (`raw`) : Vikunja remplace la tâche entière à chaque mise à jour, renvoyer
   seulement nos champs effacerait les autres.
 - `QuickAddParser` : ajout rapide en langage naturel (dates, heure, `#projet`, `@étiquette`, `p1`-`p4`, récurrence).

@@ -94,6 +94,14 @@ object TodoStateCodec {
             .put("user_id", state.userId)
             .put("last_sync", state.lastSync)
             .put("ops", JSONArray(state.ops.map(::opToJson)))
+            .put(
+                "failed_ops",
+                JSONArray(
+                    state.failed.map {
+                        opToJson(it.op).put("code", it.code).put("message", it.message).put("at", it.at)
+                    },
+                ),
+            )
 
     fun decode(o: JSONObject): TodoState =
         TodoState(
@@ -119,6 +127,12 @@ object TodoStateCodec {
             defaultProjectId = o.optLong("default_project_id"),
             userId = o.optLong("user_id"),
             ops = o.getJSONArray("ops").objects().map(::opFromJson),
+            failed =
+                o
+                    .optJSONArray("failed_ops")
+                    ?.objects()
+                    ?.map { FailedOp(opFromJson(it), it.optInt("code"), it.optString("message"), it.optLong("at")) }
+                    .orEmpty(),
             lastSync = o.optLong("last_sync"),
             loaded = true,
         )
@@ -145,6 +159,7 @@ object TodoStateCodec {
             .put("text", op.text)
             .put("flag", op.flag)
             .put("extra", op.extra)
+            .put("attempts", op.attempts)
 
     private fun opFromJson(o: JSONObject) =
         PendingOp(
@@ -155,5 +170,6 @@ object TodoStateCodec {
             // Ancien format : « labels » jouait le rôle de [PendingOp.flag] pour les UPDATE.
             flag = o.optBoolean("flag", o.optBoolean("labels")),
             extra = o.optString("extra"),
+            attempts = o.optInt("attempts"),
         )
 }
