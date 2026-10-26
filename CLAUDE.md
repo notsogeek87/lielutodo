@@ -144,14 +144,6 @@ rester lisible ET modifiable hors ligne.
   `work/SyncWorker` (30 min), `QuickAddActivity` (widget, tuile, raccourci, « Partager »).
 - Tests : `TodoRepositoryTest` joue contre un faux serveur en mémoire ; tout nouveau type d'écriture y ajoute sa route.
 
-## Version web (`web/`)
-
-Même serveur Vikunja, même logique « local d'abord » que l'APK, en site statique sans build (ES modules, voir
-`web/README.md`). `js/store.js` = `TodoRepository`, `js/parser.js` = `QuickAddParser` (port fidèle : toute évolution de
-l'un se répercute sur l'autre), `js/model.js` = `Models.kt`. Déployée sur Vercel (Root Directory `web`, réécriture
-`/vk/*` -> `task.lielu.eu`). Tests : `node --test web/test/*.test.mjs` ; faux serveur : `web/dev/fake-server.mjs`.
-Un nouveau type d'écriture se branche dans `store.js` (action + `apply`) ET dans le faux serveur.
-
 - Autres écritures en file (hors ligne aussi) : pièces jointes (fichier copié dans `files/attachments/pending`,
   envoyé en multipart), commentaires modifiés/supprimés, étiquettes modifiées/supprimées, déplacements Kanban,
   notifications lues. Seules les opérations rares que le serveur doit valider (filtres enregistrés, déplacement ou
@@ -164,3 +156,11 @@ Un nouveau type d'écriture se branche dans `store.js` (action + `apply`) ET dan
 - Productivité et journal d'activité : calculés sur les dates `done_at`/`created` des tâches en cache (`Productivity.kt`).
 - Piège d'édition : après un reformatage ktlint, un `str.replace` sur du code déjà reformaté peut ne rien changer en
   silence. Vérifier chaque point d'entrée UI (grep) et préférer un remplacement qui échoue si l'ancre manque.
+
+## Version web (`web/`)
+
+Même serveur Vikunja, même logique « local d'abord » que l'APK, en site statique sans build (ES modules, voir
+`web/README.md`). `js/store.js` = `TodoRepository`, `js/parser.js` = `QuickAddParser` (port fidèle : toute évolution de
+l'un se répercute sur l'autre), `js/model.js` = `Models.kt`. Déployée sur Vercel (Root Directory `web`, réécriture
+`/vk/*` -> `task.lielu.eu`). Tests : `node --test web/test/*.test.mjs` ; faux serveur : `web/dev/fake-server.mjs`.
+Un nouveau type d'écriture se branche dans `store.js` (action + `apply`) ET dans le faux serveur.
