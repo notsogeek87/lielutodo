@@ -1,7 +1,9 @@
 package com.lielu.todo.ui.login
 
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -25,6 +27,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
@@ -46,6 +49,7 @@ fun LoginScreen(
     val scope = rememberCoroutineScope()
     var server by remember { mutableStateOf(session.baseUrl) }
     var username by remember { mutableStateOf(session.username) }
+    var showServer by remember { mutableStateOf(session.baseUrl.isBlank()) }
     var password by remember { mutableStateOf("") }
     var totp by remember { mutableStateOf("") }
     var needsTotp by remember { mutableStateOf(false) }
@@ -61,7 +65,7 @@ fun LoginScreen(
                 val token = client.login(url, username.trim(), password, totp)
                 // Un autre compte ne doit pas voir le cache du précédent.
                 if (url != session.baseUrl || username.trim() != session.username) repository.reset()
-                session.save(url, token, username.trim())
+                session.save(url, token, username.trim(), password.takeIf { totp.isBlank() })
                 repository.refresh()
             } catch (e: ApiException) {
                 if (e.code == HTTP_PRECONDITION_FAILED) needsTotp = true
@@ -92,25 +96,32 @@ fun LoginScreen(
                 ).padding(24.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp, Alignment.CenterVertically),
     ) {
-        Image(
-            painter = painterResource(R.drawable.ic_logo),
-            contentDescription = null,
-            modifier = Modifier.size(72.dp),
-        )
+        Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+            Image(
+                painter = painterResource(R.drawable.ic_logo),
+                contentDescription = "Logo",
+                modifier =
+                    Modifier
+                        .size(96.dp)
+                        .pointerInput(Unit) { detectTapGestures(onDoubleTap = { showServer = !showServer }) },
+            )
+        }
         Text("Connexion", style = MaterialTheme.typography.headlineMedium)
         Text(
             "Connectez-vous à votre serveur Vikunja.",
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.outline,
         )
-        OutlinedTextField(
-            value = server,
-            onValueChange = { server = it },
-            label = { Text("Serveur") },
-            singleLine = true,
-            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
-            modifier = Modifier.fillMaxWidth(),
-        )
+        if (showServer) {
+            OutlinedTextField(
+                value = server,
+                onValueChange = { server = it },
+                label = { Text("Serveur") },
+                singleLine = true,
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
+                modifier = Modifier.fillMaxWidth(),
+            )
+        }
         OutlinedTextField(
             value = username,
             onValueChange = { username = it },
