@@ -37,6 +37,7 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -53,6 +54,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.lielu.todo.data.model.ProjectAccess
 import com.lielu.todo.data.model.Task
 import com.lielu.todo.data.todo.TodoRepository
 import com.lielu.todo.ui.common.AddFab
@@ -356,6 +358,8 @@ fun TaskListScreen(
     }
     if (showShare && projectId != null) {
         ShareDialog(
+            repository = repository,
+            projectId = projectId,
             onShare = { username, permission ->
                 showShare = false
                 scope.launch {
@@ -446,16 +450,50 @@ private fun commitReorder(
 
 @Composable
 private fun ShareDialog(
+    repository: TodoRepository,
+    projectId: Long,
     onShare: (String, Int) -> Unit,
     onDismiss: () -> Unit,
 ) {
     var username by remember { mutableStateOf("") }
     var permission by remember { mutableStateOf(1) }
+    // null = chargement ; échec = serveur injoignable (la liste exige d'être en ligne).
+    var access by remember { mutableStateOf<List<ProjectAccess>?>(null) }
+    var failed by remember { mutableStateOf(false) }
+    LaunchedEffect(projectId) {
+        try {
+            access = repository.projectAccess(projectId)
+        } catch (e: IOException) {
+            failed = true
+        }
+    }
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("Partager le projet") },
         text = {
-            Column {
+            Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
+                Text("Utilisateurs et droits", style = MaterialTheme.typography.titleSmall)
+                when {
+                    failed ->
+                        Text(
+                            "Liste indisponible (serveur injoignable).",
+                            style = MaterialTheme.typography.bodySmall,
+                        )
+                    access == null -> Text("Chargement…", style = MaterialTheme.typography.bodySmall)
+                    access.orEmpty().isEmpty() ->
+                        Text("Projet non partagé.", style = MaterialTheme.typography.bodySmall)
+                    else ->
+                        access.orEmpty().forEach {
+                            Row(modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp)) {
+                                Text(
+                                    if (it.isTeam) "${it.name} (équipe)" else it.name,
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    modifier = Modifier.weight(1f),
+                                )
+                                Text(it.rightsLabel, style = MaterialTheme.typography.bodySmall)
+                            }
+                        }
+                }
                 OutlinedTextField(
                     value = username,
                     onValueChange = { username = it },
@@ -466,7 +504,7 @@ private fun ShareDialog(
                     },
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
                     singleLine = true,
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
                 )
                 val choices = listOf(0 to "Lecture seule", 1 to "Lecture et écriture", 2 to "Administrateur")
                 choices.forEach { (value, label) ->
