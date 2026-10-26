@@ -391,6 +391,9 @@ fun TaskListScreen(
                         snackbar.showSnackbar("Projet partagé avec $shared")
                     } catch (e: IOException) {
                         snackbar.showSnackbar("Partage impossible : ${e.message}")
+                    } catch (e: RuntimeException) {
+                        if (e is kotlinx.coroutines.CancellationException) throw e
+                        snackbar.showSnackbar("Partage impossible : ${e.message ?: e.javaClass.simpleName}")
                     }
                 }
             },

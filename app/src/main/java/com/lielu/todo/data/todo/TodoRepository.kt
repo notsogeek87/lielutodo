@@ -836,13 +836,22 @@ class TodoRepository(
         userOrEmail: String,
         permission: Int,
     ): String {
-        val username = if ('@' in userOrEmail) resolveEmail(userOrEmail) else userOrEmail
-        api.call(
-            "PUT",
-            "/projects/$projectId/users",
-            body = JSONObject().put("username", username).put("permission", permission),
-        )
-        return username
+        try {
+            val username = if ('@' in userOrEmail) resolveEmail(userOrEmail) else userOrEmail
+            api.call(
+                "PUT",
+                "/projects/$projectId/users",
+                body = JSONObject().put("username", username).put("permission", permission),
+            )
+            // Le partage a réussi : un échec de ce rafraîchissement annexe ne doit pas le faire passer pour raté.
+            runCatching { refreshProjectUsers(projectId) }
+            return username
+        } catch (e: org.json.JSONException) {
+            throw IOException("réponse inattendue du serveur", e)
+        } catch (e: RuntimeException) {
+            if (e is kotlinx.coroutines.CancellationException) throw e
+            throw IOException(e.message ?: e.javaClass.simpleName, e)
+        }
     }
 
     private suspend fun resolveEmail(email: String): String {
