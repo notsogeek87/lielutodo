@@ -88,7 +88,7 @@ function closeAllOverlays() { closePopover(); while (closeTopModal()); }
 function renderLogin(message = '') {
   $('#app').innerHTML = `
     <div class="login-wrap"><form class="login" autocomplete="on">
-      <div class="logo">${icon('checkCircle', 32)}</div>
+      <img class="logo" src="icon.svg" alt="" width="64" height="64">
       <h1>LieluTodo</h1><p>Connectez-vous à votre serveur Vikunja.</p>
       <div class="fl"><label for="srv">Serveur</label><input class="field" id="srv" name="server" value="${esc(DEFAULT_SERVER)}" inputmode="url" autocapitalize="off" spellcheck="false" required></div>
       <div class="fl"><label for="usr">Nom d’utilisateur</label><input class="field" id="usr" name="username" autocomplete="username" autocapitalize="off" required></div>
