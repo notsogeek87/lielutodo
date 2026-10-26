@@ -24,59 +24,88 @@ class TodayWidgetProvider : AppWidgetProvider() {
         manager: AppWidgetManager,
         appWidgetIds: IntArray,
     ) {
-        appWidgetIds.forEach { id ->
-            val views = RemoteViews(context.packageName, R.layout.widget_today)
-            val adapter =
-                Intent(context, TodayWidgetService::class.java).apply {
-                    putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, id)
-                    data = Uri.parse(toUri(Intent.URI_INTENT_SCHEME))
-                }
-            views.setRemoteAdapter(R.id.widget_list, adapter)
-            views.setEmptyView(R.id.widget_list, R.id.widget_empty)
-            views.setPendingIntentTemplate(
-                R.id.widget_list,
-                PendingIntent.getActivity(
-                    context,
-                    0,
-                    Intent(context, WidgetActionActivity::class.java),
-                    PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_MUTABLE,
-                ),
-            )
-            views.setOnClickPendingIntent(
-                R.id.widget_add,
-                PendingIntent.getActivity(
-                    context,
-                    1,
-                    Intent(context, QuickAddActivity::class.java),
-                    PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
-                ),
-            )
-            views.setOnClickPendingIntent(
-                R.id.widget_title,
-                PendingIntent.getActivity(
-                    context,
-                    2,
-                    Intent(context, MainActivity::class.java),
-                    PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
-                ),
-            )
-            manager.updateAppWidget(id, views)
-        }
+        appWidgetIds.forEach { updateTodayWidget(context, manager, it) }
+    }
+
+    override fun onDeleted(
+        context: Context,
+        appWidgetIds: IntArray,
+    ) {
+        WidgetConfigStore(context).remove(appWidgetIds)
     }
 }
 
+/** Dessine (ou redessine après un changement de configuration) un widget liste. */
+fun updateTodayWidget(
+    context: Context,
+    manager: AppWidgetManager,
+    id: Int,
+) {
+    val views = RemoteViews(context.packageName, R.layout.widget_today)
+    val container = (context.applicationContext as LieluApplication).container
+    val config = WidgetConfigStore(context).get(id)
+    val projectTitle =
+        container.todoRepository.state.value.projects
+            .firstOrNull { it.id == config.projectId }
+            ?.title
+    views.setTextViewText(R.id.widget_title, projectTitle ?: config.period.title)
+    val adapter =
+        Intent(context, TodayWidgetService::class.java).apply {
+            putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, id)
+            data = Uri.parse(toUri(Intent.URI_INTENT_SCHEME))
+        }
+    views.setRemoteAdapter(R.id.widget_list, adapter)
+    views.setEmptyView(R.id.widget_list, R.id.widget_empty)
+    views.setPendingIntentTemplate(
+        R.id.widget_list,
+        PendingIntent.getActivity(
+            context,
+            0,
+            Intent(context, WidgetActionActivity::class.java),
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_MUTABLE,
+        ),
+    )
+    views.setOnClickPendingIntent(
+        R.id.widget_add,
+        PendingIntent.getActivity(
+            context,
+            1,
+            Intent(context, QuickAddActivity::class.java),
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+        ),
+    )
+    views.setOnClickPendingIntent(
+        R.id.widget_title,
+        PendingIntent.getActivity(
+            context,
+            2,
+            Intent(context, MainActivity::class.java),
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+        ),
+    )
+    manager.updateAppWidget(id, views)
+    manager.notifyAppWidgetViewDataChanged(id, R.id.widget_list)
+}
+
 class TodayWidgetService : RemoteViewsService() {
-    override fun onGetViewFactory(intent: Intent): RemoteViewsFactory = TodayWidgetFactory(applicationContext)
+    override fun onGetViewFactory(intent: Intent): RemoteViewsFactory =
+        TodayWidgetFactory(
+            applicationContext,
+            intent.getIntExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, AppWidgetManager.INVALID_APPWIDGET_ID),
+        )
 }
 
 private class TodayWidgetFactory(
     private val context: Context,
+    private val widgetId: Int,
 ) : RemoteViewsService.RemoteViewsFactory {
     private var items = emptyList<com.lielu.todo.data.model.Task>()
 
     private fun load() {
-        val repository = (context.applicationContext as LieluApplication).container.todoRepository
-        items = widgetTasks(repository.state.value.tasks, LocalDate.now())
+        val state =
+            (context.applicationContext as LieluApplication)
+                .container.todoRepository.state.value
+        items = widgetTasks(state.tasks, LocalDate.now(), WidgetConfigStore(context).get(widgetId), state.projects)
     }
 
     override fun onCreate() = load()

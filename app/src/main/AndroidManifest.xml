@@ -180,6 +180,15 @@
             </intent-filter>
         </receiver>
 
+        <activity
+            android:name=".widget.WidgetConfigActivity"
+            android:exported="true"
+            android:theme="@style/Theme.LieluApp">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_CONFIGURE" />
+            </intent-filter>
+        </activity>
+
         <receiver
             android:name=".widget.TodayWidgetProvider"
             android:exported="true">
