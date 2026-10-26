@@ -58,6 +58,7 @@ class WidgetConfigActivity : ComponentActivity() {
                 WidgetConfigScreen(
                     config = config,
                     projects = state.projects.filter { !it.isArchived }.sortedBy { it.title.lowercase() },
+                    inboxId = state.inboxId,
                     onChange = { config = it },
                     onSave = {
                         store.set(widgetId, config)
@@ -75,6 +76,7 @@ class WidgetConfigActivity : ComponentActivity() {
 private fun WidgetConfigScreen(
     config: WidgetConfig,
     projects: List<Project>,
+    inboxId: Long,
     onChange: (WidgetConfig) -> Unit,
     onSave: () -> Unit,
 ) {
@@ -96,8 +98,11 @@ private fun WidgetConfigScreen(
                 ChoiceRow(period.label, config.period == period) { onChange(config.copy(period = period)) }
             }
             Text("Projet", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(top = 16.dp))
+            ChoiceRow("Tâches personnelles", config.projectId == PERSONAL_PROJECT) {
+                onChange(config.copy(projectId = PERSONAL_PROJECT))
+            }
             ChoiceRow("Tous les projets", config.projectId == 0L) { onChange(config.copy(projectId = 0)) }
-            projects.forEach { project ->
+            projects.filter { it.id != inboxId }.forEach { project ->
                 ChoiceRow(
                     project.title,
                     config.projectId == project.id,
@@ -123,7 +128,7 @@ private fun WidgetConfigScreen(
                 onValueChange = { onChange(config.copy(opacityPercent = it.roundToInt())) },
                 valueRange = MIN_OPACITY_PERCENT.toFloat()..100f,
             )
-            if (config.projectId != 0L) {
+            if (config.projectId > 0L) {
                 Row(
                     modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
                     verticalAlignment = Alignment.CenterVertically,

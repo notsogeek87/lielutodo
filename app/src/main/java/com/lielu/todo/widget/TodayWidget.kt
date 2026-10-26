@@ -46,9 +46,13 @@ fun updateTodayWidget(
     val container = (context.applicationContext as LieluApplication).container
     val config = WidgetConfigStore(context).get(id)
     val projectTitle =
-        container.todoRepository.state.value.projects
-            .firstOrNull { it.id == config.projectId }
-            ?.title
+        if (config.projectId == PERSONAL_PROJECT) {
+            "Tâches personnelles"
+        } else {
+            container.todoRepository.state.value.projects
+                .firstOrNull { it.id == config.projectId }
+                ?.title
+        }
     views.setTextViewText(R.id.widget_title, projectTitle ?: config.period.title)
     views.setTextViewTextSize(R.id.widget_title, TypedValue.COMPLEX_UNIT_SP, scaled(TITLE_SP, config))
     views.setTextViewTextSize(R.id.widget_empty, TypedValue.COMPLEX_UNIT_SP, scaled(EMPTY_SP, config))
@@ -125,7 +129,15 @@ private class TodayWidgetFactory(
             val state =
                 (context.applicationContext as LieluApplication)
                     .container.todoRepository.state.value
-            items = widgetTasks(state.tasks, LocalDate.now(), WidgetConfigStore(context).get(widgetId), state.projects)
+            items =
+                widgetTasks(
+                    state.tasks,
+                    LocalDate.now(),
+                    WidgetConfigStore(context).get(widgetId),
+                    state.projects,
+                    state.inboxId,
+                    state.userId,
+                )
         }
     }
 

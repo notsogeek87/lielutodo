@@ -17,7 +17,7 @@ enum class WidgetPeriod(
     ALL("Toutes, sans limite de date", "Toutes"),
 }
 
-/** Choix de l'utilisateur pour un widget liste. [projectId] 0 = tous les projets. */
+/** Choix de l'utilisateur pour un widget liste. [projectId] 0 = tous les projets, [PERSONAL_PROJECT] = tâches personnelles. */
 data class WidgetConfig(
     val period: WidgetPeriod = WidgetPeriod.OVERDUE_TODAY,
     val projectId: Long = 0,
@@ -27,6 +27,9 @@ data class WidgetConfig(
     /** Opacité du fond en % (0 = fond invisible). */
     val opacityPercent: Int = DEFAULT_OPACITY_PERCENT,
 )
+
+/** Valeur de [WidgetConfig.projectId] : boîte de réception + tâches affectées à l'utilisateur dans les autres projets. */
+const val PERSONAL_PROJECT = -2L
 
 const val DEFAULT_FONT_PERCENT = 100
 const val DEFAULT_OPACITY_PERCENT = 100
@@ -40,10 +43,18 @@ fun widgetTasks(
     today: LocalDate,
     config: WidgetConfig = WidgetConfig(),
     projects: List<Project> = emptyList(),
+    inboxId: Long = 0,
+    userId: Long = 0,
 ): List<Task> {
     val projectIds = projectScope(config, projects)
+    val inScope = { t: Task ->
+        when {
+            config.projectId == PERSONAL_PROJECT -> t.projectId == inboxId || t.assignees.any { it.id == userId }
+            else -> projectIds == null || t.projectId in projectIds
+        }
+    }
     return tasks
-        .filter { !it.done && (projectIds == null || it.projectId in projectIds) && matchesPeriod(it, today, config) }
+        .filter { !it.done && inScope(it) && matchesPeriod(it, today, config) }
         .sortedWith(
             compareBy<Task, java.time.Instant?>(nullsLast()) { it.plannedAt }
                 .thenByDescending { it.priority }
@@ -72,7 +83,7 @@ private fun projectScope(
     config: WidgetConfig,
     projects: List<Project>,
 ): Set<Long>? {
-    if (config.projectId == 0L) return null
+    if (config.projectId <= 0L) return null
     val ids = mutableSetOf(config.projectId)
     if (config.includeSubProjects) {
         var grew = true

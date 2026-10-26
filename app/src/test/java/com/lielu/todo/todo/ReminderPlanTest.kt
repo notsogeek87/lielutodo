@@ -1,8 +1,10 @@
 package com.lielu.todo.todo
 
 import com.lielu.todo.data.model.Reminder
+import com.lielu.todo.data.model.User
 import com.lielu.todo.data.model.taskFromJson
 import com.lielu.todo.reminder.planReminders
+import com.lielu.todo.widget.PERSONAL_PROJECT
 import com.lielu.todo.widget.WidgetConfig
 import com.lielu.todo.widget.WidgetPeriod
 import com.lielu.todo.widget.widgetTasks
@@ -102,5 +104,19 @@ class ReminderPlanTest {
             emptyList<Long>(),
             widgetTasks(tasks, today, WidgetConfig(WidgetPeriod.ALL, projectId = 9)).map { it.id },
         )
+    }
+
+    @Test
+    fun widgetPersonalMixesInboxAndAssignedTasks() {
+        val today = LocalDate.of(2026, 10, 25)
+        val me = User(5, "moi", "Moi")
+        val tasks =
+            listOf(
+                task(1, null).copy(projectId = 1),
+                task(2, null).copy(projectId = 2, assignees = listOf(me)),
+                task(3, null).copy(projectId = 2),
+            )
+        val config = WidgetConfig(WidgetPeriod.ALL, projectId = PERSONAL_PROJECT)
+        assertEquals(listOf(1L, 2L), widgetTasks(tasks, today, config, inboxId = 1, userId = 5).map { it.id })
     }
 }
