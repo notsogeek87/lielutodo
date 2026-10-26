@@ -174,7 +174,7 @@ fun HomeScreen(
                 ProjectFilterButton(
                     options =
                         listOf(
-                            FilterOption(0L, "Boîte de réception", 0),
+                            FilterOption(0L, "Tâches personnelles", 0),
                             FilterOption(ALL_PROJECTS, "Tous les projets", 0),
                         ) +
                             orderedProjects(state.projects.filter { it.id != state.inboxId })
