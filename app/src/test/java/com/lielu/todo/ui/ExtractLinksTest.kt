@@ -14,6 +14,6 @@ class ExtractLinksTest {
     @Test
     fun ignoresDuplicatesAndPlainText() {
         assertEquals(listOf("http://a.fr/x"), extractLinks("http://a.fr/x et (http://a.fr/x)"))
-        assertEquals(emptyList(), extractLinks("pas de lien https://"))
+        assertEquals(emptyList<String>(), extractLinks("pas de lien https://"))
     }
 }
