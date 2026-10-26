@@ -184,9 +184,8 @@ fun RemindersDialog(
                     }
                 }
                 HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
-                TextButton(onClick = onPickAbsolute) { Text("Date et heure précises…") }
                 if (!hasDue) {
-                    Text("Ajoutez une échéance pour des rappels relatifs.", style = MaterialTheme.typography.bodySmall)
+                    Text("Ajoutez une date pour des rappels relatifs.", style = MaterialTheme.typography.bodySmall)
                 }
                 presets.forEach { (label, seconds) ->
                     TextButton(
@@ -194,6 +193,7 @@ fun RemindersDialog(
                         onClick = { onChange(task.reminders + Reminder.beforeDue(seconds)) },
                     ) { Text(label) }
                 }
+                TextButton(onClick = onPickAbsolute) { Text("Rappel à une autre date…") }
             }
         },
         confirmButton = { TextButton(onClick = onDismiss) { Text("Fermer") } },
