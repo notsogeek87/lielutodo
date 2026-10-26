@@ -80,7 +80,6 @@ private class FakeServer : HttpApi {
                                     JSONArray(
                                         listOf(
                                             JSONObject().put("id", 20).put("view_kind", "list"),
-                                            JSONObject().put("id", 21).put("view_kind", "kanban"),
                                         ),
                                     ),
                                 ),
@@ -224,24 +223,6 @@ private class FakeServer : HttpApi {
                     ).toString(),
                 )
             method == "GET" && path == "/projects/2/views/20/tasks" -> ok(JSONArray(tasks.values.toList()).toString())
-            method == "GET" && path == "/projects/2/views/21/tasks" ->
-                ok(
-                    JSONArray(
-                        listOf(
-                            JSONObject()
-                                .put(
-                                    "id",
-                                    1,
-                                ).put("title", "À faire")
-                                .put("tasks", JSONArray(tasks.values.toList())),
-                            JSONObject().put("id", 2).put("title", "Fait").put("tasks", JSONArray()),
-                        ),
-                    ).toString(),
-                )
-            method == "POST" && path.matches(Regex("/projects/\\d+/views/\\d+/buckets/\\d+/tasks")) -> {
-                created += "bucket:" + path.split('/')[6] + ">" + body!!.getLong("task_id")
-                ok("{}")
-            }
             else -> throw ApiException(404, "route inconnue $method $path")
         }
     }
@@ -742,7 +723,7 @@ class TodoRepositoryTest {
         }
 
     @Test
-    fun kanbanMoveAndNotificationReadAreQueuedAndSent() =
+    fun notificationReadIsQueuedAndSent() =
         runTest {
             val server = FakeServer()
             server.tasks[5] = JSONObject("""{"id":5,"title":"T","project_id":2,"done":false}""")
@@ -763,37 +744,7 @@ class TodoRepositoryTest {
                     .taskId,
             )
 
-            repo.refreshKanban(2)
-            assertEquals(
-                listOf("À faire", "Fait"),
-                repo.state.value.kanban
-                    .getValue(2)
-                    .map { it.title },
-            )
-            assertEquals(
-                listOf(5L),
-                repo.state.value.kanban
-                    .getValue(2)
-                    .first()
-                    .taskIds,
-            )
-
             server.online = false
-            repo.moveToBucket(2, 5, 2)
-            assertEquals(
-                listOf(5L),
-                repo.state.value.kanban
-                    .getValue(2)
-                    .last()
-                    .taskIds,
-            )
-            assertTrue(
-                repo.state.value.kanban
-                    .getValue(2)
-                    .first()
-                    .taskIds
-                    .isEmpty(),
-            )
             repo.markNotificationRead(1)
             assertEquals(1, repo.state.value.unreadNotifications)
             repo.markAllNotificationsRead()
@@ -802,6 +753,5 @@ class TodoRepositoryTest {
             repo.refresh()
             assertEquals(0, repo.state.value.pending)
             assertTrue(server.unreadNotifications.isEmpty())
-            assertTrue("bucket:2>5" in server.created)
         }
 }

@@ -16,7 +16,7 @@ jeton Bearer. En web, `/vk/*` est réécrit vers `task.lielu.eu` (voir `web/verc
 | Assignation | `PUT /tasks/{id}/assignees`, `DELETE /tasks/{id}/assignees/{u}` |
 | Commentaires | `GET/PUT /tasks/{id}/comments`, `POST/DELETE /tasks/{id}/comments/{c}` |
 | Pièces jointes | `GET /tasks/{id}/attachments`, envoi multipart, `DELETE /tasks/{id}/attachments/{a}` |
-| Kanban | `POST /projects/{p}/views/{v}/buckets/{b}/tasks` |
+| Kanban (retiré de l'UI, ancien `MOVE_BUCKET` encore envoyé) | `POST /projects/{p}/views/{v}/buckets/{b}/tasks` |
 | Filtres | `GET/PUT /filters`, `POST/DELETE /filters/{id}` |
 | Notifications | `GET/POST /notifications`, `POST /notifications/{id}` |
 

@@ -144,9 +144,11 @@ rester lisible ET modifiable hors ligne.
 - Tests : `TodoRepositoryTest` joue contre un faux serveur en mémoire ; tout nouveau type d'écriture y ajoute sa route.
 
 - Autres écritures en file (hors ligne aussi) : pièces jointes (fichier copié dans `files/attachments/pending`,
-  envoyé en multipart), commentaires modifiés/supprimés, étiquettes modifiées/supprimées, déplacements Kanban,
+  envoyé en multipart), commentaires modifiés/supprimés, étiquettes modifiées/supprimées,
   notifications lues. Seules les opérations rares que le serveur doit valider (filtres enregistrés, déplacement ou
   ordre des projets, partage) exigent d'être en ligne.
+- Pas de vue Kanban : Vikunja n'a pas de statut de tâche (les colonnes sont des buckets propres à chaque projet),
+  la vue a été retirée. `PendingOp.Kind.MOVE_BUCKET` reste uniquement pour envoyer d'anciens déplacements en file.
 - Cache : `TodoState` est sérialisé par `TodoStateCodec` (cache disque ET sauvegarde). Tout nouveau champ d'état s'y
   ajoute avec une valeur par défaut à la lecture, sinon les anciens fichiers deviennent illisibles.
 - Réglages propres à l'appareil (verrou, son, icône d'app) : `AppPrefs` (SharedPreferences, hors sauvegarde). L'icône

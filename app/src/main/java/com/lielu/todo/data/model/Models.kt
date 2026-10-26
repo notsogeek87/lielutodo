@@ -24,8 +24,6 @@ data class Project(
     val position: Double,
     /** Vue « liste » du projet : c'est elle qui porte l'ordre manuel des tâches ; 0 si inconnue. */
     val listViewId: Long = 0,
-    /** Vue Kanban (colonnes) du projet ; 0 si elle n'existe pas. */
-    val kanbanViewId: Long = 0,
 )
 
 data class Label(
@@ -64,13 +62,6 @@ data class Attachment(
     val size: Long,
     val mime: String,
     val created: Instant?,
-)
-
-/** Colonne d'une vue Kanban ; [taskIds] dans l'ordre d'affichage. */
-data class Bucket(
-    val id: Long,
-    val title: String,
-    val taskIds: List<Long>,
 )
 
 /** Notification Vikunja (assignation, commentaire, rappel…), résumée en une phrase lisible. */
@@ -249,7 +240,6 @@ fun Project.toJson(): JSONObject =
         .put("is_archived", isArchived)
         .put("position", position)
         .put("list_view_id", listViewId)
-        .put("kanban_view_id", kanbanViewId)
 
 fun SavedFilter.toJson(): JSONObject =
     JSONObject()
@@ -314,7 +304,6 @@ fun projectFromJson(o: JSONObject): Project {
     val views = o.optJSONArray("views")
     val viewObjects = (0 until (views?.length() ?: 0)).map { views!!.getJSONObject(it) }
     val listView = viewObjects.firstOrNull { it.optString("view_kind") == "list" }
-    val kanbanView = viewObjects.firstOrNull { it.optString("view_kind") == "kanban" }
     return Project(
         id = o.getLong("id"),
         title = o.optString("title"),
@@ -324,7 +313,6 @@ fun projectFromJson(o: JSONObject): Project {
         isArchived = o.optBoolean("is_archived"),
         position = o.optDouble("position", 0.0),
         listViewId = listView?.optLong("id") ?: o.optLong("list_view_id", 0),
-        kanbanViewId = kanbanView?.optLong("id") ?: o.optLong("kanban_view_id", 0),
     )
 }
 
@@ -388,23 +376,6 @@ fun Attachment.toJson(): JSONObject =
         .put("id", id)
         .put("created", created?.toString() ?: ZERO_DATE)
         .put("file", JSONObject().put("name", name).put("size", size).put("mime", mime))
-
-fun Bucket.toJson(): JSONObject = JSONObject().put("id", id).put("title", title).put("task_ids", JSONArray(taskIds))
-
-fun bucketFromJson(o: JSONObject): Bucket {
-    val tasks = o.optJSONArray("tasks")
-    val ids = o.optJSONArray("task_ids")
-    return Bucket(
-        id = o.getLong("id"),
-        title = o.optString("title"),
-        taskIds =
-            when {
-                tasks != null -> (0 until tasks.length()).map { tasks.getJSONObject(it).getLong("id") }
-                ids != null -> (0 until ids.length()).map { ids.getLong(it) }
-                else -> emptyList()
-            },
-    )
-}
 
 private val NOTIFICATION_VERBS =
     mapOf(

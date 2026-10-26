@@ -88,7 +88,6 @@ fun TaskListScreen(
     target: ListTarget,
     onOpenTask: (Long) -> Unit,
     onBack: () -> Unit,
-    onOpenKanban: (Long) -> Unit = {},
 ) {
     val state by repository.state.collectAsStateWithLifecycle()
     val scope = rememberCoroutineScope()
@@ -189,7 +188,6 @@ fun TaskListScreen(
                                     "Déplacer dans…" to ProjectDialog.MOVE,
                                     "Monter" to ProjectDialog.UP,
                                     "Descendre" to ProjectDialog.DOWN,
-                                    "Vue Kanban" to ProjectDialog.KANBAN,
                                     "Archiver" to ProjectDialog.ARCHIVE,
                                     "Supprimer" to ProjectDialog.DELETE,
                                 ).forEach { (label, kind) ->
@@ -198,7 +196,6 @@ fun TaskListScreen(
                                         onClick = {
                                             showMenu = false
                                             when (kind) {
-                                                ProjectDialog.KANBAN -> onOpenKanban(projectId)
                                                 ProjectDialog.UP, ProjectDialog.DOWN ->
                                                     scope.launch {
                                                         try {
@@ -370,7 +367,7 @@ fun TaskListScreen(
                             }
                             ProjectDialog.MOVE -> repository.moveProject(projectId, value.toLongOrNull() ?: 0L)
                             // Actions directes du menu : elles n'ouvrent jamais de boîte de dialogue.
-                            ProjectDialog.UP, ProjectDialog.DOWN, ProjectDialog.KANBAN -> Unit
+                            ProjectDialog.UP, ProjectDialog.DOWN -> Unit
                         }
                     } catch (e: IOException) {
                         snackbar.showSnackbar("Action impossible (serveur injoignable ou refus) : ${e.message}")
@@ -551,7 +548,7 @@ private fun ShareDialog(
     )
 }
 
-private enum class ProjectDialog { RENAME, COLOR, MOVE, UP, DOWN, KANBAN, ARCHIVE, DELETE }
+private enum class ProjectDialog { RENAME, COLOR, MOVE, UP, DOWN, ARCHIVE, DELETE }
 
 @Composable
 private fun ProjectActionDialog(
@@ -571,7 +568,7 @@ private fun ProjectActionDialog(
                     ProjectDialog.RENAME -> "Renommer le projet"
                     ProjectDialog.COLOR -> "Couleur du projet"
                     ProjectDialog.MOVE -> "Déplacer « $projectTitle » dans…"
-                    ProjectDialog.UP, ProjectDialog.DOWN, ProjectDialog.KANBAN -> ""
+                    ProjectDialog.UP, ProjectDialog.DOWN -> ""
                     ProjectDialog.ARCHIVE -> "Archiver « $projectTitle » ?"
                     ProjectDialog.DELETE -> "Supprimer « $projectTitle » ?"
                 },
@@ -609,7 +606,7 @@ private fun ProjectActionDialog(
                         }
                     }
                 }
-                ProjectDialog.UP, ProjectDialog.DOWN, ProjectDialog.KANBAN -> Unit
+                ProjectDialog.UP, ProjectDialog.DOWN -> Unit
                 ProjectDialog.ARCHIVE -> Text("Le projet disparaît de la liste mais ses tâches sont conservées.")
                 ProjectDialog.DELETE ->
                     Text("Le projet et TOUTES ses tâches seront supprimés du serveur. Cette action est définitive.")
