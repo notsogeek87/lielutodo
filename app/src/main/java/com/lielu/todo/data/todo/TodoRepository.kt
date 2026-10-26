@@ -11,7 +11,6 @@ import com.lielu.todo.data.model.SavedFilter
 import com.lielu.todo.data.model.Task
 import com.lielu.todo.data.model.User
 import com.lielu.todo.data.model.attachmentFromJson
-import com.lielu.todo.data.model.bucketFromJson
 import com.lielu.todo.data.model.commentFromJson
 import com.lielu.todo.data.model.labelFromJson
 import com.lielu.todo.data.model.lastUnreadableDate
@@ -62,7 +61,6 @@ class TodoRepository(
 
     private val syncLock = Mutex()
     private var positionsSyncedAt = 0L
-    private var kanbanSyncedAt = 0L
 
     // Les ids temporaires (objets créés hors ligne) sont négatifs. On repart sous le plus bas déjà utilisé : après
     // un redémarrage, un compteur remis à -1 réattribuerait l'id d'une tâche encore en attente d'envoi.
@@ -270,7 +268,6 @@ class TodoRepository(
                 ops.map { if (it === existing) it.copy(flag = it.flag || op.flag) else it }
             }
             PendingOp.Kind.POSITION -> if (ops.any(sameTask)) ops else ops + op
-            // Dernier mot gagne : seul le dernier déplacement ou la dernière modification part au serveur.
             PendingOp.Kind.MOVE_BUCKET -> ops.filterNot(sameTask) + op
             PendingOp.Kind.LABEL_UPDATE -> ops.filterNot(sameTask) + op
             PendingOp.Kind.COMMENT_EDIT -> ops.filterNot { sameTask(it) && it.otherId == op.otherId } + op
@@ -345,7 +342,7 @@ class TodoRepository(
         }
         val results = if (clean) fetchFilterResults(filters) else null
         tasks?.let(::diagnoseDates)
-        pullExtras(projects, clean)
+        pullExtras(clean)
         _state.update {
             it.copy(
                 projects = projects,
@@ -586,6 +583,7 @@ class TodoRepository(
                 api.call("POST", "/labels/${op.taskId}", body = json)
             }
             PendingOp.Kind.LABEL_DELETE -> ignoringMissing { api.call("DELETE", "/labels/${op.taskId}") }
+            // Ancien déplacement Kanban resté en file avant le retrait de la vue : envoyé une dernière fois.
             PendingOp.Kind.MOVE_BUCKET -> {
                 val (project, view) = op.extra.split(':').let { it[0] to it[1] }
                 val body =
@@ -655,13 +653,10 @@ class TodoRepository(
     }
 
     /**
-     * Notifications et colonnes Kanban : utiles mais secondaires, une erreur ici ne doit jamais faire échouer la
-     * synchronisation des tâches. Le Kanban n'est relu qu'au plus toutes les [POSITIONS_EVERY_MS].
+     * Notifications : utiles mais secondaires, une erreur ici ne doit jamais faire échouer la
+     * synchronisation des tâches.
      */
-    private suspend fun pullExtras(
-        projects: List<Project>,
-        clean: Boolean,
-    ) {
+    private suspend fun pullExtras(clean: Boolean) {
         if (clean) {
             runCatching {
                 JSONArray(api.call("GET", "/notifications", mapOf("per_page" to "50")).body)
@@ -669,17 +664,6 @@ class TodoRepository(
                     .map(::notificationFromJson)
             }.getOrNull()?.let { list -> _state.update { it.copy(notifications = list) } }
         }
-        val now = clock()
-        if (now - kanbanSyncedAt < POSITIONS_EVERY_MS) return
-        var complete = true
-        projects.filter { it.kanbanViewId > 0 }.forEach { p ->
-            try {
-                refreshKanban(p.id)
-            } catch (e: IOException) {
-                complete = false
-            }
-        }
-        if (complete) kanbanSyncedAt = now
     }
 
     private suspend fun applyCreate(op: PendingOp) {
@@ -1087,50 +1071,6 @@ class TodoRepository(
                         }
                     },
                 ops = ops,
-            )
-        }
-        flushSoon()
-    }
-
-    // ---- Kanban ----
-
-    /** Relit les colonnes d'un projet ; [IOException] si le serveur ne répond pas (le cache reste affiché). */
-    suspend fun refreshKanban(projectId: Long) {
-        val view =
-            _state.value.projects
-                .firstOrNull { it.id == projectId }
-                ?.kanbanViewId ?: 0L
-        if (view == 0L) return
-        val buckets =
-            JSONArray(api.call("GET", "/projects/$projectId/views/$view/tasks", mapOf("per_page" to "50")).body)
-                .objects()
-                .map(::bucketFromJson)
-        _state.update { it.copy(kanban = it.kanban + (projectId to buckets)) }
-    }
-
-    /** Déplace une tâche dans une colonne, même hors ligne (le changement part au prochain envoi). */
-    fun moveToBucket(
-        projectId: Long,
-        taskId: Long,
-        bucketId: Long,
-    ) {
-        val view =
-            _state.value.projects
-                .firstOrNull { it.id == projectId }
-                ?.kanbanViewId ?: return
-        _state.update { s ->
-            val moved =
-                s.kanban[projectId].orEmpty().map { b ->
-                    val without = b.taskIds.filter { it != taskId }
-                    if (b.id == bucketId) b.copy(taskIds = without + taskId) else b.copy(taskIds = without)
-                }
-            s.copy(
-                kanban = s.kanban + (projectId to moved),
-                ops =
-                    enqueue(
-                        s.ops,
-                        PendingOp(PendingOp.Kind.MOVE_BUCKET, taskId, otherId = bucketId, extra = "$projectId:$view"),
-                    ),
             )
         }
         flushSoon()

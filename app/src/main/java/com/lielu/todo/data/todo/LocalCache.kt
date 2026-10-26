@@ -2,7 +2,6 @@ package com.lielu.todo.data.todo
 
 import com.lielu.todo.data.model.AppNotification
 import com.lielu.todo.data.model.Attachment
-import com.lielu.todo.data.model.Bucket
 import com.lielu.todo.data.model.Comment
 import com.lielu.todo.data.model.Label
 import com.lielu.todo.data.model.Project
@@ -10,7 +9,6 @@ import com.lielu.todo.data.model.SavedFilter
 import com.lielu.todo.data.model.User
 import com.lielu.todo.data.model.appNotificationFromStoredJson
 import com.lielu.todo.data.model.attachmentFromJson
-import com.lielu.todo.data.model.bucketFromJson
 import com.lielu.todo.data.model.commentFromJson
 import com.lielu.todo.data.model.labelFromJson
 import com.lielu.todo.data.model.objects
@@ -91,11 +89,6 @@ object TodoStateCodec {
                         o.put(id.toString(), JSONArray(list.map(Attachment::toJson)))
                     }
                 },
-            ).put(
-                "kanban",
-                JSONObject().also { o ->
-                    state.kanban.forEach { (id, list) -> o.put(id.toString(), JSONArray(list.map(Bucket::toJson))) }
-                },
             ).put("notifications", JSONArray(state.notifications.map(AppNotification::toJson)))
             .put("default_project_id", state.defaultProjectId)
             .put("last_sync", state.lastSync)
@@ -116,7 +109,6 @@ object TodoStateCodec {
             comments = mapOfArrays(o.optJSONObject("comments")) { commentFromJson(it) },
             projectUsers = mapOfArrays(o.optJSONObject("project_users")) { userFromJson(it) },
             attachments = mapOfArrays(o.optJSONObject("attachments")) { attachmentFromJson(it) },
-            kanban = mapOfArrays(o.optJSONObject("kanban")) { bucketFromJson(it) },
             notifications =
                 o
                     .optJSONArray("notifications")

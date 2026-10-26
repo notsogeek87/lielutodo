@@ -2,7 +2,6 @@ package com.lielu.todo.data.todo
 
 import com.lielu.todo.data.model.AppNotification
 import com.lielu.todo.data.model.Attachment
-import com.lielu.todo.data.model.Bucket
 import com.lielu.todo.data.model.Comment
 import com.lielu.todo.data.model.Label
 import com.lielu.todo.data.model.Project
@@ -23,7 +22,7 @@ data class PendingOp(
     val otherId: Long = 0,
     val text: String = "",
     val flag: Boolean = false,
-    /** Second texte : couleur d'une étiquette, nom et type d'un fichier, projet:vue d'un déplacement Kanban. */
+    /** Second texte : couleur d'une étiquette, nom et type d'un fichier, projet:vue d'un ancien déplacement Kanban. */
     val extra: String = "",
 ) {
     enum class Kind {
@@ -57,8 +56,6 @@ data class TodoState(
     val filterResults: Map<Long, List<Task>> = emptyMap(),
     val comments: Map<Long, List<Comment>> = emptyMap(),
     val attachments: Map<Long, List<Attachment>> = emptyMap(),
-    /** Colonnes Kanban par projet, telles que vues la dernière fois. */
-    val kanban: Map<Long, List<Bucket>> = emptyMap(),
     val notifications: List<AppNotification> = emptyList(),
     val projectUsers: Map<Long, List<User>> = emptyMap(),
     val defaultProjectId: Long = 0,

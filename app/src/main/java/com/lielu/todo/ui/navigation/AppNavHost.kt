@@ -22,7 +22,6 @@ import androidx.navigation.navArgument
 import com.lielu.todo.AppContainer
 import com.lielu.todo.ui.home.ActivityScreen
 import com.lielu.todo.ui.home.HomeScreen
-import com.lielu.todo.ui.home.KanbanScreen
 import com.lielu.todo.ui.home.ListTarget
 import com.lielu.todo.ui.home.NotificationsScreen
 import com.lielu.todo.ui.home.SearchScreen
@@ -42,15 +41,12 @@ object AppDestinations {
     const val COMPLETED = "completed"
     const val NOTIFICATIONS = "notifications"
     const val ACTIVITY = "activity"
-    const val KANBAN = "kanban/{id}"
     const val SEARCH = "search"
     const val TASK = "task/{id}"
 
     fun project(id: Long) = "project/$id"
 
     fun label(id: Long) = "label/$id"
-
-    fun kanban(id: Long) = "kanban/$id"
 
     fun filter(id: Long) = "filter/$id"
 
@@ -120,7 +116,6 @@ fun AppNavHost(
                     target = ListTarget(projectId = entry.arguments?.getLong("id")),
                     onOpenTask = { navController.navigate(AppDestinations.task(it)) },
                     onBack = { navController.popBackStack() },
-                    onOpenKanban = { navController.navigate(AppDestinations.kanban(it)) },
                 )
             }
         }
@@ -183,17 +178,6 @@ fun AppNavHost(
             Centered {
                 ActivityScreen(
                     repository = repository,
-                    onOpenTask = { navController.navigate(AppDestinations.task(it)) },
-                    onBack = { navController.popBackStack() },
-                )
-            }
-        }
-
-        composable(AppDestinations.KANBAN, arguments = idArgument) { entry ->
-            Centered {
-                KanbanScreen(
-                    repository = repository,
-                    projectId = entry.arguments?.getLong("id") ?: 0L,
                     onOpenTask = { navController.navigate(AppDestinations.task(it)) },
                     onBack = { navController.popBackStack() },
                 )
