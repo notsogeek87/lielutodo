@@ -14,6 +14,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.FilterList
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.Search
@@ -27,7 +28,6 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
@@ -152,10 +152,15 @@ fun HomeScreen(
                     },
                 ) {
                     Icon(
-                        Icons.Outlined.CheckCircle,
+                        if (inboxShowDone) Icons.Filled.CheckCircle else Icons.Outlined.CheckCircle,
                         contentDescription =
                             if (inboxShowDone) "Masquer les tâches achevées" else "Afficher les tâches achevées",
-                        tint = if (inboxShowDone) MaterialTheme.colorScheme.primary else LocalContentColor.current,
+                        tint =
+                            if (inboxShowDone) {
+                                MaterialTheme.colorScheme.primary
+                            } else {
+                                MaterialTheme.colorScheme.outline
+                            },
                     )
                 }
                 ProjectFilterButton(
@@ -460,7 +465,11 @@ private fun InboxTab(
             val count = if (openCount == 0) null else "$openCount tâche${if (openCount > 1) "s" else ""}"
             ScreenTitle(
                 "Boîte de réception",
-                listOfNotNull(count, scope).joinToString(" · ").ifEmpty { null },
+                listOfNotNull(
+                    count,
+                    scope,
+                    if (showDone) "achevées affichées" else null,
+                ).joinToString(" · ").ifEmpty { null },
                 actions = actions,
             )
         }
