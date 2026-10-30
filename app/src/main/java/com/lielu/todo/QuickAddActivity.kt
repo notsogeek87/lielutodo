@@ -79,6 +79,7 @@ class QuickAddActivity : ComponentActivity() {
                         val taskId = container.todoRepository.add(it)
                         file?.let { f -> container.todoRepository.addAttachment(taskId, f.name, f.mime, f.bytes) }
                     },
+                    loadUsers = { runCatching { container.todoRepository.refreshProjectUsers(it) } },
                     onDismiss = { finish() },
                 )
             }

@@ -342,6 +342,7 @@ fun TaskListScreen(
                 val extra = state.labels.filter { it.id == target.labelId && new.labels.none { l -> l.id == it.id } }
                 repository.add(new.copy(labels = new.labels + extra))
             },
+            loadUsers = { runCatching { repository.refreshProjectUsers(it) } },
             onDismiss = { showAdd = false },
         )
     }

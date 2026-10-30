@@ -19,6 +19,7 @@ import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.CalendarToday
 import androidx.compose.material.icons.filled.Flag
 import androidx.compose.material.icons.filled.Inbox
+import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Repeat
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -42,9 +43,11 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import com.lielu.todo.data.model.Label
+import com.lielu.todo.data.model.User
 import com.lielu.todo.data.todo.QuickAddParser
 import com.lielu.todo.data.todo.TodoRepository
 import com.lielu.todo.data.todo.TodoState
+import com.lielu.todo.ui.common.AssigneesDialog
 import com.lielu.todo.ui.common.DatePickerSheet
 import com.lielu.todo.ui.common.LabelsDialog
 import com.lielu.todo.ui.common.PriorityMenu
@@ -75,6 +78,7 @@ fun QuickAddSheet(
     onAdd: (NewTask) -> Unit,
     onDismiss: () -> Unit,
     initialText: String = "",
+    loadUsers: suspend (Long) -> Unit = {},
 ) {
     val zone = ZoneId.systemDefault()
     val today = LocalDate.now(zone)
@@ -93,6 +97,9 @@ fun QuickAddSheet(
     var showPriority by remember { mutableStateOf(false) }
     var showProject by remember { mutableStateOf(false) }
     var showLabels by remember { mutableStateOf(false) }
+    var manualAssignees by remember { mutableStateOf<List<User>?>(null) }
+    var showAssignees by remember { mutableStateOf(false) }
+    var usersLoading by remember { mutableStateOf(false) }
 
     val parsed =
         remember(text, state.projects, state.labels) { QuickAddParser.parse(text, today, state.projects, state.labels) }
@@ -102,6 +109,16 @@ fun QuickAddSheet(
     val priority = manualPriority ?: parsed.priority ?: 0
     val labels = manualLabels ?: parsed.labels
     val project = state.projects.firstOrNull { it.id == projectId }
+    val users = state.projectUsers[projectId].orEmpty()
+    // Par défaut la tâche est affectée à l'utilisateur connecté ; tant que la liste du projet n'est pas connue,
+    // seul son id compte pour le serveur.
+    val me = users.firstOrNull { it.id == state.userId } ?: state.userId.takeIf { it > 0 }?.let { User(it, "", "") }
+    val assignees = manualAssignees ?: listOfNotNull(me)
+    LaunchedEffect(projectId) {
+        usersLoading = true
+        loadUsers(projectId)
+        usersLoading = false
+    }
     val colors = LocalTodoColors.current
 
     fun submitWith(chosen: LocalTime?) {
@@ -115,7 +132,7 @@ fun QuickAddSheet(
             } else {
                 parsed.copy(date = date, time = chosen).dueInstant(LocalDateTime.now(zone), zone)
             }
-        onAdd(NewTask(title, projectId, due, priority, labels, parsed.repeatAfter, parsed.repeatMode))
+        onAdd(NewTask(title, projectId, due, priority, labels, parsed.repeatAfter, parsed.repeatMode, assignees))
         onDismiss()
     }
 
@@ -185,6 +202,7 @@ fun QuickAddSheet(
                         leadingIcon = { Icon(Icons.Filled.Inbox, contentDescription = null) },
                     )
                     ProjectMenu(showProject, state.projects, state.inboxId, onDismiss = { showProject = false }) {
+                        if (it.id != projectId) manualAssignees = null
                         manualProject = it.id
                         showProject = false
                     }
@@ -196,6 +214,19 @@ fun QuickAddSheet(
                         leadingIcon = { Icon(Icons.Filled.Repeat, contentDescription = null) },
                     )
                 }
+                QuickChip(
+                    onClick = { showAssignees = true },
+                    label = {
+                        Text(
+                            when {
+                                assignees.isEmpty() -> "Assigner"
+                                assignees.size == 1 && assignees[0].id == state.userId -> "Moi"
+                                else -> assignees.joinToString { it.display.ifBlank { "Moi" } }
+                            },
+                        )
+                    },
+                    leadingIcon = { Icon(Icons.Filled.Person, contentDescription = null) },
+                )
                 QuickChip(
                     onClick = { showLabels = true },
                     label = { Text(if (labels.isEmpty()) "Étiquettes" else labels.joinToString { it.title }) },
@@ -261,6 +292,18 @@ fun QuickAddSheet(
             },
         )
     }
+    if (showAssignees) {
+        AssigneesDialog(
+            users = users,
+            selected = assignees,
+            loading = usersLoading,
+            onConfirm = {
+                manualAssignees = it
+                showAssignees = false
+            },
+            onDismiss = { showAssignees = false },
+        )
+    }
     if (showLabels) {
         LabelsDialog(
             all = state.labels,
@@ -283,6 +326,7 @@ data class NewTask(
     val labels: List<Label>,
     val repeatAfter: Long = 0,
     val repeatMode: Int = 0,
+    val assignees: List<User> = emptyList(),
 )
 
 fun TodoRepository.add(task: NewTask): Long =
@@ -294,7 +338,7 @@ fun TodoRepository.add(task: NewTask): Long =
         labels = task.labels,
         repeatAfter = task.repeatAfter,
         repeatMode = task.repeatMode,
-    )
+    ).also { id -> task.assignees.forEach { assign(id, it, true) } }
 
 private data class DateChoice(
     val date: LocalDate?,

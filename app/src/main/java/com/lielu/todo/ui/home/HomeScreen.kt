@@ -371,6 +371,7 @@ fun HomeScreen(
                 },
             defaultDate = if (HomeTab.entries[tab] == HomeTab.TODAY) today else null,
             onAdd = { repository.add(it) },
+            loadUsers = { runCatching { repository.refreshProjectUsers(it) } },
             onDismiss = { showAdd = false },
         )
     }
