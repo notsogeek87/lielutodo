@@ -2,7 +2,7 @@
 // fonctions état -> description, rendues ensuite en HTML.
 import { colorOf, isRecurring, todoistLevel } from './model.js';
 import {
-  addDays, dayHeading, dueKind, dueText, repeatLabel, startOfDay, weekdayShort, DAY_MS,
+  addDays, dayHeading, dueKind, dueText, hasTime, repeatLabel, startOfDay, weekdayShort, DAY_MS,
 } from './dates.js';
 import { icon } from './icons.js';
 import { esc } from './ui.js';
@@ -15,14 +15,27 @@ export function inboxProject(state) {
     || state.projects[0];
 }
 
-const byDueThenPriority = (a, b) => (a.due ?? Infinity) - (b.due ?? Infinity) || b.priority - a.priority || a.id - b.id;
+// Tris identiques à l'APK (HomeScreen, TaskListScreen, UpcomingPlan.sortedFor).
+/** Échéance, sinon le premier rappel (`Task.plannedAt` de l'APK). */
+export function plannedAt(t) {
+  if (t.due != null) return t.due;
+  const times = (t.reminders || []).map((r) => (r.relativeTo ? null : r.at)).filter((x) => x != null);
+  return times.length ? Math.min(...times) : null;
+}
 const byPosition = (a, b) => a.position - b.position || a.id - b.id;
+const byDueThenPriority = (a, b) => (a.due ?? Infinity) - (b.due ?? Infinity) || b.priority - a.priority || byPosition(a, b);
+/** Boîte de réception : non terminées d'abord, date (sans date à la fin), priorité, position. */
+export const inboxOrder = (a, b) => Number(a.done) - Number(b.done)
+  || (plannedAt(a) ?? Infinity) - (plannedAt(b) ?? Infinity) || b.priority - a.priority || byPosition(a, b);
+/** À venir, tri « intelligent » : tâches avec heure d'abord, puis heure, priorité, position. */
+export const smartDayOrder = (a, b) => Number(!hasTime(a.due)) - Number(!hasTime(b.due))
+  || a.due - b.due || b.priority - a.priority || byPosition(a, b);
 const doneAt = (t) => Date.parse(t.raw?.done_at) || 0;
 
 export const openTasks = (state) => state.tasks.filter((t) => !t.done);
 
 /** Tâches d'un projet : racines triées, chaque racine suivie de ses sous-tâches. */
-export function projectTree(tasks, showDone) {
+export function projectTree(tasks, showDone, order = byPosition) {
   const visible = tasks.filter((t) => showDone || !t.done);
   const ids = new Set(visible.map((t) => t.id));
   const children = new Map();
@@ -31,7 +44,7 @@ export function projectTree(tasks, showDone) {
     children.get(t.parentId).push(t);
   });
   const roots = visible.filter((t) => !t.parentId || !ids.has(t.parentId))
-    .sort((a, b) => Number(a.done) - Number(b.done) || byPosition(a, b));
+    .sort((a, b) => Number(a.done) - Number(b.done) || order(a, b));
   children.forEach((list) => list.sort((a, b) => Number(a.done) - Number(b.done) || byPosition(a, b)));
   return { roots, children };
 }
@@ -53,16 +66,20 @@ export function buildView(state, route, ui, now = Date.now()) {
       const showDone = ui.showDone.has(project.id);
       // La boîte de réception réunit aussi les tâches des autres projets affectées à l'utilisateur connecté.
       const mine = (t) => route.name === 'inbox' && state.user?.id && t.assignees?.some((a) => a.id === state.user.id);
-      const { roots, children } = projectTree(state.tasks.filter((t) => t.projectId === project.id || mine(t)), showDone);
+      // Comme l'APK : la boîte de réception est triée par date puis priorité, un projet suit l'ordre manuel.
+      const isInbox = route.name === 'inbox';
+      const { roots, children } = projectTree(
+        state.tasks.filter((t) => t.projectId === project.id || mine(t)), showDone, isInbox ? inboxOrder : byPosition,
+      );
       return {
-        ...base, title: project.title, project, projectId: project.id, color: colorOf(project.hex), draggable: true,
+        ...base, title: project.title, project, projectId: project.id, color: colorOf(project.hex), draggable: !isInbox,
         icon: route.name === 'inbox' ? 'inbox' : 'hash', showProject: route.name === 'inbox',
         sections: roots.length ? [{ key: 'all', tasks: roots, children }] : [],
         empty: { icon: '🌤️', title: 'Rien à faire ici', text: 'Ajoutez une tâche pour commencer.' },
       };
     }
     case 'today': {
-      const late = open.filter((t) => t.due != null && t.due < today).sort(byDueThenPriority);
+      const late = open.filter((t) => t.due != null && t.due < today).sort((a, b) => a.due - b.due || a.id - b.id);
       const todays = open.filter((t) => t.due != null && t.due >= today && t.due < today + DAY_MS).sort(byDueThenPriority);
       const sections = [];
       if (late.length) sections.push({ key: 'late', heading: 'En retard', tasks: late, reschedule: true, showDue: true });
@@ -79,7 +96,7 @@ export function buildView(state, route, ui, now = Date.now()) {
       const days = [];
       for (let i = 0; i < 14; i++) {
         const d = addDays(start, i);
-        days.push({ key: `d${d}`, day: d, heading: dayHeading(d, now), tasks: open.filter((t) => t.due != null && t.due >= d && t.due < addDays(d, 1)).sort(byDueThenPriority), addDay: true });
+        days.push({ key: `d${d}`, day: d, heading: dayHeading(d, now), tasks: open.filter((t) => t.due != null && t.due >= d && t.due < addDays(d, 1)).sort(smartDayOrder), addDay: true });
       }
       const late = open.filter((t) => t.due != null && t.due < today).sort(byDueThenPriority);
       const sections = [];
