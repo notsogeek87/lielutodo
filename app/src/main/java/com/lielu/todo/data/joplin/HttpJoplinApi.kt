@@ -36,10 +36,8 @@ class HttpJoplinApi(
         title: String,
         body: String,
         parentId: String,
-    ): RemoteNote {
-        return withContext(Dispatchers.IO) {
-            JoplinJson.parseNote(request("POST", "/notes", notePayload(title, body, parentId)))
-        }
+    ): RemoteNote = withContext(Dispatchers.IO) {
+        JoplinJson.parseNote(request("POST", "/notes", notePayload(title, body, parentId)))
     }
 
     override suspend fun updateNote(
@@ -47,10 +45,8 @@ class HttpJoplinApi(
         title: String,
         body: String,
         parentId: String,
-    ): RemoteNote {
-        return withContext(Dispatchers.IO) {
-            JoplinJson.parseNote(request("PUT", "/notes/$id", notePayload(title, body, parentId)))
-        }
+    ): RemoteNote = withContext(Dispatchers.IO) {
+        JoplinJson.parseNote(request("PUT", "/notes/$id", notePayload(title, body, parentId)))
     }
 
     override suspend fun deleteNote(id: String) {
@@ -61,12 +57,10 @@ class HttpJoplinApi(
         title: String,
         body: String,
         parentId: String,
-    ): JSONObject {
-        return JSONObject()
-            .put("title", title)
-            .put("body", body)
-            .put("parent_id", parentId)
-    }
+    ): JSONObject = JSONObject()
+        .put("title", title)
+        .put("body", body)
+        .put("parent_id", parentId)
 
     private fun request(
         method: String,

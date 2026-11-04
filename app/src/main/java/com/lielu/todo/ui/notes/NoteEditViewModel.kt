@@ -49,8 +49,7 @@ class NoteEditViewModel(
             .debounce(400)
             .onEach { (title, body) ->
                 if (initial != null && (title to body) != initial) save(title, body)
-            }
-            .launchIn(viewModelScope)
+            }.launchIn(viewModelScope)
     }
 
     fun onTitleChanged(value: String) {
@@ -69,7 +68,10 @@ class NoteEditViewModel(
         }
     }
 
-    private suspend fun save(title: String, body: String) {
+    private suspend fun save(
+        title: String,
+        body: String,
+    ) {
         notesRepository.save(noteId, title, body)
         syncIfEnabled()
     }

@@ -14,7 +14,9 @@ sealed interface SyncResult {
         val deleted: Int,
     ) : SyncResult
 
-    data class Failure(val message: String) : SyncResult
+    data class Failure(
+        val message: String,
+    ) : SyncResult
 }
 
 /**
@@ -81,14 +83,16 @@ class NotesSync(
         return SyncResult.Failure(message)
     }
 
-    private fun syncedNote(existing: Note?, remote: RemoteNote): Note =
-        (existing ?: Note(id = remote.id, title = "", body = "")).copy(
-            id = remote.id,
-            title = remote.title,
-            body = remote.body,
-            parentId = remote.parentId,
-            userUpdatedTime = remote.userUpdatedTime,
-            dirty = false,
-            deleted = false,
-        )
+    private fun syncedNote(
+        existing: Note?,
+        remote: RemoteNote,
+    ) = (existing ?: Note(id = remote.id, title = "", body = "")).copy(
+        id = remote.id,
+        title = remote.title,
+        body = remote.body,
+        parentId = remote.parentId,
+        userUpdatedTime = remote.userUpdatedTime,
+        dirty = false,
+        deleted = false,
+    )
 }
