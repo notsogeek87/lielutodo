@@ -19,9 +19,7 @@ class JoplinJsonTest {
             JSONObject()
                 .put(
                     "items",
-                    JSONArray().put(
-                        JSONObject().put("item_name", "notes/abc.md").put("type", 2).put("updated_time", 123L),
-                    ),
+                    JSONArray().put(JSONObject().put("item_name", "notes/abc.md").put("type", 2).put("updated_time", 123L)),
                 )
                 .put("has_more", true)
                 .put("cursor", "cur-9")
