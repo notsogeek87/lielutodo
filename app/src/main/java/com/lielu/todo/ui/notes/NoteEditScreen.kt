@@ -32,7 +32,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
-import com.mikepenz.markdown.m3.Markdown
+import androidx.compose.ui.viewinterop.AndroidView
+import android.widget.TextView
+import io.noties.markwon.Markwon
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -84,7 +86,13 @@ fun NoteEditScreen(
                         .verticalScroll(rememberScrollState()),
             ) {
                 Text(title, style = MaterialTheme.typography.headlineSmall)
-                Markdown(body, modifier = Modifier.padding(top = 12.dp))
+                AndroidView(
+                    factory = { context ->
+                        TextView(context).apply { Markwon.create(context).setMarkdown(this, body) }
+                    },
+                    update = { view -> Markwon.create(view.context).setMarkdown(view, body) },
+                    modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
+                )
             }
         } else {
             Column(
