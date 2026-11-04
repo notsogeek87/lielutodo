@@ -176,7 +176,15 @@ class NotesSync(
             usedFallback = true
             listRootChildren(api, pulled, remoteDeleted, samples)
         }
-        return PullResult(pulled.values.toList(), remoteDeleted, defaultFolder, cursor, changesSeen, samples, usedFallback)
+        return PullResult(
+            pulled.values.toList(),
+            remoteDeleted,
+            defaultFolder,
+            cursor,
+            changesSeen,
+            samples,
+            usedFallback,
+        )
     }
 
     /** Repli : liste paginée de `GET /api/items/root:/:/children`, mêmes filtres que le delta. */
