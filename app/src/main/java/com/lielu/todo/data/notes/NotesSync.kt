@@ -13,6 +13,8 @@ sealed interface SyncResult {
         val pushed: Int,
         val pulled: Int,
         val deleted: Int,
+        val changesSeen: Int = 0,
+        val samples: List<String> = emptyList(),
     ) : SyncResult
 
     data class Failure(
@@ -45,7 +47,7 @@ class NotesSync(
                         "Vérifiez l'adresse (ex. https://notes.lielu.eu, sans /api à la fin).",
                 )
             }
-            val (pulled, remoteDeleted, defaultFolder, newCursor) = pullChanges(api)
+            val (pulled, remoteDeleted, defaultFolder, newCursor, changesSeen, samples) = pullChanges(api)
             val plan = SyncPlanner.plan(notes.getAllIncludingDeleted(), pulled, remoteDeleted)
             var pushed = 0
             for (note in plan.toPush) {
@@ -88,19 +90,27 @@ class NotesSync(
                 pushed = pushed,
                 pulled = plan.toApplyRemote.size,
                 deleted = plan.toDeleteRemote.size + plan.toDeleteLocal.size,
+                changesSeen = changesSeen,
+                samples = samples,
             )
         } catch (e: Exception) {
             fail("Échec de la synchronisation : ${e.message}")
         }
     }
 
-    /** Boucle le delta (tant que has_more), avec resync complète si le cursor est rejeté (resyncRequired). */
+    /**
+     * Boucle le delta (tant que has_more), avec resync complète si le cursor est rejeté (resyncRequired).
+     * Si une synchro complète (sans cursor) ne renvoie aucun changement, on retombe sur la liste des
+     * enfants de la racine (certaines versions de serveur ne remplissent pas le delta initial).
+     */
     private suspend fun pullChanges(api: JoplinApi): PullResult {
         var cursor: String? = settings.joplinCursor.first()
         var didResync = false
         val pulled = LinkedHashMap<String, RemoteNote>()
         val remoteDeleted = mutableSetOf<String>()
+        val samples = mutableListOf<String>()
         var defaultFolder = ""
+        var changesSeen = 0
         while (true) {
             val page =
                 try {
@@ -113,6 +123,8 @@ class NotesSync(
                     }
                     throw e
                 }
+            changesSeen += page.items.size
+            if (samples.size < 3 && page.items.isNotEmpty()) samples += page.items.take(3).map { it.name }
             for (change in page.items) {
                 val name = change.name
                 if (name.startsWith("locks/") || name.startsWith("temp/") || name.startsWith(".resource/")) continue
@@ -147,7 +159,35 @@ class NotesSync(
             if (page.cursor != null) cursor = page.cursor
             if (!page.hasMore) break
         }
-        return PullResult(pulled.values.toList(), remoteDeleted, defaultFolder, cursor)
+        if (cursor == settings.joplinCursor.first() && changesSeen == 0) {
+            // Delta vide en synchro complète : repli sur la liste des enfants de la racine.
+            listRootChildren(api, pulled, remoteDeleted, samples)
+        }
+        return PullResult(pulled.values.toList(), remoteDeleted, defaultFolder, cursor, changesSeen, samples)
+    }
+
+    /** Repli : liste paginée de `GET /api/items/root:/:/children`, mêmes filtres que le delta. */
+    private suspend fun listRootChildren(
+        api: JoplinApi,
+        pulled: MutableMap<String, RemoteNote>,
+        remoteDeleted: MutableSet<String>,
+        samples: MutableList<String>,
+    ) {
+        var page = 1
+        while (true) {
+            val children = api.rootChildren(page)
+            if (samples.size < 3 && children.items.isNotEmpty()) samples += children.items.take(3).map { it.name }
+            for (change in children.items) {
+                val name = change.name
+                if (!name.startsWith("notes/") || !name.endsWith(".md")) continue
+                val id = name.removePrefix("notes/").removeSuffix(".md")
+                val parsed = JoplinParser.parse(api.itemContent(name)) ?: continue
+                if (parsed.type != 1 || parsed.deletedTime != 0L) continue
+                pulled[id] = RemoteNote(parsed.id, parsed.title, parsed.body, parsed.parentId, parsed.updatedTime)
+            }
+            if (!children.hasMore) break
+            page++
+        }
     }
 
     private data class PullResult(
@@ -155,6 +195,8 @@ class NotesSync(
         val remoteDeleted: Set<String>,
         val defaultFolder: String,
         val cursor: String?,
+        val changesSeen: Int,
+        val samples: List<String>,
     )
 
     private suspend fun fail(message: String): SyncResult {

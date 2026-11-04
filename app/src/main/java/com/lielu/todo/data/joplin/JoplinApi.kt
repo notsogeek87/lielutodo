@@ -43,6 +43,9 @@ interface JoplinApi {
     /** Page de delta depuis [cursor] (null = resync complète). */
     suspend fun delta(cursor: String?): DeltaPage
 
+    /** Enfants paginés de la racine (repli si le delta initial est vide). */
+    suspend fun rootChildren(page: Int): DeltaPage
+
     /** Contenu sérialisé brut d'un item (ex. « notes/<id>.md »). */
     suspend fun itemContent(name: String): String
 

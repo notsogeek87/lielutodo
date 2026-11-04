@@ -40,8 +40,15 @@ class NotesViewModel(
             _message.value =
                 when (val result = notesSync.syncNow()) {
                     is SyncResult.Success ->
-                        "Synchronisation : ${result.pushed} envoyée(s), ${result.pulled} reçue(s), " +
-                            "${result.deleted} supprimée(s)."
+                        buildString {
+                            append(
+                                "Synchronisation : ${result.pushed} envoyée(s), ${result.pulled} reçue(s), " +
+                                    "${result.deleted} supprimée(s) (${result.changesSeen} changements)",
+                            )
+                            if (result.pulled == 0 && result.changesSeen > 0) {
+                                append(" — ex. ${result.samples.joinToString { "« $it »" }}")
+                            }
+                        }
                     is SyncResult.Failure -> result.message
                 }
         }

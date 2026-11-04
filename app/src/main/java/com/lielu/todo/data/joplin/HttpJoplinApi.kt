@@ -36,6 +36,11 @@ class HttpJoplinApi(
             JoplinJson.parseDeltaPage(requestJson("GET", "/items/root:/:/delta$query"))
         }
 
+    override suspend fun rootChildren(page: Int): DeltaPage =
+        withContext(Dispatchers.IO) {
+            JoplinJson.parseDeltaPage(requestJson("GET", "/items/root:/:/children?limit=100&page=$page"))
+        }
+
     override suspend fun itemContent(name: String): String =
         withContext(Dispatchers.IO) {
             requestText("GET", "/items/root:/$name:/content")

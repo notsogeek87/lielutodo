@@ -15,7 +15,7 @@ object JoplinJson {
             (0 until array.length()).map {
                 val change = array.getJSONObject(it)
                 DeltaItem(
-                    name = change.optString("item_name"),
+                    name = change.optString("item_name").ifBlank { change.optString("name") },
                     type = change.optInt("type", 1),
                     updatedTime = change.optLong("updated_time", 0L),
                 )
