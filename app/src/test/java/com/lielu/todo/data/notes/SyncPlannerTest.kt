@@ -16,45 +16,59 @@ class SyncPlannerTest {
     private fun remote(
         id: String,
         updated: Long = 0,
-    ) = RemoteNote(id = id, title = "t$id", body = "b$id", parentId = "", userUpdatedTime = updated)
+    ) = RemoteNote(
+        id = id,
+        title = "t$id",
+        body = "b$id",
+        parentId = "",
+        userUpdatedTime = updated,
+    )
 
     @Test
-    fun noteDistanteInconnueLocalementEstTelechargee() {
-        val plan = SyncPlanner.plan(local = emptyList(), remote = listOf(remote("a", updated = 5)))
+    fun noteRecueInconnueLocalementEstAppliquee() {
+        val plan =
+            SyncPlanner.plan(
+                local = emptyList(),
+                pulled = listOf(remote("a", updated = 5)),
+                remoteDeleted = emptySet(),
+            )
 
         assertEquals(listOf(remote("a", updated = 5)), plan.toApplyRemote)
         assertTrue(plan.toPush.isEmpty())
     }
 
     @Test
-    fun noteLocaleModifieeEstPousseeMemeSiLeServeurEnAUne() {
+    fun noteLocaleModifieeEstPousseeMemeSiReçue() {
         val plan =
             SyncPlanner.plan(
                 local = listOf(local("a", updated = 10, dirty = true)),
-                remote = listOf(remote("a", updated = 20)),
+                pulled = listOf(remote("a", updated = 20)),
+                remoteDeleted = emptySet(),
             )
 
-        assertEquals(listOf(local("a", updated = 10, dirty = true)), plan.toPush)
+        assertEquals(1, plan.toPush.size)
         assertTrue(plan.toApplyRemote.isEmpty())
     }
 
     @Test
-    fun noteDistantePlusRecenteEstTelechargee() {
+    fun noteRecuePlusRecenteEstAppliquee() {
         val plan =
             SyncPlanner.plan(
                 local = listOf(local("a", updated = 10)),
-                remote = listOf(remote("a", updated = 20)),
+                pulled = listOf(remote("a", updated = 20)),
+                remoteDeleted = emptySet(),
             )
 
         assertEquals(listOf(remote("a", updated = 20)), plan.toApplyRemote)
     }
 
     @Test
-    fun noteDistantePasPlusRecenteEstConserveeTelleQuelle() {
+    fun noteRecuePasPlusRecenteEstIgnoree() {
         val plan =
             SyncPlanner.plan(
                 local = listOf(local("a", updated = 20)),
-                remote = listOf(remote("a", updated = 10)),
+                pulled = listOf(remote("a", updated = 10)),
+                remoteDeleted = emptySet(),
             )
 
         assertTrue(plan.toApplyRemote.isEmpty())
@@ -66,7 +80,8 @@ class SyncPlannerTest {
         val plan =
             SyncPlanner.plan(
                 local = listOf(local("a", deleted = true, dirty = true)),
-                remote = listOf(remote("a")),
+                pulled = emptyList(),
+                remoteDeleted = emptySet(),
             )
 
         assertEquals(listOf("a"), plan.toDeleteRemote)
@@ -74,13 +89,27 @@ class SyncPlannerTest {
     }
 
     @Test
-    fun noteAbsenteDuServeurEstSupprimeeLocalement() {
+    fun noteSupprimeeCoteServeurEstSupprimeeLocalement() {
         val plan =
             SyncPlanner.plan(
                 local = listOf(local("a")),
-                remote = emptyList(),
+                pulled = emptyList(),
+                remoteDeleted = setOf("a"),
             )
 
         assertEquals(listOf("a"), plan.toDeleteLocal)
+    }
+
+    @Test
+    fun noteLocaleModifieeGagneSurLaSuppressionDistante() {
+        val plan =
+            SyncPlanner.plan(
+                local = listOf(local("a", updated = 10, dirty = true)),
+                pulled = emptyList(),
+                remoteDeleted = setOf("a"),
+            )
+
+        assertEquals(1, plan.toPush.size)
+        assertTrue(plan.toDeleteLocal.isEmpty())
     }
 }

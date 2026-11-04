@@ -2,6 +2,7 @@ package com.lielu.todo.data.notes
 
 import com.lielu.todo.data.joplin.JoplinApi
 import com.lielu.todo.data.joplin.JoplinApiException
+import com.lielu.todo.data.joplin.JoplinParser
 import com.lielu.todo.data.joplin.RemoteNote
 import com.lielu.todo.data.settings.JoplinSettings
 import com.lielu.todo.data.settings.SettingsRepository
@@ -20,9 +21,9 @@ sealed interface SyncResult {
 }
 
 /**
- * Synchronise les notes locales avec le serveur Joplin, en lecture ET en écriture : pousse les
- * modifications et suppressions locales, applique les changements distants. Le plan est calculé par
- * [SyncPlanner] ; ici on l'exécute via [JoplinApi] et on met la base à jour.
+ * Synchronise les notes avec Joplin Server via le protocole de synchro (delta incrémental + cursor) :
+ * lecture des items modifiés, écriture des notes locales modifiées, suppressions des deux côtés.
+ * Le plan est calculé par [SyncPlanner] ; ici on l'exécute via [JoplinApi] et on met le cache à jour.
  */
 class NotesSync(
     private val settings: SettingsRepository,
@@ -44,36 +45,44 @@ class NotesSync(
                         "Vérifiez l'adresse (ex. https://notes.lielu.eu, sans /api à la fin).",
                 )
             }
-            val plan = SyncPlanner.plan(notes.getAllIncludingDeleted(), api.listNotes())
+            val (pulled, remoteDeleted, defaultFolder, newCursor) = pullChanges(api)
+            val plan = SyncPlanner.plan(notes.getAllIncludingDeleted(), pulled, remoteDeleted)
             var pushed = 0
             for (note in plan.toPush) {
-                val remote =
-                    try {
-                        api.updateNote(note.id, note.title, note.body, note.parentId)
-                    } catch (e: JoplinApiException) {
-                        // Note jamais poussée (404) : on la crée côté serveur, qui lui donne son vrai id.
-                        if (e.statusCode == 404) {
-                            api.createNote(note.title, note.body, note.parentId)
-                        } else {
-                            throw e
-                        }
-                    }
-                if (remote.id != note.id) notes.deleteById(note.id)
-                notes.upsert(syncedNote(if (remote.id == note.id) note else null, remote))
+                val parent = note.parentId.ifBlank { defaultFolder }
+                val updatedMs = clock()
+                val item =
+                    api.putContent(
+                        "notes/${note.id}.md",
+                        JoplinParser.serialize(note.id, parent, note.title, note.body, updatedMs),
+                    )
+                val serverTime = item.optLong("jop_updated_time", item.optLong("updated_time", updatedMs))
+                notes.upsert(note.copy(userUpdatedTime = serverTime, dirty = false, deleted = false))
                 pushed++
             }
             for (id in plan.toDeleteRemote) {
                 try {
-                    api.deleteNote(id)
+                    api.deleteItem("notes/$id.md")
                 } catch (e: JoplinApiException) {
                     if (e.statusCode != 404) throw e
                 }
                 notes.deleteById(id)
             }
             for (remote in plan.toApplyRemote) {
-                notes.upsert(syncedNote(notes.getById(remote.id), remote))
+                val existing = notes.getById(remote.id)
+                notes.upsert(
+                    (existing ?: Note(id = remote.id, title = "", body = "")).copy(
+                        title = remote.title,
+                        body = remote.body,
+                        parentId = remote.parentId,
+                        userUpdatedTime = remote.userUpdatedTime,
+                        dirty = false,
+                        deleted = false,
+                    ),
+                )
             }
             for (id in plan.toDeleteLocal) notes.deleteById(id)
+            settings.setJoplinCursor(newCursor)
             settings.recordSyncSuccess(clock())
             SyncResult.Success(
                 pushed = pushed,
@@ -85,21 +94,71 @@ class NotesSync(
         }
     }
 
+    /** Boucle le delta (tant que has_more), avec resync complète si le cursor est rejeté (resyncRequired). */
+    private suspend fun pullChanges(api: JoplinApi): PullResult {
+        var cursor: String? = settings.joplinCursor.first()
+        var didResync = false
+        val pulled = LinkedHashMap<String, RemoteNote>()
+        val remoteDeleted = mutableSetOf<String>()
+        var defaultFolder = ""
+        while (true) {
+            val page =
+                try {
+                    api.delta(cursor)
+                } catch (e: JoplinApiException) {
+                    if (e.errorCode == "resyncRequired" && !didResync) {
+                        didResync = true
+                        cursor = null
+                        continue
+                    }
+                    throw e
+                }
+            for (change in page.items) {
+                val name = change.name
+                if (name.startsWith("locks/") || name.startsWith("temp/") || name.startsWith(".resource/")) continue
+                if (name.startsWith("folders/") && name.endsWith(".info")) {
+                    val parsed = JoplinParser.parse(api.itemContent(name))
+                    if (parsed != null && parsed.type == 2 && defaultFolder.isEmpty()) defaultFolder = parsed.id
+                    continue
+                }
+                if (!name.startsWith("notes/") || !name.endsWith(".md")) continue
+                val id = name.removePrefix("notes/").removeSuffix(".md")
+                if (change.type == 3) {
+                    remoteDeleted += id
+                    pulled.remove(id)
+                } else {
+                    val parsed = JoplinParser.parse(api.itemContent(name)) ?: continue
+                    if (parsed.type != 1) continue
+                    if (parsed.deletedTime != 0L) {
+                        remoteDeleted += id
+                        pulled.remove(id)
+                    } else {
+                        pulled[id] =
+                            RemoteNote(
+                                parsed.id,
+                                parsed.title,
+                                parsed.body,
+                                parsed.parentId,
+                                parsed.updatedTime,
+                            )
+                    }
+                }
+            }
+            if (page.cursor != null) cursor = page.cursor
+            if (!page.hasMore) break
+        }
+        return PullResult(pulled.values.toList(), remoteDeleted, defaultFolder, cursor)
+    }
+
+    private data class PullResult(
+        val pulled: List<RemoteNote>,
+        val remoteDeleted: Set<String>,
+        val defaultFolder: String,
+        val cursor: String?,
+    )
+
     private suspend fun fail(message: String): SyncResult {
         settings.recordSyncFailure(message)
         return SyncResult.Failure(message)
     }
-
-    private fun syncedNote(
-        existing: Note?,
-        remote: RemoteNote,
-    ) = (existing ?: Note(id = remote.id, title = "", body = "")).copy(
-        id = remote.id,
-        title = remote.title,
-        body = remote.body,
-        parentId = remote.parentId,
-        userUpdatedTime = remote.userUpdatedTime,
-        dirty = false,
-        deleted = false,
-    )
 }

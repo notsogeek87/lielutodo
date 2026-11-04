@@ -8,40 +8,32 @@ data class SyncPlan(
     val toPush: List<Note>,
     /** Ids de notes à supprimer côté serveur (supprimées localement). */
     val toDeleteRemote: List<String>,
-    /** Notes distantes à écrire en local (nouvelles ou plus récentes que la copie locale). */
+    /** Notes reçues du delta à écrire en local (nouvelles ou plus récentes que la copie locale). */
     val toApplyRemote: List<RemoteNote>,
-    /** Ids de notes locales à supprimer (absentes du serveur : supprimées ailleurs). */
+    /** Ids de notes locales à supprimer (supprimées côté serveur). */
     val toDeleteLocal: List<String>,
 )
 
 /**
  * Découpe une synchronisation en actions. Règle de conflit : dernier modifié gagne — une note locale
- * modifiée ([Note.dirty]) est toujours poussée (elle écrase la version distante), une note distante plus
- * récente que la copie locale est téléchargée, une note absente d'un côté est supprimée de l'autre.
+ * modifiée ([Note.dirty]) est toujours poussée (elle écrase la version distante), une note reçue plus
+ * récente que la copie locale propre est appliquée, une note supprimée d'un côté est supprimée de l'autre.
  */
 object SyncPlanner {
     fun plan(
         local: List<Note>,
-        remote: List<RemoteNote>,
+        pulled: List<RemoteNote>,
+        remoteDeleted: Set<String>,
     ): SyncPlan {
-        val remoteById = remote.associateBy { it.id }
-        val localIds = local.map { it.id }.toSet()
-        val toPush = mutableListOf<Note>()
-        val toDeleteRemote = mutableListOf<String>()
-        val toApplyRemote = mutableListOf<RemoteNote>()
-        val toDeleteLocal = mutableListOf<String>()
-        for (note in local) {
-            val distant = remoteById[note.id]
-            when {
-                note.deleted -> toDeleteRemote += note.id
-                note.dirty -> toPush += note
-                distant == null -> toDeleteLocal += note.id
-                distant.userUpdatedTime > note.userUpdatedTime -> toApplyRemote += distant
+        val localById = local.associateBy { it.id }
+        val toPush = local.filter { it.dirty && !it.deleted }
+        val toDeleteRemote = local.filter { it.deleted }.map { it.id }
+        val toApplyRemote =
+            pulled.filter { remote ->
+                val localNote = localById[remote.id]
+                localNote == null || (!localNote.dirty && remote.userUpdatedTime > localNote.userUpdatedTime)
             }
-        }
-        for (distant in remote) {
-            if (distant.id !in localIds) toApplyRemote += distant
-        }
+        val toDeleteLocal = local.filter { it.id in remoteDeleted && !it.dirty }.map { it.id }
         return SyncPlan(toPush, toDeleteRemote, toApplyRemote, toDeleteLocal)
     }
 }

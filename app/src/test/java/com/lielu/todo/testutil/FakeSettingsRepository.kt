@@ -17,6 +17,7 @@ class FakeSettingsRepository : SettingsRepository {
     private val welcome = MutableStateFlow(false)
     private val joplinState = MutableStateFlow(JoplinSettings())
     private val syncState = MutableStateFlow(SyncStatus())
+    private val joplinCursorState = MutableStateFlow<String?>(null)
 
     override val themeMode: Flow<ThemeMode> = theme
 
@@ -80,5 +81,11 @@ class FakeSettingsRepository : SettingsRepository {
 
     override suspend fun recordSyncFailure(message: String) {
         syncState.value = syncState.value.copy(lastError = message)
+    }
+
+    override val joplinCursor: Flow<String?> = joplinCursorState
+
+    override suspend fun setJoplinCursor(cursor: String?) {
+        joplinCursorState.value = cursor
     }
 }

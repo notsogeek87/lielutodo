@@ -123,6 +123,19 @@ class SettingsRepositoryImpl(
         dataStore.edit { it[Keys.LAST_SYNC_ERROR] = message }
     }
 
+    override val joplinCursor: Flow<String?> =
+        dataStore.data.map { prefs -> prefs[Keys.JOPLIN_CURSOR] }
+
+    override suspend fun setJoplinCursor(cursor: String?) {
+        dataStore.edit {
+            if (cursor == null) {
+                it.remove(Keys.JOPLIN_CURSOR)
+            } else {
+                it[Keys.JOPLIN_CURSOR] = cursor
+            }
+        }
+    }
+
     private object Keys {
         val THEME_MODE = stringPreferencesKey("theme_mode")
         val AUTO_BACKUP_ENABLED = booleanPreferencesKey("auto_backup_enabled")
@@ -137,5 +150,6 @@ class SettingsRepositoryImpl(
         val JOPLIN_SYNC_ENABLED = booleanPreferencesKey("joplin_sync_enabled")
         val LAST_SYNC_AT = longPreferencesKey("last_sync_at")
         val LAST_SYNC_ERROR = stringPreferencesKey("last_sync_error")
+        val JOPLIN_CURSOR = stringPreferencesKey("joplin_cursor")
     }
 }

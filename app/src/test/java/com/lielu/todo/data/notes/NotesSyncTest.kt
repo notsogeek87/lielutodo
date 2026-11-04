@@ -1,53 +1,63 @@
 package com.lielu.todo.data.notes
 
+import com.lielu.todo.data.joplin.DeltaItem
+import com.lielu.todo.data.joplin.DeltaPage
 import com.lielu.todo.data.joplin.JoplinApi
 import com.lielu.todo.data.joplin.JoplinApiException
-import com.lielu.todo.data.joplin.RemoteNote
+import com.lielu.todo.data.joplin.JoplinParser
 import com.lielu.todo.testutil.FakeNotesRepository
 import com.lielu.todo.testutil.FakeSettingsRepository
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
+import org.json.JSONObject
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class NotesSyncTest {
-    /** API Joplin en mémoire : simule le serveur, y compris le 404 d'une note jamais créée. */
+    /** API Joplin en mémoire : simule le delta, les contenus d'items et les écritures. */
     private class FakeJoplinApi : JoplinApi {
-        val notes = mutableMapOf<String, RemoteNote>()
+        val contents = mutableMapOf<String, String>()
+        var changes = listOf<DeltaItem>()
+        var cursor = "c1"
+        var failWithResyncOnce = false
+        val puts = mutableMapOf<String, String>()
+        val deletes = mutableListOf<String>()
 
         override suspend fun ping(): String = "JoplinServer"
 
-        override suspend fun listNotes(): List<RemoteNote> = notes.values.toList()
-
-        override suspend fun createNote(
-            title: String,
-            body: String,
-            parentId: String,
-        ): RemoteNote {
-            val note = RemoteNote("srv-${notes.size + 1}", title, body, parentId, userUpdatedTime = 100L)
-            notes[note.id] = note
-            return note
+        override suspend fun delta(cursor: String?): DeltaPage {
+            if (failWithResyncOnce) {
+                failWithResyncOnce = false
+                throw JoplinApiException("cursor invalide", statusCode = 400, errorCode = "resyncRequired")
+            }
+            return DeltaPage(changes, hasMore = false, cursor = cursor ?: this@FakeJoplinApi.cursor)
         }
 
-        override suspend fun updateNote(
-            id: String,
-            title: String,
-            body: String,
-            parentId: String,
-        ): RemoteNote {
-            if (id !in notes) throw JoplinApiException("Note introuvable", statusCode = 404)
-            val note = RemoteNote(id, title, body, parentId, userUpdatedTime = 100L)
-            notes[id] = note
-            return note
+        override suspend fun itemContent(name: String): String = contents.getValue(name)
+
+        override suspend fun putContent(
+            name: String,
+            content: String,
+        ): JSONObject {
+            puts[name] = content
+            contents[name] = content
+            return JSONObject().put("jop_updated_time", 100L)
         }
 
-        override suspend fun deleteNote(id: String) {
-            if (id !in notes) throw JoplinApiException("Note introuvable", statusCode = 404)
-            notes.remove(id)
+        override suspend fun deleteItem(name: String) {
+            deletes += name
+            contents.remove(name)
         }
     }
+
+    private fun noteContent(
+        id: String,
+        title: String,
+        updated: Long,
+    ): String = JoplinParser.serialize(id, "folder-1", title, "contenu", updated)
 
     private suspend fun configuredSettings() =
         FakeSettingsRepository().apply {
@@ -58,70 +68,91 @@ class NotesSyncTest {
         }
 
     @Test
-    fun noteLocaleModifieeEstPousseeEtMarqueePropre() =
+    fun noteRecueViaDeltaEstStockeeEtCursorEnregistre() =
         runTest {
             val settings = configuredSettings()
             val notes = FakeNotesRepository()
             val api = FakeJoplinApi()
-            api.notes["a"] = RemoteNote("a", "ancien", "", "", userUpdatedTime = 1L)
-            notes.upsert(Note(id = "a", title = "nouveau", body = "contenu", userUpdatedTime = 50L, dirty = true))
+            val id = "a".repeat(32)
+            api.changes = listOf(DeltaItem("notes/$id.md", type = 1, updatedTime = 50L))
+            api.contents["notes/$id.md"] = noteContent(id, "Recue", 50L)
             val sync = NotesSync(settings, notes, apiFactory = { api })
 
             val result = sync.syncNow()
 
             assertTrue(result is SyncResult.Success)
-            assertEquals("nouveau", api.notes.getValue("a").title)
-            val local = notes.getById("a")
-            assertEquals(false, local?.dirty)
-            assertEquals(100L, local?.userUpdatedTime)
+            assertEquals("Recue", notes.getById(id)?.title)
+            assertEquals("c1", settings.joplinCursor.first())
         }
 
     @Test
-    fun noteJamaisPousseeEstCreeeCoteServeurAvecSonNouvelId() =
+    fun noteLocaleModifieeEstPousseeAuFormatSerieEtMarqueePropre() =
         runTest {
             val settings = configuredSettings()
             val notes = FakeNotesRepository()
             val api = FakeJoplinApi()
-            notes.upsert(Note(id = "local-1", title = "t", body = "b", userUpdatedTime = 50L, dirty = true))
+            val id = "b".repeat(32)
+            notes.upsert(Note(id = id, title = "Locale", body = "corps", userUpdatedTime = 10L, dirty = true))
             val sync = NotesSync(settings, notes, apiFactory = { api })
 
             val result = sync.syncNow()
 
             assertTrue(result is SyncResult.Success)
-            assertEquals(1, api.notes.size)
-            assertNull(notes.getById("local-1"))
-            assertEquals(1, notes.getAllActive().size)
-            assertEquals("srv-1", notes.getAllActive().first().id)
+            val envoye = api.puts.getValue("notes/$id.md")
+            assertTrue(envoye.contains("type_: 1"))
+            assertTrue(envoye.startsWith("Locale\n\ncorps\n\n"))
+            assertEquals(false, notes.getById(id)?.dirty)
+            assertEquals(100L, notes.getById(id)?.userUpdatedTime)
         }
 
     @Test
-    fun noteDistanteNouvelleEstTelechargee() =
+    fun suppressionDistanteSupprimeLaNoteLocale() =
         runTest {
             val settings = configuredSettings()
             val notes = FakeNotesRepository()
             val api = FakeJoplinApi()
-            api.notes["a"] = RemoteNote("a", "distante", "b", "", userUpdatedTime = 10L)
+            val id = "c".repeat(32)
+            notes.upsert(Note(id = id, title = "t", body = "", userUpdatedTime = 10L))
+            api.changes = listOf(DeltaItem("notes/$id.md", type = 3, updatedTime = 60L))
             val sync = NotesSync(settings, notes, apiFactory = { api })
 
             sync.syncNow()
 
-            assertEquals("distante", notes.getById("a")?.title)
+            assertNull(notes.getById(id))
         }
 
     @Test
-    fun noteSupprimeeLocalementEstSupprimeeDesDeuxCotes() =
+    fun suppressionLocaleEstPousseeCoteServeur() =
         runTest {
             val settings = configuredSettings()
             val notes = FakeNotesRepository()
             val api = FakeJoplinApi()
-            api.notes["a"] = RemoteNote("a", "t", "", "", userUpdatedTime = 1L)
-            notes.upsert(Note(id = "a", title = "t", body = "", userUpdatedTime = 50L, dirty = true, deleted = true))
+            val id = "d".repeat(32)
+            notes.upsert(Note(id = id, title = "t", body = "", userUpdatedTime = 10L, dirty = true, deleted = true))
             val sync = NotesSync(settings, notes, apiFactory = { api })
 
             sync.syncNow()
 
-            assertTrue(api.notes.isEmpty())
-            assertNull(notes.getById("a"))
+            assertEquals(listOf("notes/$id.md"), api.deletes)
+            assertNull(notes.getById(id))
+        }
+
+    @Test
+    fun cursorInvalideDeclencheUneResyncComplete() =
+        runTest {
+            val settings = configuredSettings()
+            val notes = FakeNotesRepository()
+            val api = FakeJoplinApi()
+            api.failWithResyncOnce = true
+            val id = "e".repeat(32)
+            api.changes = listOf(DeltaItem("notes/$id.md", type = 1, updatedTime = 50L))
+            api.contents["notes/$id.md"] = noteContent(id, "Apres resync", 50L)
+            val sync = NotesSync(settings, notes, apiFactory = { api })
+
+            val result = sync.syncNow()
+
+            assertTrue(result is SyncResult.Success)
+            assertNotNull(notes.getById(id))
         }
 
     @Test
@@ -135,7 +166,7 @@ class NotesSyncTest {
             val result = sync.syncNow()
 
             assertTrue(result is SyncResult.Failure)
-            assertTrue(api.notes.isEmpty())
+            assertTrue(api.puts.isEmpty())
             assertTrue(settings.syncStatus.first().lastError != null)
         }
 
@@ -148,29 +179,22 @@ class NotesSyncTest {
                 object : JoplinApi {
                     override suspend fun ping(): String = throw JoplinApiException("réseau coupé")
 
-                    override suspend fun listNotes(): List<RemoteNote> = throw JoplinApiException("réseau coupé")
+                    override suspend fun delta(cursor: String?): DeltaPage = error("inattendu")
 
-                    override suspend fun createNote(
-                        title: String,
-                        body: String,
-                        parentId: String,
-                    ): RemoteNote = error("inattendu")
+                    override suspend fun itemContent(name: String): String = error("inattendu")
 
-                    override suspend fun updateNote(
-                        id: String,
-                        title: String,
-                        body: String,
-                        parentId: String,
-                    ): RemoteNote = error("inattendu")
+                    override suspend fun putContent(
+                        name: String,
+                        content: String,
+                    ): JSONObject = error("inattendu")
 
-                    override suspend fun deleteNote(id: String) = error("inattendu")
+                    override suspend fun deleteItem(name: String) = error("inattendu")
                 }
             val sync = NotesSync(settings, notes, apiFactory = { failing })
 
             val result = sync.syncNow()
 
             assertTrue(result is SyncResult.Failure)
-            val lastError = settings.syncStatus.first().lastError
-            assertTrue(lastError!!.contains("réseau coupé"))
+            assertTrue(settings.syncStatus.first().lastError!!.contains("réseau coupé"))
         }
 }

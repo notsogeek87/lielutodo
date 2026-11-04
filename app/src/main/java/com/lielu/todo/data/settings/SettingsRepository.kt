@@ -44,4 +44,9 @@ interface SettingsRepository {
     suspend fun recordSyncSuccess(timestamp: Long)
 
     suspend fun recordSyncFailure(message: String)
+
+    /** Dernier cursor du delta Joplin (synchro incrémentale) ; `null` = resync complète au prochain passage. */
+    val joplinCursor: Flow<String?>
+
+    suspend fun setJoplinCursor(cursor: String?)
 }

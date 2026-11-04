@@ -2,18 +2,15 @@ package com.lielu.todo.data.joplin
 
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import org.json.JSONArray
 import org.json.JSONObject
 import java.io.OutputStreamWriter
 import java.net.HttpURLConnection
 import java.net.URI
-import java.util.UUID
 
 /**
- * [JoplinApi] contre un **Joplin Server** via son API de synchro (l'API « Data » /api/notes n'existe que
- * sur l'app desktop) : session par `POST /api/sessions` (e-mail + mot de passe → id, envoyé en `X-API-AUTH`),
- * puis items sous `api/items/root:/…`. Une note est l'item `notes/<id>.md` : métadonnées via `…/children`,
- * contenu Markdown via `…/content` (le titre Joplin est la première ligne du contenu).
+ * [JoplinApi] sur le protocole de synchro de Joplin Server (HTTP natif, aucune dépendance ajoutée) :
+ * `POST /api/sessions` renvoie un id de session envoyé en `X-API-AUTH` (plus `X-API-MIN-VERSION: 2.6.0`
+ * comme le client officiel) ; en cas d'erreur d'auth, on rouvre une session et on rejoue une fois.
  */
 class HttpJoplinApi(
     serverUrl: String,
@@ -33,98 +30,30 @@ class HttpJoplinApi(
             requestText("GET", "/ping", authenticate = false)
         }
 
-    override suspend fun listNotes(): List<RemoteNote> =
+    override suspend fun delta(cursor: String?): DeltaPage =
         withContext(Dispatchers.IO) {
-            val notes = mutableListOf<RemoteNote>()
-            var page = 1
-            while (true) {
-                val response =
-                    requestJson(
-                        "GET",
-                        "/items/root:/notes/*:/children?limit=100&page=$page",
-                        authenticate = true,
-                    )
-                val items = response.optJSONArray("items") ?: JSONArray()
-                for (i in 0 until items.length()) {
-                    val item = items.getJSONObject(i)
-                    if (item.optBoolean("deleted", false)) continue
-                    val name = item.optString("name").ifBlank { item.optString("item_name") }
-                    val id = item.optString("jop_id").ifBlank { itemNameToId(name) }
-                    if (id.isBlank()) continue
-                    val content = requestText("GET", "/items/root:/notes/$id.md:/content", authenticate = true)
-                    notes += remoteNote(id, item, content)
-                }
-                if (!response.optBoolean("has_more", false)) break
-                page++
-            }
-            notes
+            val query = if (cursor == null) "" else "?cursor=$cursor"
+            JoplinJson.parseDeltaPage(requestJson("GET", "/items/root:/:/delta$query"))
         }
 
-    override suspend fun createNote(
-        title: String,
-        body: String,
-        parentId: String,
-    ): RemoteNote =
+    override suspend fun itemContent(name: String): String =
         withContext(Dispatchers.IO) {
-            val id = UUID.randomUUID().toString().replace("-", "")
-            val item = putContent(id, title, body)
-            remoteNote(id, item, "$title\n$body")
+            requestText("GET", "/items/root:/$name:/content")
         }
 
-    override suspend fun updateNote(
-        id: String,
-        title: String,
-        body: String,
-        parentId: String,
-    ): RemoteNote =
-        withContext(Dispatchers.IO) {
-            val item = putContent(id, title, body)
-            remoteNote(id, item, "$title\n$body")
-        }
-
-    override suspend fun deleteNote(id: String) {
-        withContext(Dispatchers.IO) {
-            requestText("DELETE", "/items/root:/notes/$id.md:", authenticate = true)
-        }
-    }
-
-    /** Écrit le contenu Markdown d'une note (création ou mise à jour) et renvoie l'item résultant. */
-    private fun putContent(
-        id: String,
-        title: String,
-        body: String,
-    ): JSONObject {
-        val markdown = if (body.isBlank()) title else "$title\n$body"
-        return requestJson(
-            "PUT",
-            "/items/root:/notes/$id.md:/content",
-            rawBody = markdown,
-            authenticate = true,
-        )
-    }
-
-    private fun remoteNote(
-        id: String,
-        item: JSONObject,
+    override suspend fun putContent(
+        name: String,
         content: String,
-    ): RemoteNote {
-        val firstLine =
-            content
-                .lineSequence()
-                .firstOrNull()
-                .orEmpty()
-                .removePrefix("#")
-                .trim()
-        return RemoteNote(
-            id = id,
-            title = firstLine,
-            body = content,
-            parentId = item.optString("jop_parent_id"),
-            userUpdatedTime = item.optLong("jop_updated_time", item.optLong("updated_time", 0L)),
-        )
-    }
+    ): JSONObject =
+        withContext(Dispatchers.IO) {
+            requestJson("PUT", "/items/root:/$name:/content", rawBody = content)
+        }
 
-    private fun itemNameToId(itemName: String): String = itemName.removePrefix("notes/").removeSuffix(".md")
+    override suspend fun deleteItem(name: String) {
+        withContext(Dispatchers.IO) {
+            requestText("DELETE", "/items/root:/$name:")
+        }
+    }
 
     /** Ouvre une session avec l'e-mail et le mot de passe ; lève [JoplinApiException] si refusé (403). */
     private fun login(): String {
@@ -167,7 +96,10 @@ class HttpJoplinApi(
                 requestMethod = method
                 connectTimeout = timeoutMs
                 readTimeout = timeoutMs
-                if (authenticate) setRequestProperty("X-API-AUTH", sessionId)
+                if (authenticate) {
+                    setRequestProperty("X-API-AUTH", sessionId)
+                    setRequestProperty("X-API-MIN-VERSION", "2.6.0")
+                }
                 when {
                     payload != null -> {
                         doOutput = true
@@ -187,22 +119,24 @@ class HttpJoplinApi(
                     connection.outputStream.use { it.write(rawBody.toByteArray(Charsets.UTF_8)) }
             }
             val status = connection.responseCode
+            val detail = errorDetail(connection)
             if (status == 401 || status == 403) {
                 // Session expirée ou invalide : on rouvre une session et on rejoue UNE fois.
                 if (allowRelogin && authenticate && path != "/sessions") {
                     sessionId = null
                     return requestOnce(method, path, payload, rawBody, authenticate, allowRelogin = false)
                 }
-                val detail = errorDetail(connection)
                 throw JoplinApiException(
                     "Authentification refusée ($status) sur $baseUrl$path ${detail.orEmpty()}",
                     status,
+                    JoplinJson.parseErrorCode(detail),
                 )
             }
             if (status !in 200..299) {
                 throw JoplinApiException(
-                    "Joplin a répondu $status sur $baseUrl$path ${errorDetail(connection).orEmpty()}",
+                    "Joplin a répondu $status sur $baseUrl$path ${detail.orEmpty()}",
                     status,
+                    JoplinJson.parseErrorCode(detail),
                 )
             }
             return connection.inputStream.use { it.readBytes().toString(Charsets.UTF_8) }
@@ -218,5 +152,5 @@ class HttpJoplinApi(
     private fun errorDetail(connection: HttpURLConnection): String? =
         runCatching { connection.errorStream?.use { it.readBytes().toString(Charsets.UTF_8) } }
             .getOrNull()
-            ?.take(200)
+            ?.take(300)
 }
