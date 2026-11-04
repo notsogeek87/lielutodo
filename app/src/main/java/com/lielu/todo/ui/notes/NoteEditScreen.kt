@@ -1,12 +1,16 @@
 package com.lielu.todo.ui.notes
 
 import android.widget.TextView
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Delete
@@ -145,12 +149,30 @@ fun NoteEditScreen(
                         }
                     }
                 }
+                Row(
+                    modifier =
+                        Modifier
+                            .fillMaxWidth()
+                            .horizontalScroll(rememberScrollState())
+                            .padding(top = 12.dp),
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
+                    MarkdownButton("B") { viewModel.onBodyChanged(wrapLastLine(body, "**", "**")) }
+                    MarkdownButton("I") { viewModel.onBodyChanged(wrapLastLine(body, "*", "*")) }
+                    MarkdownButton("S") { viewModel.onBodyChanged(wrapLastLine(body, "~~", "~~")) }
+                    MarkdownButton("H") { viewModel.onBodyChanged(appendBlock(body, "## Titre")) }
+                    MarkdownButton("•") { viewModel.onBodyChanged(appendBlock(body, "- élément")) }
+                    MarkdownButton("☐") { viewModel.onBodyChanged(appendBlock(body, "- [ ] tâche")) }
+                    MarkdownButton("</>") { viewModel.onBodyChanged(appendBlock(body, "`code`")) }
+                    MarkdownButton("🔗") { viewModel.onBodyChanged(appendBlock(body, "[texte](https://…))") }
+                    MarkdownButton("❝") { viewModel.onBodyChanged(appendBlock(body, "> citation")) }
+                }
                 OutlinedTextField(
                     value = body,
                     onValueChange = viewModel::onBodyChanged,
                     label = { Text("Note (Markdown)") },
                     minLines = 12,
-                    modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
+                    modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
                 )
             }
         }
@@ -178,3 +200,33 @@ fun NoteEditScreen(
         )
     }
 }
+
+/** Petit bouton de la barre d'outils Markdown (libellé texte, ex. « B » pour gras). */
+@Composable
+private fun MarkdownButton(
+    label: String,
+    onClick: () -> Unit,
+) {
+    TextButton(onClick = onClick) {
+        Text(label, fontWeight = FontWeight.Bold)
+    }
+}
+
+/** Entoure la dernière ligne non vide de [body] avec [prefix]/[suffix] (gras, italique, barré…). */
+private fun wrapLastLine(
+    body: String,
+    prefix: String,
+    suffix: String,
+): String {
+    val lines = body.split('\n')
+    val last = lines.indexOfLast { it.isNotBlank() }
+    if (last < 0) return prefix + suffix // rien à entourer : on pose juste les marqueurs
+    lines[last] = "$prefix${lines[last]}$suffix"
+    return lines.joinToString("\n")
+}
+
+/** Ajoute un modèle Markdown [snippet] en fin de note (sur une nouvelle ligne si besoin). */
+private fun appendBlock(
+    body: String,
+    snippet: String,
+): String = if (body.isEmpty() || body.endsWith("\n")) body + snippet else "$body\n$snippet"
