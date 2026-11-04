@@ -2,6 +2,7 @@ package com.lielu.todo.ui.notes
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.lielu.todo.data.notes.Folder
 import com.lielu.todo.data.notes.Note
 import com.lielu.todo.data.notes.NotesRepository
 import com.lielu.todo.data.notes.NotesSync
@@ -21,6 +22,10 @@ class NotesViewModel(
 ) : ViewModel() {
     val notes: StateFlow<List<Note>> =
         notesRepository.notes.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    /** Carnets Joplin connus (pour regrouper/filtrer les notes). */
+    val folders: StateFlow<List<Folder>> =
+        notesRepository.folders.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     /** Synchronisation Joplin active et configurée : le bouton « Synchroniser » n'a de sens que si oui. */
     val syncEnabled: StateFlow<Boolean> =

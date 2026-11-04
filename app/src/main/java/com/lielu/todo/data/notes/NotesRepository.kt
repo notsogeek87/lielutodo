@@ -21,6 +21,13 @@ interface NotesRepository {
     /** Marque la note comme supprimée (poussée au serveur à la prochaine synchro). */
     suspend fun delete(id: String)
 
+    /** Carnets Joplin connus (issus de la synchro). */
+    val folders: Flow<List<Folder>>
+
+    suspend fun getFolders(): List<Folder>
+
+    suspend fun upsertFolders(folders: List<Folder>)
+
     suspend fun getAllActive(): List<Note>
 
     suspend fun getAllIncludingDeleted(): List<Note>
@@ -31,4 +38,7 @@ interface NotesRepository {
 
     /** Remplace toutes les notes (restauration de sauvegarde), de façon atomique. */
     suspend fun replaceAll(notes: List<Note>)
+
+    /** Remplace tous les carnets (restauration de sauvegarde). */
+    suspend fun replaceFolders(folders: List<Folder>)
 }

@@ -1,5 +1,6 @@
 package com.lielu.todo.testutil
 
+import com.lielu.todo.data.notes.Folder
 import com.lielu.todo.data.notes.Note
 import com.lielu.todo.data.notes.NotesRepository
 import kotlinx.coroutines.flow.Flow
@@ -9,6 +10,15 @@ import kotlinx.coroutines.flow.map
 /** Remplacant en mémoire de [NotesRepository]. */
 class FakeNotesRepository : NotesRepository {
     private val store = MutableStateFlow<List<Note>>(emptyList())
+    private val folderStore = MutableStateFlow<List<Folder>>(emptyList())
+
+    override val folders: Flow<List<Folder>> = folderStore
+
+    override suspend fun getFolders(): List<Folder> = folderStore.value
+
+    override suspend fun upsertFolders(folders: List<Folder>) {
+        folderStore.value = (folderStore.value + folders).distinctBy { it.id }
+    }
 
     override val notes: Flow<List<Note>> =
         store.map { list -> list.filter { !it.deleted }.sortedByDescending { it.userUpdatedTime } }
@@ -47,5 +57,9 @@ class FakeNotesRepository : NotesRepository {
 
     override suspend fun replaceAll(notes: List<Note>) {
         store.value = notes
+    }
+
+    override suspend fun replaceFolders(folders: List<Folder>) {
+        folderStore.value = folders
     }
 }

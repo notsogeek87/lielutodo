@@ -1,5 +1,6 @@
 package com.lielu.todo.backup
 
+import com.lielu.todo.data.notes.Folder
 import com.lielu.todo.data.notes.Note
 import com.lielu.todo.data.notes.NotesRepository
 import org.json.JSONArray
@@ -27,7 +28,16 @@ class NoteBackupSection(
                     .put("dirty", note.dirty),
             )
         }
-        return JSONObject().put("notes", array)
+        val foldersArray = JSONArray()
+        for (folder in notes.getFolders()) {
+            foldersArray.put(
+                JSONObject()
+                    .put("id", folder.id)
+                    .put("title", folder.title)
+                    .put("parentId", folder.parentId),
+            )
+        }
+        return JSONObject().put("notes", array).put("folders", foldersArray)
     }
 
     override suspend fun restore(data: JSONObject) {
@@ -45,5 +55,16 @@ class NoteBackupSection(
                 )
             }
         notes.replaceAll(restored)
+        val foldersArray = data.optJSONArray("folders") ?: return
+        val folders =
+            (0 until foldersArray.length()).map { i ->
+                val json = foldersArray.getJSONObject(i)
+                Folder(
+                    id = json.getString("id"),
+                    title = json.optString("title"),
+                    parentId = json.optString("parentId"),
+                )
+            }
+        notes.replaceFolders(folders)
     }
 }

@@ -93,6 +93,7 @@ class NotesSync(
                 )
             }
             for (id in plan.toDeleteLocal) notes.deleteById(id)
+            if (pull.folders.isNotEmpty()) notes.upsertFolders(pull.folders)
             // Diagnostic (échantillons + brut) seulement s'il n'y a encore aucune note en local.
             val localEmpty = notes.getAllActive().isEmpty()
             val rawDelta =
@@ -129,6 +130,7 @@ class NotesSync(
         val pulled = LinkedHashMap<String, RemoteNote>()
         val remoteDeleted = mutableSetOf<String>()
         val nameById = mutableMapOf<String, String>()
+        val folders = mutableListOf<Folder>()
         val samples = mutableListOf<String>()
         var defaultFolder = ""
         var changesSeen = 0
@@ -160,6 +162,7 @@ class NotesSync(
                 if (!name.endsWith(".md") && !name.endsWith(".info")) continue
                 val parsed = JoplinParser.parse(api.itemContent(name)) ?: continue
                 if (parsed.type == 2) {
+                    folders += Folder(parsed.id, parsed.title, parsed.parentId)
                     if (defaultFolder.isEmpty()) defaultFolder = parsed.id
                     continue
                 }
@@ -199,6 +202,7 @@ class NotesSync(
             usedFallback,
             initialCursor != null,
             nameById,
+            folders,
         )
     }
 
@@ -217,6 +221,13 @@ class NotesSync(
             for (change in children.items) {
                 val name = change.name
                 if (name.startsWith("locks/") || name.startsWith("temp/") || name.startsWith(".resource/")) continue
+                if (name.endsWith(".info")) {
+                    val folderParsed = JoplinParser.parse(api.itemContent(name))
+                    if (folderParsed != null && folderParsed.type == 2) {
+                        nameById[folderParsed.id] = name
+                    }
+                    continue
+                }
                 if (!name.endsWith(".md")) continue
                 val parsed = JoplinParser.parse(api.itemContent(name)) ?: continue
                 if (parsed.type != 1 || parsed.deletedTime != 0L) continue
@@ -239,6 +250,7 @@ class NotesSync(
         val usedFallback: Boolean,
         val usedCursor: Boolean,
         val nameById: Map<String, String>,
+        val folders: List<Folder>,
     )
 
     private suspend fun fail(message: String): SyncResult {

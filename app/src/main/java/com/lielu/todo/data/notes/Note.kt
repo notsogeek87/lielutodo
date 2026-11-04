@@ -18,3 +18,10 @@ data class Note(
     val dirty: Boolean = false,
     val deleted: Boolean = false,
 )
+
+/** Un carnet Joplin (dossier, item `type_: 2`). */
+data class Folder(
+    val id: String,
+    val title: String,
+    val parentId: String = "",
+)
