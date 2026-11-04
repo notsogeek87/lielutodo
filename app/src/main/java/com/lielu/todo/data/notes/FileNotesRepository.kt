@@ -15,7 +15,7 @@ import java.util.UUID
  * renommage) : même stratégie que le cache des tâches. L'état est tenu en mémoire et exposé en flux.
  */
 class FileNotesRepository(
-    file: File,
+    private val file: File,
     private val clock: () -> Long = System::currentTimeMillis,
 ) : NotesRepository {
     private val store = MutableStateFlow<List<Note>>(emptyList())
