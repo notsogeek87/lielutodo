@@ -43,6 +43,13 @@ class FakeNotesRepository : NotesRepository {
         store.value = store.value.map { if (it.id == id) it.copy(deleted = true, dirty = true) else it }
     }
 
+    override suspend fun setParent(
+        id: String,
+        parentId: String,
+    ) {
+        store.value = store.value.map { if (it.id == id) it.copy(parentId = parentId, dirty = true) else it }
+    }
+
     override suspend fun getAllActive(): List<Note> = store.value.filter { !it.deleted }
 
     override suspend fun getAllIncludingDeleted(): List<Note> = store.value

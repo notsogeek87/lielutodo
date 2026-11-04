@@ -2,18 +2,21 @@ package com.lielu.todo.ui.notes
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.lielu.todo.data.notes.Folder
 import com.lielu.todo.data.notes.NotesRepository
 import com.lielu.todo.data.notes.NotesSync
 import com.lielu.todo.data.settings.JoplinSettings
 import com.lielu.todo.data.settings.SettingsRepository
 import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.onEach
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
 @OptIn(FlowPreview::class)
@@ -33,6 +36,13 @@ class NoteEditViewModel(
     private val _exists = MutableStateFlow(true)
     val exists: StateFlow<Boolean> = _exists
 
+    /** Carnets connus et carnet courant de la note (pour le sélecteur). */
+    val folders: StateFlow<List<Folder>> =
+        notesRepository.folders.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    private val _parentId = MutableStateFlow("")
+    val parentId: StateFlow<String> = _parentId
+
     /** Contenu au chargement : on ne sauvegarde que ce qui a vraiment changé, pas le premier affichage. */
     private var initial: Pair<String, String>? = null
 
@@ -45,6 +55,7 @@ class NoteEditViewModel(
             }
             _title.value = note.title
             _body.value = note.body
+            _parentId.value = note.parentId
             initial = note.title to note.body
         }
         combine(_title, _body) { title, body -> title to body }
@@ -60,6 +71,14 @@ class NoteEditViewModel(
 
     fun onBodyChanged(value: String) {
         _body.value = value
+    }
+
+    fun onFolderSelected(folderId: String) {
+        viewModelScope.launch {
+            _parentId.value = folderId
+            notesRepository.setParent(noteId, folderId)
+            syncIfEnabled()
+        }
     }
 
     fun onDeleteConfirmed(onDeleted: () -> Unit) {

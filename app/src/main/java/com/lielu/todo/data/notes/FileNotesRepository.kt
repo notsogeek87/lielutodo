@@ -44,7 +44,7 @@ class FileNotesRepository(
     override suspend fun create(): Note {
         val note =
             Note(
-                id = UUID.randomUUID().toString(),
+                id = UUID.randomUUID().toString().replace("-", ""),
                 title = "",
                 body = "",
                 userUpdatedTime = clock(),
@@ -66,6 +66,14 @@ class FileNotesRepository(
     override suspend fun delete(id: String) {
         val current = getById(id) ?: return
         upsert(current.copy(deleted = true, dirty = true, userUpdatedTime = clock()))
+    }
+
+    override suspend fun setParent(
+        id: String,
+        parentId: String,
+    ) {
+        val current = getById(id) ?: return
+        upsert(current.copy(parentId = parentId, userUpdatedTime = clock(), dirty = true))
     }
 
     override suspend fun getAllActive(): List<Note> = store.value.filter { !it.deleted }

@@ -21,6 +21,12 @@ interface NotesRepository {
     /** Marque la note comme supprimée (poussée au serveur à la prochaine synchro). */
     suspend fun delete(id: String)
 
+    /** Affecte la note à un carnet (poussée au serveur à la prochaine synchro). */
+    suspend fun setParent(
+        id: String,
+        parentId: String,
+    )
+
     /** Carnets Joplin connus (issus de la synchro). */
     val folders: Flow<List<Folder>>
 

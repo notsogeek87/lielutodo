@@ -13,6 +13,8 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -45,8 +47,12 @@ fun NoteEditScreen(
     val title by viewModel.title.collectAsState()
     val body by viewModel.body.collectAsState()
     val exists by viewModel.exists.collectAsState()
+    val folders by viewModel.folders.collectAsState()
+    val parentId by viewModel.parentId.collectAsState()
     var showDeleteConfirm by remember { mutableStateOf(false) }
     var preview by remember { mutableStateOf(false) }
+    var folderMenuOpen by remember { mutableStateOf(false) }
+    val currentFolderTitle = folders.firstOrNull { it.id == parentId }?.title ?: "Sans carnet"
 
     if (!exists) {
         LaunchedEffect(Unit) { onBackClick() }
@@ -110,6 +116,35 @@ fun NoteEditScreen(
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth(),
                 )
+                if (folders.isNotEmpty()) {
+                    TextButton(
+                        onClick = { folderMenuOpen = true },
+                        modifier = Modifier.padding(top = 4.dp),
+                    ) {
+                        Text("Carnet : $currentFolderTitle ▾")
+                    }
+                    DropdownMenu(
+                        expanded = folderMenuOpen,
+                        onDismissRequest = { folderMenuOpen = false },
+                    ) {
+                        DropdownMenuItem(
+                            text = { Text("Sans carnet") },
+                            onClick = {
+                                folderMenuOpen = false
+                                viewModel.onFolderSelected("")
+                            },
+                        )
+                        folders.forEach { folder ->
+                            DropdownMenuItem(
+                                text = { Text(folder.title) },
+                                onClick = {
+                                    folderMenuOpen = false
+                                    viewModel.onFolderSelected(folder.id)
+                                },
+                            )
+                        }
+                    }
+                }
                 OutlinedTextField(
                     value = body,
                     onValueChange = viewModel::onBodyChanged,
