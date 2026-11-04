@@ -175,6 +175,8 @@ dependencies {
 
     implementation(libs.androidx.work.runtime.ktx)
     implementation(libs.androidx.datastore.preferences)
+    implementation(libs.mikepenz.markdown.core)
+    implementation(libs.mikepenz.markdown.m3)
     implementation(libs.lielugit.updater)
     implementation(libs.kotlinx.coroutines.android)
 
