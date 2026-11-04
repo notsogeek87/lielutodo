@@ -48,7 +48,8 @@ class HttpJoplinApi(
                 for (i in 0 until items.length()) {
                     val item = items.getJSONObject(i)
                     if (item.optBoolean("deleted", false)) continue
-                    val id = item.optString("jop_id").ifBlank { itemNameToId(item.optString("item_name")) }
+                    val name = item.optString("name").ifBlank { item.optString("item_name") }
+                    val id = item.optString("jop_id").ifBlank { itemNameToId(name) }
                     if (id.isBlank()) continue
                     val content = requestText("GET", "/items/root:/notes/$id.md:/content", authenticate = true)
                     notes += remoteNote(id, item, content)
@@ -119,7 +120,7 @@ class HttpJoplinApi(
             title = firstLine,
             body = content,
             parentId = item.optString("jop_parent_id"),
-            userUpdatedTime = item.optLong("updated_time", 0L),
+            userUpdatedTime = item.optLong("jop_updated_time", item.optLong("updated_time", 0L)),
         )
     }
 
