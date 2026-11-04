@@ -61,9 +61,10 @@ class NotesSync(
             for (note in plan.toPush) {
                 val parent = note.parentId.ifBlank { defaultFolder }
                 val updatedMs = clock()
+                val itemName = pull.nameById[note.id] ?: "${note.id}.md"
                 val item =
                     api.putContent(
-                        "notes/${note.id}.md",
+                        itemName,
                         JoplinParser.serialize(note.id, parent, note.title, note.body, updatedMs),
                     )
                 val serverTime = item.optLong("jop_updated_time", item.optLong("updated_time", updatedMs))
@@ -72,7 +73,7 @@ class NotesSync(
             }
             for (id in plan.toDeleteRemote) {
                 try {
-                    api.deleteItem("notes/$id.md")
+                    api.deleteItem(pull.nameById[id] ?: "$id.md")
                 } catch (e: JoplinApiException) {
                     if (e.statusCode != 404) throw e
                 }
@@ -125,6 +126,7 @@ class NotesSync(
         var didResync = false
         val pulled = LinkedHashMap<String, RemoteNote>()
         val remoteDeleted = mutableSetOf<String>()
+        val nameById = mutableMapOf<String, String>()
         val samples = mutableListOf<String>()
         var defaultFolder = ""
         var changesSeen = 0
@@ -145,32 +147,35 @@ class NotesSync(
             for (change in page.items) {
                 val name = change.name
                 if (name.startsWith("locks/") || name.startsWith("temp/") || name.startsWith(".resource/")) continue
-                if (name.startsWith("folders/") && name.endsWith(".info")) {
-                    val parsed = JoplinParser.parse(api.itemContent(name))
-                    if (parsed != null && parsed.type == 2 && defaultFolder.isEmpty()) defaultFolder = parsed.id
+                // Sur Joplin Server, une note est un fichier « <id>.md » (évent. « notes/<id>.md ») ;
+                // le type réel vient du contenu (type_), pas du nom.
+                val idFromName = name.removeSuffix(".md").substringAfterLast('/')
+                if (change.type == 3) {
+                    remoteDeleted += idFromName
+                    pulled.remove(idFromName)
                     continue
                 }
-                if (!name.startsWith("notes/") || !name.endsWith(".md")) continue
-                val id = name.removePrefix("notes/").removeSuffix(".md")
-                if (change.type == 3) {
+                if (!name.endsWith(".md") && !name.endsWith(".info")) continue
+                val parsed = JoplinParser.parse(api.itemContent(name)) ?: continue
+                if (parsed.type == 2) {
+                    if (defaultFolder.isEmpty()) defaultFolder = parsed.id
+                    continue
+                }
+                if (parsed.type != 1) continue
+                val id = parsed.id.ifBlank { idFromName }
+                if (parsed.deletedTime != 0L) {
                     remoteDeleted += id
                     pulled.remove(id)
                 } else {
-                    val parsed = JoplinParser.parse(api.itemContent(name)) ?: continue
-                    if (parsed.type != 1) continue
-                    if (parsed.deletedTime != 0L) {
-                        remoteDeleted += id
-                        pulled.remove(id)
-                    } else {
-                        pulled[id] =
-                            RemoteNote(
-                                parsed.id,
-                                parsed.title,
-                                parsed.body,
-                                parsed.parentId,
-                                parsed.updatedTime,
-                            )
-                    }
+                    nameById[id] = name
+                    pulled[id] =
+                        RemoteNote(
+                            id,
+                            parsed.title,
+                            parsed.body,
+                            parsed.parentId,
+                            parsed.updatedTime,
+                        )
                 }
             }
             if (page.cursor != null) cursor = page.cursor
@@ -180,7 +185,7 @@ class NotesSync(
         if (initialCursor == null && changesSeen == 0) {
             // Delta vide en synchro complète : repli sur la liste des enfants de la racine.
             usedFallback = true
-            listRootChildren(api, pulled, remoteDeleted, samples)
+            listRootChildren(api, pulled, remoteDeleted, nameById, samples)
         }
         return PullResult(
             pulled.values.toList(),
@@ -191,6 +196,7 @@ class NotesSync(
             samples,
             usedFallback,
             initialCursor != null,
+            nameById,
         )
     }
 
@@ -199,6 +205,7 @@ class NotesSync(
         api: JoplinApi,
         pulled: MutableMap<String, RemoteNote>,
         remoteDeleted: MutableSet<String>,
+        nameById: MutableMap<String, String>,
         samples: MutableList<String>,
     ) {
         var page = 1
@@ -207,11 +214,13 @@ class NotesSync(
             if (samples.size < 3 && children.items.isNotEmpty()) samples += children.items.take(3).map { it.name }
             for (change in children.items) {
                 val name = change.name
-                if (!name.startsWith("notes/") || !name.endsWith(".md")) continue
-                val id = name.removePrefix("notes/").removeSuffix(".md")
+                if (name.startsWith("locks/") || name.startsWith("temp/") || name.startsWith(".resource/")) continue
+                if (!name.endsWith(".md")) continue
                 val parsed = JoplinParser.parse(api.itemContent(name)) ?: continue
                 if (parsed.type != 1 || parsed.deletedTime != 0L) continue
-                pulled[id] = RemoteNote(parsed.id, parsed.title, parsed.body, parsed.parentId, parsed.updatedTime)
+                val id = parsed.id.ifBlank { name.removeSuffix(".md").substringAfterLast('/') }
+                nameById[id] = name
+                pulled[id] = RemoteNote(id, parsed.title, parsed.body, parsed.parentId, parsed.updatedTime)
             }
             if (!children.hasMore) break
             page++
@@ -227,6 +236,7 @@ class NotesSync(
         val samples: List<String>,
         val usedFallback: Boolean,
         val usedCursor: Boolean,
+        val nameById: Map<String, String>,
     )
 
     private suspend fun fail(message: String): SyncResult {
