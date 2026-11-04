@@ -3,6 +3,7 @@ package com.lielu.todo.testutil
 import com.lielu.todo.data.settings.AutoBackupSettings
 import com.lielu.todo.data.settings.BackupStatus
 import com.lielu.todo.data.settings.JoplinSettings
+import com.lielu.todo.data.settings.ServiceConnection
 import com.lielu.todo.data.settings.SettingsRepository
 import com.lielu.todo.data.settings.SyncStatus
 import com.lielu.todo.data.settings.ThemeMode
@@ -17,6 +18,8 @@ class FakeSettingsRepository : SettingsRepository {
     private val welcome = MutableStateFlow(false)
     private val joplinState = MutableStateFlow(JoplinSettings())
     private val syncState = MutableStateFlow(SyncStatus())
+    private val vikunjaState = MutableStateFlow(ServiceConnection())
+    private val koplionState = MutableStateFlow(ServiceConnection())
 
     override val themeMode: Flow<ThemeMode> = theme
 
@@ -80,5 +83,17 @@ class FakeSettingsRepository : SettingsRepository {
 
     override suspend fun recordSyncFailure(message: String) {
         syncState.value = syncState.value.copy(lastError = message)
+    }
+
+    override val vikunja: Flow<ServiceConnection> = vikunjaState
+
+    override suspend fun setVikunja(connection: ServiceConnection) {
+        vikunjaState.value = connection
+    }
+
+    override val koplion: Flow<ServiceConnection> = koplionState
+
+    override suspend fun setKoplion(connection: ServiceConnection) {
+        koplionState.value = connection
     }
 }

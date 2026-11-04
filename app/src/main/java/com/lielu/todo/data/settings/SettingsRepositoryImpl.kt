@@ -5,6 +5,8 @@ import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.intPreferencesKey
+import androidx.datastore.preferences.core.MutablePreferences
+import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import kotlinx.coroutines.flow.Flow
@@ -121,6 +123,40 @@ class SettingsRepositoryImpl(
 
     override suspend fun recordSyncFailure(message: String) {
         dataStore.edit { it[Keys.LAST_SYNC_ERROR] = message }
+    }
+
+    override val vikunja: Flow<ServiceConnection> =
+        dataStore.data.map { prefs -> serviceConnection(prefs, "vikunja") }
+
+    override suspend fun setVikunja(connection: ServiceConnection) {
+        dataStore.edit { putServiceConnection(it, "vikunja", connection) }
+    }
+
+    override val koplion: Flow<ServiceConnection> =
+        dataStore.data.map { prefs -> serviceConnection(prefs, "koplion") }
+
+    override suspend fun setKoplion(connection: ServiceConnection) {
+        dataStore.edit { putServiceConnection(it, "koplion", connection) }
+    }
+
+    private fun serviceConnection(
+        prefs: Preferences,
+        prefix: String,
+    ): ServiceConnection =
+        ServiceConnection(
+            serverUrl = prefs[stringPreferencesKey("${prefix}_server_url")] ?: "",
+            email = prefs[stringPreferencesKey("${prefix}_email")] ?: "",
+            password = prefs[stringPreferencesKey("${prefix}_password")] ?: "",
+        )
+
+    private fun putServiceConnection(
+        prefs: MutablePreferences,
+        prefix: String,
+        connection: ServiceConnection,
+    ) {
+        prefs[stringPreferencesKey("${prefix}_server_url")] = connection.serverUrl.trim()
+        prefs[stringPreferencesKey("${prefix}_email")] = connection.email.trim()
+        prefs[stringPreferencesKey("${prefix}_password")] = connection.password
     }
 
     private object Keys {

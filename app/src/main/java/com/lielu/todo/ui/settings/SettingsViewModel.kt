@@ -15,6 +15,7 @@ import com.lielu.todo.data.notes.SyncResult
 import com.lielu.todo.data.settings.AutoBackupSettings
 import com.lielu.todo.data.settings.BackupStatus
 import com.lielu.todo.data.settings.JoplinSettings
+import com.lielu.todo.data.settings.ServiceConnection
 import com.lielu.todo.data.settings.SettingsRepository
 import com.lielu.todo.data.settings.SyncStatus
 import com.lielu.todo.data.settings.ThemeMode
@@ -38,6 +39,8 @@ data class SettingsUiState(
     val backupInProgress: Boolean = false,
     val joplin: JoplinSettings = JoplinSettings(),
     val syncStatus: SyncStatus = SyncStatus(),
+    val vikunja: ServiceConnection = ServiceConnection(),
+    val koplion: ServiceConnection = ServiceConnection(),
     val message: String? = null,
 )
 
@@ -60,7 +63,7 @@ class SettingsViewModel(
 
     private val opState = MutableStateFlow(OpState())
 
-    // combine() typé s'arrête à 5 flux : l'état de base (réglages) est combiné d'abord, puis avec l'état d'opération.
+    // combine() typé s'arrête à 5 flux : on groupe (réglages de base), (autres services), puis l'état d'opération.
     private val baseState: Flow<SettingsUiState> =
         combine(
             settingsRepository.themeMode,
@@ -78,9 +81,19 @@ class SettingsViewModel(
             )
         }
 
+    private val servicesState: Flow<Pair<ServiceConnection, ServiceConnection>> =
+        combine(settingsRepository.vikunja, settingsRepository.koplion) { vikunja, koplion ->
+            vikunja to koplion
+        }
+
     val uiState: StateFlow<SettingsUiState> =
-        combine(baseState, opState) { base, op ->
-            base.copy(backupInProgress = op.inProgress, message = op.message)
+        combine(baseState, servicesState, opState) { base, services, op ->
+            base.copy(
+                vikunja = services.first,
+                koplion = services.second,
+                backupInProgress = op.inProgress,
+                message = op.message,
+            )
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), SettingsUiState())
 
     fun onThemeModeChanged(mode: ThemeMode) {
@@ -197,6 +210,14 @@ class SettingsViewModel(
 
     fun onJoplinSyncToggled(enabled: Boolean) {
         viewModelScope.launch { settingsRepository.setJoplinSyncEnabled(enabled) }
+    }
+
+    fun onVikunjaChanged(connection: ServiceConnection) {
+        viewModelScope.launch { settingsRepository.setVikunja(connection) }
+    }
+
+    fun onKoplionChanged(connection: ServiceConnection) {
+        viewModelScope.launch { settingsRepository.setKoplion(connection) }
     }
 
     fun onSyncNowRequested() {

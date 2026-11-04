@@ -44,4 +44,13 @@ interface SettingsRepository {
     suspend fun recordSyncSuccess(timestamp: Long)
 
     suspend fun recordSyncFailure(message: String)
+
+    /** Infos de connexion des autres services auto-hébergés, affichées dans Paramètres. */
+    val vikunja: Flow<ServiceConnection>
+
+    suspend fun setVikunja(connection: ServiceConnection)
+
+    val koplion: Flow<ServiceConnection>
+
+    suspend fun setKoplion(connection: ServiceConnection)
 }

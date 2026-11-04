@@ -61,6 +61,7 @@ import com.lielu.todo.R
 import com.lielu.todo.data.settings.AutoBackupSettings
 import com.lielu.todo.data.settings.BackupStatus
 import com.lielu.todo.data.settings.JoplinSettings
+import com.lielu.todo.data.settings.ServiceConnection
 import com.lielu.todo.data.settings.SyncStatus
 import com.lielu.todo.data.settings.ThemeMode
 import com.lielu.todo.ui.formatDateTime
@@ -164,6 +165,26 @@ fun SettingsScreen(
                 onPasswordChanged = viewModel::onJoplinPasswordChanged,
                 onSyncToggled = viewModel::onJoplinSyncToggled,
                 onSyncNow = viewModel::onSyncNowRequested,
+            )
+
+            HorizontalDivider(modifier = Modifier.padding(vertical = 16.dp))
+
+            Text("Autres services", style = MaterialTheme.typography.titleMedium)
+            Text(
+                "Infos de connexion mémorisées sur cet appareil uniquement.",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(top = 4.dp, bottom = 12.dp),
+            )
+            ServiceConnectionSection(
+                title = "Vikunja",
+                connection = uiState.vikunja,
+                onChanged = viewModel::onVikunjaChanged,
+            )
+            ServiceConnectionSection(
+                title = "Koplion",
+                connection = uiState.koplion,
+                onChanged = viewModel::onKoplionChanged,
             )
 
             HorizontalDivider(modifier = Modifier.padding(vertical = 16.dp))
@@ -304,6 +325,39 @@ private fun JoplinSection(
         enabled = !busy && settings.isConfigured,
         modifier = Modifier.padding(top = 8.dp),
     ) { Text("Synchroniser maintenant") }
+}
+
+/** Bloc « infos de connexion » d'un service auto-hébergé : adresse, e-mail, mot de passe (masqué). */
+@Composable
+private fun ServiceConnectionSection(
+    title: String,
+    connection: ServiceConnection,
+    onChanged: (ServiceConnection) -> Unit,
+) {
+    Text(title, style = MaterialTheme.typography.titleLarge)
+    OutlinedTextField(
+        value = connection.serverUrl,
+        onValueChange = { onChanged(connection.copy(serverUrl = it)) },
+        label = { Text("Adresse du serveur") },
+        placeholder = { Text("https://…") },
+        singleLine = true,
+        modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+    )
+    OutlinedTextField(
+        value = connection.email,
+        onValueChange = { onChanged(connection.copy(email = it)) },
+        label = { Text("E-mail") },
+        singleLine = true,
+        modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+    )
+    OutlinedTextField(
+        value = connection.password,
+        onValueChange = { onChanged(connection.copy(password = it)) },
+        label = { Text("Mot de passe") },
+        singleLine = true,
+        visualTransformation = PasswordVisualTransformation(),
+        modifier = Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 16.dp),
+    )
 }
 
 private fun syncStatusLabel(status: SyncStatus): String =
