@@ -27,9 +27,10 @@ class HttpJoplinApi(
                     request("GET", "/notes?fields=id,title,body,parent_id,user_updated_time&limit=100&page=$page")
                 val (items, hasMore) = JoplinJson.parseNotesPage(response)
                 notes += items
-                if (!hasMore) return@withContext notes
+                if (!hasMore) break
                 page++
             }
+            notes
         }
 
     override suspend fun createNote(
