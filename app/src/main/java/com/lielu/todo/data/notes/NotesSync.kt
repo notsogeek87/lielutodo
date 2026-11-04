@@ -69,8 +69,9 @@ class NotesSync(
                     parent = folderFallback
                 }
                 if (parent.isEmpty()) {
+                    val noteLabel = note.title.ifBlank { "Sans titre" }
                     return fail(
-                        "Aucun carnet Joplin trouvé sur le serveur : la note « ${note.title.ifBlank { "Sans titre" } } » " +
+                        "Aucun carnet Joplin trouvé sur le serveur : la note « $noteLabel » " +
                             "n'a pas été envoyée (Joplin exige un carnet).",
                     )
                 }
