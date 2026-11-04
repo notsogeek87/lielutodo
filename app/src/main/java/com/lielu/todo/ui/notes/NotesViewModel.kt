@@ -11,12 +11,22 @@ import com.lielu.todo.data.notes.NotesSync
 import com.lielu.todo.data.notes.SyncResult
 import com.lielu.todo.data.settings.SettingsRepository
 import com.lielu.todo.ui.describeImport
+import com.lielu.todo.ui.formatDateTime
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+
+/** Une ligne de la rubrique « Connexions » de la page d'accueil. */
+data class ConnectionSummary(
+    val name: String,
+    val serverUrl: String,
+    val configured: Boolean,
+    val status: String? = null,
+)
 
 class NotesViewModel(
     private val settingsRepository: SettingsRepository,
@@ -41,6 +51,32 @@ class NotesViewModel(
         settingsRepository.joplin
             .map { it.syncEnabled && it.isConfigured }
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
+
+    /** Services connectés affichés sur la page d'accueil (Joplin avec son statut de synchro, Vikunja, Koplion). */
+    val connections: StateFlow<List<ConnectionSummary>> =
+        combine(
+            settingsRepository.joplin,
+            settingsRepository.syncStatus,
+            settingsRepository.vikunja,
+            settingsRepository.koplion,
+        ) { joplin, syncStatus, vikunja, koplion ->
+            listOf(
+                ConnectionSummary(
+                    name = "Joplin",
+                    serverUrl = joplin.serverUrl,
+                    configured = joplin.isConfigured,
+                    status =
+                        when {
+                            syncStatus.lastError != null -> syncStatus.lastError
+                            syncStatus.lastSuccessAt != null ->
+                                "Dernière synchro : ${formatDateTime(syncStatus.lastSuccessAt)}"
+                            else -> null
+                        },
+                ),
+                ConnectionSummary("Vikunja", vikunja.serverUrl, vikunja.isConfigured),
+                ConnectionSummary("Koplion", koplion.serverUrl, koplion.isConfigured),
+            )
+        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     private val _message = MutableStateFlow<String?>(null)
     val message: StateFlow<String?> = _message

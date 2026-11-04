@@ -5,6 +5,8 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -53,6 +55,7 @@ fun NotesListScreen(
     val context = LocalContext.current
     val notes by viewModel.notes.collectAsState()
     val syncEnabled by viewModel.syncEnabled.collectAsState()
+    val connections by viewModel.connections.collectAsState()
     val showWelcome by viewModel.showWelcome.collectAsState()
     val message by viewModel.message.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
@@ -90,51 +93,58 @@ fun NotesListScreen(
         },
         snackbarHost = { SnackbarHost(snackbarHostState) },
     ) { paddingValues ->
-        if (notes.isEmpty()) {
-            Column(
-                modifier = Modifier.fillMaxSize().padding(paddingValues).padding(24.dp),
-                verticalArrangement = Arrangement.Center,
-                horizontalAlignment = Alignment.CenterHorizontally,
-            ) {
-                Text(
-                    "Aucune note. Touchez + pour en créer une, ou synchronisez votre serveur Joplin " +
-                        "depuis les paramètres.",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-        } else {
-            LazyColumn(
-                modifier = Modifier.fillMaxSize().padding(paddingValues),
-                contentPadding = PaddingValues(16.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                items(notes, key = { it.id }) { note ->
-                    ElevatedCard(
-                        onClick = { onNoteClick(note.id) },
-                        modifier = Modifier.fillMaxWidth(),
-                    ) {
-                        Column(modifier = Modifier.padding(16.dp)) {
-                            Text(
-                                note.title.ifBlank { "Sans titre" },
-                                style = MaterialTheme.typography.titleMedium,
-                            )
-                            if (note.body.isNotBlank()) {
+        Column(modifier = Modifier.fillMaxSize().padding(paddingValues)) {
+            ConnectionsSection(
+                connections = connections,
+                onClick = onSettingsClick,
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+            )
+            if (notes.isEmpty()) {
+                Column(
+                    modifier = Modifier.fillMaxSize().padding(24.dp),
+                    verticalArrangement = Arrangement.Center,
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                ) {
+                    Text(
+                        "Aucune note. Touchez + pour en créer une, ou synchronisez votre serveur Joplin " +
+                            "depuis les paramètres.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            } else {
+                LazyColumn(
+                    modifier = Modifier.fillMaxWidth().weight(1f),
+                    contentPadding = PaddingValues(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    items(notes, key = { it.id }) { note ->
+                        ElevatedCard(
+                            onClick = { onNoteClick(note.id) },
+                            modifier = Modifier.fillMaxWidth(),
+                        ) {
+                            Column(modifier = Modifier.padding(16.dp)) {
                                 Text(
-                                    note.body.take(120),
-                                    style = MaterialTheme.typography.bodySmall,
+                                    note.title.ifBlank { "Sans titre" },
+                                    style = MaterialTheme.typography.titleMedium,
+                                )
+                                if (note.body.isNotBlank()) {
+                                    Text(
+                                        note.body.take(120),
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        maxLines = 2,
+                                        overflow = TextOverflow.Ellipsis,
+                                        modifier = Modifier.padding(top = 4.dp),
+                                    )
+                                }
+                                Text(
+                                    formatDateTime(note.userUpdatedTime),
+                                    style = MaterialTheme.typography.labelSmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    maxLines = 2,
-                                    overflow = TextOverflow.Ellipsis,
                                     modifier = Modifier.padding(top = 4.dp),
                                 )
                             }
-                            Text(
-                                formatDateTime(note.userUpdatedTime),
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.padding(top = 4.dp),
-                            )
                         }
                     }
                 }
@@ -161,5 +171,46 @@ fun NotesListScreen(
                 TextButton(onClick = viewModel::onWelcomeDismissed) { Text("Plus tard") }
             },
         )
+    }
+}
+
+/** Rubrique « Connexions » de la page d'accueil : les services auto-hébergés et leur adresse. */
+@Composable
+private fun ConnectionsSection(
+    connections: List<ConnectionSummary>,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    ElevatedCard(onClick = onClick, modifier = modifier.fillMaxWidth()) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Text("Connexions", style = MaterialTheme.typography.titleMedium)
+            connections.forEach { connection ->
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(connection.name, style = MaterialTheme.typography.bodyLarge)
+                    Spacer(modifier = Modifier.weight(1f))
+                    Text(
+                        if (connection.configured) connection.serverUrl else "non configuré",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                if (connection.status != null) {
+                    Text(
+                        connection.status,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+            Text(
+                "Toucher pour modifier dans Paramètres",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.padding(top = 8.dp),
+            )
+        }
     }
 }
