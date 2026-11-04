@@ -79,6 +79,7 @@ object JoplinParser {
             listOf(
                 "id: $id",
                 "parent_id: $parentId",
+                "created_time: ${formatTime(updatedTimeMs)}",
                 "updated_time: ${formatTime(updatedTimeMs)}",
                 "is_todo: 0",
                 "todo_completed: 0",

@@ -36,8 +36,17 @@ class NotesViewModel(
     private val _message = MutableStateFlow<String?>(null)
     val message: StateFlow<String?> = _message
 
-    fun onAddNote(onCreated: (String) -> Unit) {
-        viewModelScope.launch { onCreated(notesRepository.create().id) }
+    /** Crée une note, affectée au carnet filtré (ou au premier carnet) pour qu'elle soit visible dans Joplin. */
+    fun onAddNote(
+        selectedFolder: String?,
+        onCreated: (String) -> Unit,
+    ) {
+        viewModelScope.launch {
+            val note = notesRepository.create()
+            val folderId = selectedFolder ?: folders.value.firstOrNull()?.id ?: ""
+            if (folderId.isNotEmpty()) notesRepository.setParent(note.id, folderId)
+            onCreated(note.id)
+        }
     }
 
     fun onSyncClicked() {

@@ -83,7 +83,7 @@ fun NotesListScreen(
             )
         },
         floatingActionButton = {
-            FloatingActionButton(onClick = { viewModel.onAddNote(onNoteClick) }) {
+            FloatingActionButton(onClick = { viewModel.onAddNote(selectedFolder, onNoteClick) }) {
                 Icon(Icons.Default.Add, contentDescription = "Nouvelle note")
             }
         },

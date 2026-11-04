@@ -50,8 +50,10 @@ class NotesSync(
                 )
             }
             var pull = pullChanges(api)
-            if (pull.usedCursor && pull.changesSeen == 0) {
-                // Delta vide avec un cursor déjà posé : on l'efface et on refait une synchro complète.
+            val foldersMissing = pull.folders.isEmpty() && notes.getAllActive().isNotEmpty()
+            if (pull.usedCursor && (pull.changesSeen == 0 || foldersMissing)) {
+                // Delta vide (ou carnets manquants) avec un cursor déjà posé : on l'efface et on refait
+                // une synchro complète.
                 settings.setJoplinCursor(null)
                 pull = pullChanges(api)
             }
