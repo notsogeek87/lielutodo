@@ -40,6 +40,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.lielu.todo.data.notes.Folder
 import com.lielu.todo.data.notes.Note
 import com.lielu.todo.ui.common.SectionHeader
 import com.lielu.todo.ui.formatDateTime
@@ -140,8 +141,9 @@ fun NotesListScreen(
                     if (selectedFolder == null && folders.isNotEmpty()) {
                         // Regroupé par carnet, comme dans Joplin.
                         val byFolder = visible.groupBy { it.parentId }
-                        val ordered = folders.filter { byFolder.containsKey(it.id) } +
-                            listOf(Folder("", "Sans carnet")).filter { byFolder.containsKey("") }
+                        val ordered =
+                            folders.filter { byFolder.containsKey(it.id) } +
+                                listOf(Folder("", "Sans carnet")).filter { byFolder.containsKey("") }
                         ordered.forEach { folder ->
                             val group = byFolder[folder.id].orEmpty()
                             item(key = "header-${folder.id}") {
