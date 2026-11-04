@@ -17,6 +17,8 @@ class NotesSyncTest {
     private class FakeJoplinApi : JoplinApi {
         val notes = mutableMapOf<String, RemoteNote>()
 
+        override suspend fun ping(): String = "JoplinServer"
+
         override suspend fun listNotes(): List<RemoteNote> = notes.values.toList()
 
         override suspend fun createNote(
@@ -144,6 +146,8 @@ class NotesSyncTest {
             val notes = FakeNotesRepository()
             val failing =
                 object : JoplinApi {
+                    override suspend fun ping(): String = throw JoplinApiException("réseau coupé")
+
                     override suspend fun listNotes(): List<RemoteNote> = throw JoplinApiException("réseau coupé")
 
                     override suspend fun createNote(

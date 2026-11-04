@@ -21,6 +21,9 @@ class JoplinApiException(
  * des notes, authentifiées par jeton personnel (`Authorization: token …`).
  */
 interface JoplinApi {
+    /** `GET /api/ping` (public) : doit contenir « JoplinServer » si l'adresse est bonne. */
+    suspend fun ping(): String
+
     suspend fun listNotes(): List<RemoteNote>
 
     suspend fun createNote(

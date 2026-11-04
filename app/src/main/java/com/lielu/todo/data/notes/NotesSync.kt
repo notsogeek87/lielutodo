@@ -37,6 +37,13 @@ class NotesSync(
         }
         val api = apiFactory(config)
         return try {
+            val ping = api.ping()
+            if (!ping.contains("Joplin")) {
+                return fail(
+                    "Cette adresse ne répond pas comme un serveur Joplin (ping : « $ping »). " +
+                        "Vérifiez l'adresse (ex. https://notes.lielu.eu, sans /api à la fin).",
+                )
+            }
             val plan = SyncPlanner.plan(notes.getAllIncludingDeleted(), api.listNotes())
             var pushed = 0
             for (note in plan.toPush) {

@@ -269,7 +269,7 @@ private fun JoplinSection(
             onServerUrlChanged(it)
         },
         label = { Text("Adresse du serveur") },
-        placeholder = { Text("https://notes.exemple.eu") },
+        placeholder = { Text("https://notes.lielu.eu (sans /api à la fin)") },
         singleLine = true,
         modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
     )
