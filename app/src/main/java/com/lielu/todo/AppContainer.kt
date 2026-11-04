@@ -66,7 +66,9 @@ class AppContainer(
         NotesSync(
             settings = settingsRepository,
             notes = notesRepository,
-            apiFactory = { config -> HttpJoplinApi(serverUrl = config.serverUrl, apiToken = config.apiToken) },
+            apiFactory = { config ->
+                HttpJoplinApi(serverUrl = config.serverUrl, email = config.email, password = config.password)
+            },
         )
 
     val backupManager = BackupManager(backupSections, appId = appContext.packageName)

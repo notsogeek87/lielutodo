@@ -60,8 +60,12 @@ class FakeSettingsRepository : SettingsRepository {
         joplinState.value = joplinState.value.copy(serverUrl = url.trim())
     }
 
-    override suspend fun setJoplinApiToken(token: String) {
-        joplinState.value = joplinState.value.copy(apiToken = token.trim())
+    override suspend fun setJoplinEmail(email: String) {
+        joplinState.value = joplinState.value.copy(email = email.trim())
+    }
+
+    override suspend fun setJoplinPassword(password: String) {
+        joplinState.value = joplinState.value.copy(password = password)
     }
 
     override suspend fun setJoplinSyncEnabled(enabled: Boolean) {

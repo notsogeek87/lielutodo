@@ -35,6 +35,11 @@ class JoplinJsonTest {
     }
 
     @Test
+    fun parseSessionLitIdDeSession() {
+        assertEquals("abc123", JoplinJson.parseSession(JSONObject().put("id", "abc123").put("user_id", "u1")))
+    }
+
+    @Test
     fun parseNoteMetDesValeursParDefautAuxChampsAbsents() {
         val note = JoplinJson.parseNote(JSONObject().put("id", "a"))
 

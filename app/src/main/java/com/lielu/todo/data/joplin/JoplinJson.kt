@@ -11,6 +11,9 @@ object JoplinJson {
         return notes to page.optBoolean("has_more", false)
     }
 
+    /** Réponse de `POST /api/sessions` : l'id de session à passer en `X-API-AUTH`. */
+    fun parseSession(json: JSONObject): String = json.getString("id")
+
     fun parseNote(json: JSONObject): RemoteNote =
         RemoteNote(
             id = json.getString("id"),

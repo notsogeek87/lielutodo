@@ -160,7 +160,8 @@ fun SettingsScreen(
                 status = uiState.syncStatus,
                 busy = uiState.backupInProgress,
                 onServerUrlChanged = viewModel::onJoplinServerUrlChanged,
-                onApiTokenChanged = viewModel::onJoplinApiTokenChanged,
+                onEmailChanged = viewModel::onJoplinEmailChanged,
+                onPasswordChanged = viewModel::onJoplinPasswordChanged,
                 onSyncToggled = viewModel::onJoplinSyncToggled,
                 onSyncNow = viewModel::onSyncNowRequested,
             )
@@ -233,14 +234,15 @@ fun SettingsScreen(
 
 private enum class RestoreSource { FILE, LATEST_AUTO }
 
-/** Section « Synchronisation Joplin » : serveur, jeton (secret, jamais exporté dans les sauvegardes), synchro. */
+/** Section « Synchronisation Joplin » : serveur, identifiants (secrets, jamais exportés en sauvegarde), synchro. */
 @Composable
 private fun JoplinSection(
     settings: JoplinSettings,
     status: SyncStatus,
     busy: Boolean,
     onServerUrlChanged: (String) -> Unit,
-    onApiTokenChanged: (String) -> Unit,
+    onEmailChanged: (String) -> Unit,
+    onPasswordChanged: (String) -> Unit,
     onSyncToggled: (Boolean) -> Unit,
     onSyncNow: () -> Unit,
 ) {
@@ -265,15 +267,23 @@ private fun JoplinSection(
         modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
     )
     OutlinedTextField(
-        value = settings.apiToken,
-        onValueChange = onApiTokenChanged,
-        label = { Text("Jeton d'API") },
+        value = settings.email,
+        onValueChange = onEmailChanged,
+        label = { Text("E-mail") },
+        singleLine = true,
+        modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+    )
+    OutlinedTextField(
+        value = settings.password,
+        onValueChange = onPasswordChanged,
+        label = { Text("Mot de passe") },
         singleLine = true,
         visualTransformation = PasswordVisualTransformation(),
         modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
     )
     Text(
-        "Le jeton se trouve dans Joplin (Outils > Options > Extension Web Clipper). Il reste sur cet appareil.",
+        "Les identifiants servent à ouvrir une session sur le serveur à chaque synchronisation. " +
+            "Ils restent sur cet appareil et ne sont jamais exportés dans les sauvegardes.",
         style = MaterialTheme.typography.labelSmall,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
         modifier = Modifier.padding(top = 4.dp, bottom = 12.dp),

@@ -28,12 +28,14 @@ interface SettingsRepository {
 
     suspend fun setWelcomeShown()
 
-    /** Connexion au serveur Joplin ; le jeton n'est jamais exporté dans les sauvegardes. */
+    /** Connexion au serveur Joplin ; e-mail et mot de passe ne sont jamais exportés dans les sauvegardes. */
     val joplin: Flow<JoplinSettings>
 
     suspend fun setJoplinServerUrl(url: String)
 
-    suspend fun setJoplinApiToken(token: String)
+    suspend fun setJoplinEmail(email: String)
+
+    suspend fun setJoplinPassword(password: String)
 
     suspend fun setJoplinSyncEnabled(enabled: Boolean)
 

@@ -187,8 +187,12 @@ class SettingsViewModel(
         viewModelScope.launch { settingsRepository.setJoplinServerUrl(url) }
     }
 
-    fun onJoplinApiTokenChanged(token: String) {
-        viewModelScope.launch { settingsRepository.setJoplinApiToken(token) }
+    fun onJoplinEmailChanged(email: String) {
+        viewModelScope.launch { settingsRepository.setJoplinEmail(email) }
+    }
+
+    fun onJoplinPasswordChanged(password: String) {
+        viewModelScope.launch { settingsRepository.setJoplinPassword(password) }
     }
 
     fun onJoplinSyncToggled(enabled: Boolean) {

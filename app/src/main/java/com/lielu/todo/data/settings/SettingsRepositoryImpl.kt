@@ -82,7 +82,8 @@ class SettingsRepositoryImpl(
         dataStore.data.map { prefs ->
             JoplinSettings(
                 serverUrl = prefs[Keys.JOPLIN_SERVER_URL] ?: "",
-                apiToken = prefs[Keys.JOPLIN_API_TOKEN] ?: "",
+                email = prefs[Keys.JOPLIN_EMAIL] ?: "",
+                password = prefs[Keys.JOPLIN_PASSWORD] ?: "",
                 syncEnabled = prefs[Keys.JOPLIN_SYNC_ENABLED] ?: false,
             )
         }
@@ -91,8 +92,12 @@ class SettingsRepositoryImpl(
         dataStore.edit { it[Keys.JOPLIN_SERVER_URL] = url.trim() }
     }
 
-    override suspend fun setJoplinApiToken(token: String) {
-        dataStore.edit { it[Keys.JOPLIN_API_TOKEN] = token.trim() }
+    override suspend fun setJoplinEmail(email: String) {
+        dataStore.edit { it[Keys.JOPLIN_EMAIL] = email.trim() }
+    }
+
+    override suspend fun setJoplinPassword(password: String) {
+        dataStore.edit { it[Keys.JOPLIN_PASSWORD] = password }
     }
 
     override suspend fun setJoplinSyncEnabled(enabled: Boolean) {
@@ -127,7 +132,8 @@ class SettingsRepositoryImpl(
         val LAST_BACKUP_ERROR = stringPreferencesKey("last_backup_error")
         val WELCOME_SHOWN = booleanPreferencesKey("welcome_shown")
         val JOPLIN_SERVER_URL = stringPreferencesKey("joplin_server_url")
-        val JOPLIN_API_TOKEN = stringPreferencesKey("joplin_api_token")
+        val JOPLIN_EMAIL = stringPreferencesKey("joplin_email")
+        val JOPLIN_PASSWORD = stringPreferencesKey("joplin_password")
         val JOPLIN_SYNC_ENABLED = booleanPreferencesKey("joplin_sync_enabled")
         val LAST_SYNC_AT = longPreferencesKey("last_sync_at")
         val LAST_SYNC_ERROR = stringPreferencesKey("last_sync_error")
