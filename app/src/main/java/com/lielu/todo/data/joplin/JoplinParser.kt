@@ -33,6 +33,8 @@ object JoplinParser {
         val lines = content.split('\n')
         val props = LinkedHashMap<String, String>()
         var i = lines.size - 1
+        // Ignorer les lignes vides finales (le fichier sérialisé se termine par un retour à la ligne).
+        while (i >= 0 && lines[i].isBlank()) i--
         while (i >= 0 && lines[i].isNotBlank()) {
             val colon = lines[i].indexOf(':')
             if (colon <= 0) break
