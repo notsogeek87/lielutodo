@@ -23,9 +23,18 @@ class JoplinApiException(
 interface JoplinApi {
     suspend fun listNotes(): List<RemoteNote>
 
-    suspend fun createNote(title: String, body: String, parentId: String): RemoteNote
+    suspend fun createNote(
+        title: String,
+        body: String,
+        parentId: String,
+    ): RemoteNote
 
-    suspend fun updateNote(id: String, title: String, body: String, parentId: String): RemoteNote
+    suspend fun updateNote(
+        id: String,
+        title: String,
+        body: String,
+        parentId: String,
+    ): RemoteNote
 
     suspend fun deleteNote(id: String)
 }

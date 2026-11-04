@@ -21,7 +21,11 @@ class FakeNotesRepository : NotesRepository {
         return note
     }
 
-    override suspend fun save(id: String, title: String, body: String) {
+    override suspend fun save(
+        id: String,
+        title: String,
+        body: String,
+    ) {
         store.value = store.value.map { if (it.id == id) it.copy(title = title, body = body, dirty = true) else it }
     }
 

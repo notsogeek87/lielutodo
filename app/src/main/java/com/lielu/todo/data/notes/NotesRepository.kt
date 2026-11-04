@@ -12,7 +12,11 @@ interface NotesRepository {
     suspend fun create(): Note
 
     /** Enregistre le contenu d'une note existante ; elle passe en attente de synchro. */
-    suspend fun save(id: String, title: String, body: String)
+    suspend fun save(
+        id: String,
+        title: String,
+        body: String,
+    )
 
     /** Marque la note comme supprimée (poussée au serveur à la prochaine synchro). */
     suspend fun delete(id: String)

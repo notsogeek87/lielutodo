@@ -8,7 +8,11 @@ import com.lielu.todo.data.settings.SettingsRepository
 import kotlinx.coroutines.flow.first
 
 sealed interface SyncResult {
-    data class Success(val pushed: Int, val pulled: Int, val deleted: Int) : SyncResult
+    data class Success(
+        val pushed: Int,
+        val pulled: Int,
+        val deleted: Int,
+    ) : SyncResult
 
     data class Failure(val message: String) : SyncResult
 }

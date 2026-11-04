@@ -26,7 +26,11 @@ class NotesRepositoryImpl(
         return note
     }
 
-    override suspend fun save(id: String, title: String, body: String) {
+    override suspend fun save(
+        id: String,
+        title: String,
+        body: String,
+    ) {
         val current = dao.getById(id) ?: return
         dao.upsert(current.copy(title = title, body = body, userUpdatedTime = clock(), dirty = true))
     }

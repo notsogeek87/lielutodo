@@ -19,13 +19,22 @@ class NotesSyncTest {
 
         override suspend fun listNotes(): List<RemoteNote> = notes.values.toList()
 
-        override suspend fun createNote(title: String, body: String, parentId: String): RemoteNote {
+        override suspend fun createNote(
+            title: String,
+            body: String,
+            parentId: String,
+        ): RemoteNote {
             val note = RemoteNote("srv-${notes.size + 1}", title, body, parentId, userUpdatedTime = 100L)
             notes[note.id] = note
             return note
         }
 
-        override suspend fun updateNote(id: String, title: String, body: String, parentId: String): RemoteNote {
+        override suspend fun updateNote(
+            id: String,
+            title: String,
+            body: String,
+            parentId: String,
+        ): RemoteNote {
             if (id !in notes) throw JoplinApiException("Note introuvable", statusCode = 404)
             val note = RemoteNote(id, title, body, parentId, userUpdatedTime = 100L)
             notes[id] = note
@@ -136,8 +145,11 @@ class NotesSyncTest {
                 object : JoplinApi {
                     override suspend fun listNotes(): List<RemoteNote> = throw JoplinApiException("réseau coupé")
 
-                    override suspend fun createNote(title: String, body: String, parentId: String): RemoteNote =
-                        error("inattendu")
+                    override suspend fun createNote(
+                        title: String,
+                        body: String,
+                        parentId: String,
+                    ): RemoteNote = error("inattendu")
 
                     override suspend fun updateNote(
                         id: String,
@@ -153,6 +165,7 @@ class NotesSyncTest {
             val result = sync.syncNow()
 
             assertTrue(result is SyncResult.Failure)
-            assertTrue(settings.syncStatus.first().lastError!!.contains("réseau coupé"))
+            val lastError = settings.syncStatus.first().lastError
+            assertTrue(lastError!!.contains("réseau coupé"))
         }
 }

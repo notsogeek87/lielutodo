@@ -32,27 +32,47 @@ class HttpJoplinApi(
             }
         }
 
-    override suspend fun createNote(title: String, body: String, parentId: String): RemoteNote =
-        withContext(Dispatchers.IO) {
+    override suspend fun createNote(
+        title: String,
+        body: String,
+        parentId: String,
+    ): RemoteNote {
+        return withContext(Dispatchers.IO) {
             JoplinJson.parseNote(request("POST", "/notes", notePayload(title, body, parentId)))
         }
+    }
 
-    override suspend fun updateNote(id: String, title: String, body: String, parentId: String): RemoteNote =
-        withContext(Dispatchers.IO) {
+    override suspend fun updateNote(
+        id: String,
+        title: String,
+        body: String,
+        parentId: String,
+    ): RemoteNote {
+        return withContext(Dispatchers.IO) {
             JoplinJson.parseNote(request("PUT", "/notes/$id", notePayload(title, body, parentId)))
         }
+    }
 
     override suspend fun deleteNote(id: String) {
         withContext(Dispatchers.IO) { request("DELETE", "/notes/$id") }
     }
 
-    private fun notePayload(title: String, body: String, parentId: String): JSONObject =
-        JSONObject()
+    private fun notePayload(
+        title: String,
+        body: String,
+        parentId: String,
+    ): JSONObject {
+        return JSONObject()
             .put("title", title)
             .put("body", body)
             .put("parent_id", parentId)
+    }
 
-    private fun request(method: String, path: String, payload: JSONObject? = null): JSONObject {
+    private fun request(
+        method: String,
+        path: String,
+        payload: JSONObject? = null,
+    ): JSONObject {
         val connection =
             (URI("$baseUrl$path").toURL().openConnection() as HttpURLConnection).apply {
                 requestMethod = method

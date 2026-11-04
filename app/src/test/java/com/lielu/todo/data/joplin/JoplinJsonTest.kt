@@ -10,21 +10,14 @@ import org.junit.Test
 class JoplinJsonTest {
     @Test
     fun parseNotesPageLitLesItemsEtHasMore() {
-        val page =
+        val item =
             JSONObject()
-                .put(
-                    "items",
-                    JSONArray()
-                        .put(
-                            JSONObject()
-                                .put("id", "a")
-                                .put("title", "Titre")
-                                .put("body", "Corps")
-                                .put("parent_id", "dossier")
-                                .put("user_updated_time", 123L),
-                        ),
-                )
-                .put("has_more", true)
+                .put("id", "a")
+                .put("title", "Titre")
+                .put("body", "Corps")
+                .put("parent_id", "dossier")
+                .put("user_updated_time", 123L)
+        val page = JSONObject().put("items", JSONArray().put(item)).put("has_more", true)
 
         val (notes, hasMore) = JoplinJson.parseNotesPage(page)
 

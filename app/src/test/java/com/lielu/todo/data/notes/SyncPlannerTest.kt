@@ -6,11 +6,17 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class SyncPlannerTest {
-    private fun local(id: String, updated: Long = 0, dirty: Boolean = false, deleted: Boolean = false) =
-        Note(id = id, title = "t$id", body = "b$id", userUpdatedTime = updated, dirty = dirty, deleted = deleted)
+    private fun local(
+        id: String,
+        updated: Long = 0,
+        dirty: Boolean = false,
+        deleted: Boolean = false,
+    ) = Note(id = id, title = "t$id", body = "b$id", userUpdatedTime = updated, dirty = dirty, deleted = deleted)
 
-    private fun remote(id: String, updated: Long = 0) =
-        RemoteNote(id = id, title = "t$id", body = "b$id", parentId = "", userUpdatedTime = updated)
+    private fun remote(
+        id: String,
+        updated: Long = 0,
+    ) = RemoteNote(id = id, title = "t$id", body = "b$id", parentId = "", userUpdatedTime = updated)
 
     @Test
     fun noteDistanteInconnueLocalementEstTelechargee() {

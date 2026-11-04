@@ -20,7 +20,10 @@ data class SyncPlan(
  * récente que la copie locale est téléchargée, une note absente d'un côté est supprimée de l'autre.
  */
 object SyncPlanner {
-    fun plan(local: List<Note>, remote: List<RemoteNote>): SyncPlan {
+    fun plan(
+        local: List<Note>,
+        remote: List<RemoteNote>,
+    ): SyncPlan {
         val remoteById = remote.associateBy { it.id }
         val localIds = local.map { it.id }.toSet()
         val toPush = mutableListOf<Note>()
