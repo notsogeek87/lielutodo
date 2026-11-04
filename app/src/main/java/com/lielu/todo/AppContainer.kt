@@ -19,6 +19,7 @@ import com.lielu.todo.data.notes.NotesSync
 import com.lielu.todo.data.settings.SettingsRepository
 import com.lielu.todo.data.settings.SettingsRepositoryImpl
 import com.lielu.todo.data.settings.settingsDataStore
+import com.lielu.todo.data.vikunja.VikunjaChecker
 import com.lielu.todo.work.AutoBackupScheduler
 import com.lielu.todo.work.AutoBackupWorker
 import kotlinx.coroutines.CoroutineScope
@@ -60,6 +61,9 @@ class AppContainer(
             SettingsBackupSection(settingsRepository),
             NoteBackupSection(notesRepository),
         )
+
+    /** Vérifie les identifiants Vikunja saisis dans Paramètres (bouton « Tester la connexion »). */
+    val vikunjaChecker = VikunjaChecker()
 
     /** Synchronisation lecture/écriture des notes avec le serveur Joplin réglé dans Paramètres. */
     val notesSync =

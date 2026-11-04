@@ -180,6 +180,8 @@ fun SettingsScreen(
                 title = "Vikunja",
                 connection = uiState.vikunja,
                 onChanged = viewModel::onVikunjaChanged,
+                onTestConnection = viewModel::onVikunjaTestClicked,
+                busy = uiState.backupInProgress,
             )
 
             HorizontalDivider(modifier = Modifier.padding(vertical = 16.dp))
@@ -274,24 +276,37 @@ private fun JoplinSection(
         Switch(checked = settings.syncEnabled, onCheckedChange = onSyncToggled)
     }
 
+    // États locaux : la saisie ne doit pas attendre l'aller-retour DataStore (sinon chaque lettre arrive en retard).
+    var serverUrl by remember { mutableStateOf(settings.serverUrl) }
+    var email by remember { mutableStateOf(settings.email) }
+    var password by remember { mutableStateOf(settings.password) }
     OutlinedTextField(
-        value = settings.serverUrl,
-        onValueChange = onServerUrlChanged,
+        value = serverUrl,
+        onValueChange = {
+            serverUrl = it
+            onServerUrlChanged(it)
+        },
         label = { Text("Adresse du serveur") },
         placeholder = { Text("https://notes.exemple.eu") },
         singleLine = true,
         modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
     )
     OutlinedTextField(
-        value = settings.email,
-        onValueChange = onEmailChanged,
+        value = email,
+        onValueChange = {
+            email = it
+            onEmailChanged(it)
+        },
         label = { Text("E-mail") },
         singleLine = true,
         modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
     )
     OutlinedTextField(
-        value = settings.password,
-        onValueChange = onPasswordChanged,
+        value = password,
+        onValueChange = {
+            password = it
+            onPasswordChanged(it)
+        },
         label = { Text("Mot de passe") },
         singleLine = true,
         visualTransformation = PasswordVisualTransformation(),
@@ -328,31 +343,55 @@ private fun ServiceConnectionSection(
     title: String,
     connection: ServiceConnection,
     onChanged: (ServiceConnection) -> Unit,
+    onTestConnection: (() -> Unit)? = null,
+    busy: Boolean = false,
 ) {
     Text(title, style = MaterialTheme.typography.titleLarge)
+    // États locaux : la saisie ne doit pas attendre l'aller-retour DataStore (sinon chaque lettre arrive en retard).
+    var serverUrl by remember { mutableStateOf(connection.serverUrl) }
+    var email by remember { mutableStateOf(connection.email) }
+    var password by remember { mutableStateOf(connection.password) }
     OutlinedTextField(
-        value = connection.serverUrl,
-        onValueChange = { onChanged(connection.copy(serverUrl = it)) },
+        value = serverUrl,
+        onValueChange = {
+            serverUrl = it
+            onChanged(connection.copy(serverUrl = it))
+        },
         label = { Text("Adresse du serveur") },
         placeholder = { Text("https://…") },
         singleLine = true,
         modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
     )
     OutlinedTextField(
-        value = connection.email,
-        onValueChange = { onChanged(connection.copy(email = it)) },
+        value = email,
+        onValueChange = {
+            email = it
+            onChanged(connection.copy(email = it))
+        },
         label = { Text("E-mail") },
         singleLine = true,
         modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
     )
     OutlinedTextField(
-        value = connection.password,
-        onValueChange = { onChanged(connection.copy(password = it)) },
+        value = password,
+        onValueChange = {
+            password = it
+            onChanged(connection.copy(password = it))
+        },
         label = { Text("Mot de passe") },
         singleLine = true,
         visualTransformation = PasswordVisualTransformation(),
-        modifier = Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 16.dp),
+        modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
     )
+    if (onTestConnection != null) {
+        Button(
+            onClick = onTestConnection,
+            enabled = !busy && connection.isConfigured,
+            modifier = Modifier.padding(top = 8.dp, bottom = 16.dp),
+        ) { Text("Tester la connexion") }
+    } else {
+        Spacer(modifier = Modifier.padding(bottom = 16.dp))
+    }
 }
 
 private fun syncStatusLabel(status: SyncStatus): String =

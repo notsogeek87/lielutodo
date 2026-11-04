@@ -94,6 +94,7 @@ fun AppNavHost(container: AppContainer) {
                                     container.updateManager,
                                     container.updatesEnabled,
                                     container.notesSync,
+                                    container.vikunjaChecker,
                                 )
                             }
                         },
