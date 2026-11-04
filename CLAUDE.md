@@ -133,7 +133,9 @@ Changer de signature casse la mise à jour (désinstallation nécessaire).
   - chaînes d'appels : si la chaîne tient sur la ligne, aucun retour avant le `.` (« Unexpected newline before
     '.' ») ; chaîne longue (4 appels chaînés et plus) : retour avant chaque `.` (« Expected newline before '.' ») ;
     l'appel terminal après une lambda s'attache au `}` fermant (`}.stateIn(...)`) ;
-  - `debounce`/`conflate`… sont `FlowPreview` : poser `@OptIn(FlowPreview::class)` sur le ViewModel.
+  - `debounce`/`conflate`… sont `FlowPreview` : poser `@OptIn(FlowPreview::class)` sur le ViewModel ;
+  - **les commentaires bloc Kotlin s'imbriquent** : ne jamais écrire la séquence `/*` dans un `/** … */`
+    (ex. `` `/api/*` ``) — le commentaire ne se ferme plus et ktlint « failed to parse file ».
 - En local sans réseau (session web), ktlint et Gradle ne tournent pas : ne pas présenter un changement non
   compilé comme vérifié — la CI de la branche valide (ktlint → tests → assembleRelease).
 - Room : la transaction atomique s'importe explicitement (`import androidx.room.withTransaction`).
