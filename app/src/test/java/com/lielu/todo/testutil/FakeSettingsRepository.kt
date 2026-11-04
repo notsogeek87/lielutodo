@@ -2,7 +2,9 @@ package com.lielu.todo.testutil
 
 import com.lielu.todo.data.settings.AutoBackupSettings
 import com.lielu.todo.data.settings.BackupStatus
+import com.lielu.todo.data.settings.JoplinSettings
 import com.lielu.todo.data.settings.SettingsRepository
+import com.lielu.todo.data.settings.SyncStatus
 import com.lielu.todo.data.settings.ThemeMode
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -13,6 +15,8 @@ class FakeSettingsRepository : SettingsRepository {
     private val auto = MutableStateFlow(AutoBackupSettings())
     private val status = MutableStateFlow(BackupStatus())
     private val welcome = MutableStateFlow(false)
+    private val joplinState = MutableStateFlow(JoplinSettings())
+    private val syncState = MutableStateFlow(SyncStatus())
 
     override val themeMode: Flow<ThemeMode> = theme
 
@@ -48,5 +52,33 @@ class FakeSettingsRepository : SettingsRepository {
 
     override suspend fun setWelcomeShown() {
         welcome.value = true
+    }
+
+    override val joplin: Flow<JoplinSettings> = joplinState
+
+    override suspend fun setJoplinServerUrl(url: String) {
+        joplinState.value = joplinState.value.copy(serverUrl = url.trim())
+    }
+
+    override suspend fun setJoplinEmail(email: String) {
+        joplinState.value = joplinState.value.copy(email = email.trim())
+    }
+
+    override suspend fun setJoplinPassword(password: String) {
+        joplinState.value = joplinState.value.copy(password = password)
+    }
+
+    override suspend fun setJoplinSyncEnabled(enabled: Boolean) {
+        joplinState.value = joplinState.value.copy(syncEnabled = enabled)
+    }
+
+    override val syncStatus: Flow<SyncStatus> = syncState
+
+    override suspend fun recordSyncSuccess(timestamp: Long) {
+        syncState.value = SyncStatus(lastSuccessAt = timestamp)
+    }
+
+    override suspend fun recordSyncFailure(message: String) {
+        syncState.value = syncState.value.copy(lastError = message)
     }
 }

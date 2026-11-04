@@ -27,4 +27,21 @@ interface SettingsRepository {
     val welcomeShown: Flow<Boolean>
 
     suspend fun setWelcomeShown()
+
+    /** Connexion au serveur Joplin des notes ; e-mail et mot de passe ne sont jamais exportés dans les sauvegardes. */
+    val joplin: Flow<JoplinSettings>
+
+    suspend fun setJoplinServerUrl(url: String)
+
+    suspend fun setJoplinEmail(email: String)
+
+    suspend fun setJoplinPassword(password: String)
+
+    suspend fun setJoplinSyncEnabled(enabled: Boolean)
+
+    val syncStatus: Flow<SyncStatus>
+
+    suspend fun recordSyncSuccess(timestamp: Long)
+
+    suspend fun recordSyncFailure(message: String)
 }

@@ -24,6 +24,7 @@ import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.outlined.CalendarMonth
 import androidx.compose.material.icons.outlined.CheckCircle
 import androidx.compose.material.icons.outlined.Inbox
+import androidx.compose.material.icons.outlined.Note
 import androidx.compose.material.icons.outlined.Today
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
@@ -118,6 +119,7 @@ fun HomeScreen(
     prefs: AppPrefs,
     onOpenNotifications: () -> Unit,
     onOpenActivity: () -> Unit,
+    onOpenNotes: () -> Unit,
     onSettings: () -> Unit,
     onLogout: () -> Unit,
 ) {
@@ -151,6 +153,7 @@ fun HomeScreen(
     val filterable = HomeTab.entries[tab] == HomeTab.TODAY || HomeTab.entries[tab] == HomeTab.UPCOMING
     val titleActions: @Composable () -> Unit = {
         IconButton(onClick = onSearch) { Icon(Icons.Filled.Search, contentDescription = "Rechercher") }
+        IconButton(onClick = onOpenNotes) { Icon(Icons.Outlined.Note, contentDescription = "Notes") }
         when (HomeTab.entries[tab]) {
             HomeTab.INBOX -> {
                 IconButton(

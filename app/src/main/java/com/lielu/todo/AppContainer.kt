@@ -8,11 +8,15 @@ import com.lielu.todo.backup.AutoBackupRunner
 import com.lielu.todo.backup.BackupManager
 import com.lielu.todo.backup.BackupSection
 import com.lielu.todo.backup.SafBackupFolder
+import com.lielu.todo.backup.NoteBackupSection
 import com.lielu.todo.backup.SettingsBackupSection
 import com.lielu.todo.backup.TodoBackupSection
 import com.lielu.todo.calendar.CalendarSync
 import com.lielu.todo.data.api.SessionStore
 import com.lielu.todo.data.api.VikunjaClient
+import com.lielu.todo.data.joplin.HttpJoplinApi
+import com.lielu.todo.data.notes.FileNotesRepository
+import com.lielu.todo.data.notes.NotesSync
 import com.lielu.todo.data.settings.AppPrefs
 import com.lielu.todo.data.settings.SettingsRepository
 import com.lielu.todo.data.settings.SettingsRepositoryImpl
@@ -62,6 +66,19 @@ class AppContainer(
 
     val vikunjaClient = VikunjaClient(session)
 
+    /** Notes (Joplin) : cache fichier local, synchronisable en lecture/écriture. */
+    val notesRepository = FileNotesRepository(File(appContext.filesDir, "notes-cache.json"))
+
+    /** Synchronisation lecture/écriture des notes avec le serveur Joplin réglé dans Paramètres. */
+    val notesSync =
+        NotesSync(
+            settings = settingsRepository,
+            notes = notesRepository,
+            apiFactory = { config ->
+                HttpJoplinApi(serverUrl = config.serverUrl, email = config.email, password = config.password)
+            },
+        )
+
     /** Tâches, projets et étiquettes : copie locale + file d'écritures, resynchronisée avec le serveur. */
     val todoRepository =
         TodoRepository(
@@ -84,7 +101,7 @@ class AppContainer(
         listOf(
             SettingsBackupSection(settingsRepository),
             TodoBackupSection(todoRepository),
-            // Ex. : InventoryBackupSection(database), voir CLAUDE.md « Brancher les données de l'app ».
+            NoteBackupSection(notesRepository),
         )
 
     val backupManager = BackupManager(backupSections, appId = appContext.packageName)
