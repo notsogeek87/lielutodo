@@ -27,6 +27,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SegmentedButton
 import androidx.compose.material3.SegmentedButtonDefaults
@@ -50,6 +51,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import com.lielu.githubupdater.UpdateInfo
 import com.lielu.githubupdater.UpdateState
@@ -58,6 +60,8 @@ import com.lielu.todo.BuildConfig
 import com.lielu.todo.R
 import com.lielu.todo.data.settings.AutoBackupSettings
 import com.lielu.todo.data.settings.BackupStatus
+import com.lielu.todo.data.settings.JoplinSettings
+import com.lielu.todo.data.settings.SyncStatus
 import com.lielu.todo.data.settings.ThemeMode
 import com.lielu.todo.ui.formatDateTime
 import com.lielu.todo.ui.update.updateErrorMessage
@@ -151,6 +155,18 @@ fun SettingsScreen(
 
             HorizontalDivider(modifier = Modifier.padding(vertical = 16.dp))
 
+            JoplinSection(
+                settings = uiState.joplin,
+                status = uiState.syncStatus,
+                busy = uiState.backupInProgress,
+                onServerUrlChanged = viewModel::onJoplinServerUrlChanged,
+                onApiTokenChanged = viewModel::onJoplinApiTokenChanged,
+                onSyncToggled = viewModel::onJoplinSyncToggled,
+                onSyncNow = viewModel::onSyncNowRequested,
+            )
+
+            HorizontalDivider(modifier = Modifier.padding(vertical = 16.dp))
+
             Text("Export / import manuel", style = MaterialTheme.typography.titleMedium)
             Text(
                 "Enregistrez un fichier où vous voulez (Drive, Fichiers…), ou restaurez-en un.",
@@ -216,6 +232,76 @@ fun SettingsScreen(
 }
 
 private enum class RestoreSource { FILE, LATEST_AUTO }
+
+/** Section « Synchronisation Joplin » : serveur, jeton (secret, jamais exporté dans les sauvegardes), synchro. */
+@Composable
+private fun JoplinSection(
+    settings: JoplinSettings,
+    status: SyncStatus,
+    busy: Boolean,
+    onServerUrlChanged: (String) -> Unit,
+    onApiTokenChanged: (String) -> Unit,
+    onSyncToggled: (Boolean) -> Unit,
+    onSyncNow: () -> Unit,
+) {
+    Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text("Synchronisation Joplin", style = MaterialTheme.typography.titleMedium)
+            Text(
+                "Vos notes en lecture et écriture avec votre serveur Joplin (API Data).",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        Switch(checked = settings.syncEnabled, onCheckedChange = onSyncToggled)
+    }
+
+    OutlinedTextField(
+        value = settings.serverUrl,
+        onValueChange = onServerUrlChanged,
+        label = { Text("Adresse du serveur") },
+        placeholder = { Text("https://notes.exemple.eu") },
+        singleLine = true,
+        modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
+    )
+    OutlinedTextField(
+        value = settings.apiToken,
+        onValueChange = onApiTokenChanged,
+        label = { Text("Jeton d'API") },
+        singleLine = true,
+        visualTransformation = PasswordVisualTransformation(),
+        modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+    )
+    Text(
+        "Le jeton se trouve dans Joplin (Outils > Options > Extension Web Clipper). Il reste sur cet appareil.",
+        style = MaterialTheme.typography.labelSmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = Modifier.padding(top = 4.dp, bottom = 12.dp),
+    )
+    Text(
+        syncStatusLabel(status),
+        style = MaterialTheme.typography.labelSmall,
+        color =
+            if (status.lastError != null) {
+                MaterialTheme.colorScheme.error
+            } else {
+                MaterialTheme.colorScheme.onSurfaceVariant
+            },
+        modifier = Modifier.padding(top = 4.dp),
+    )
+    Button(
+        onClick = onSyncNow,
+        enabled = !busy && settings.isConfigured,
+        modifier = Modifier.padding(top = 8.dp),
+    ) { Text("Synchroniser maintenant") }
+}
+
+private fun syncStatusLabel(status: SyncStatus): String =
+    when {
+        status.lastError != null -> status.lastError
+        status.lastSuccessAt != null -> "Dernière synchronisation : ${formatDateTime(status.lastSuccessAt)}"
+        else -> "Jamais synchronisé."
+    }
 
 @Composable
 private fun AutoBackupSection(

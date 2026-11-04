@@ -11,6 +11,7 @@ local.properties
 *.hprof
 .claude/scheduled_tasks.lock
 /app/build
+/app/schemas
 /app/release
 /app/debug
 .kotlin/

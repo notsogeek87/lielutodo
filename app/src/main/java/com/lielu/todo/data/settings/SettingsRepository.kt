@@ -27,4 +27,19 @@ interface SettingsRepository {
     val welcomeShown: Flow<Boolean>
 
     suspend fun setWelcomeShown()
+
+    /** Connexion au serveur Joplin ; le jeton n'est jamais exporté dans les sauvegardes. */
+    val joplin: Flow<JoplinSettings>
+
+    suspend fun setJoplinServerUrl(url: String)
+
+    suspend fun setJoplinApiToken(token: String)
+
+    suspend fun setJoplinSyncEnabled(enabled: Boolean)
+
+    val syncStatus: Flow<SyncStatus>
+
+    suspend fun recordSyncSuccess(timestamp: Long)
+
+    suspend fun recordSyncFailure(message: String)
 }

@@ -4,6 +4,8 @@ plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.compose)
+    alias(libs.plugins.ksp)
+    alias(libs.plugins.androidx.room)
     alias(libs.plugins.ktlint)
 }
 
@@ -137,6 +139,13 @@ android {
     }
 }
 
+// Schémas Room exportés par KSP, un dossier par flavor : les tâches KSP de `staging` et `production`
+// ne doivent pas écrire en parallèle dans le même dossier.
+room {
+    schemaDirectory("staging", "$projectDir/schemas/staging")
+    schemaDirectory("production", "$projectDir/schemas/production")
+}
+
 ktlint {
     version.set("1.3.1")
     android.set(true)
@@ -175,6 +184,9 @@ dependencies {
 
     implementation(libs.androidx.work.runtime.ktx)
     implementation(libs.androidx.datastore.preferences)
+    implementation(libs.androidx.room.runtime)
+    implementation(libs.androidx.room.ktx)
+    ksp(libs.androidx.room.compiler)
     implementation(libs.lielugit.updater)
     implementation(libs.kotlinx.coroutines.android)
 
