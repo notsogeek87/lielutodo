@@ -15,16 +15,8 @@ class JoplinJsonTest {
 
     @Test
     fun parseDeltaPageLitItemsHasMoreEtCursor() {
-        val page =
-            JSONObject()
-                .put(
-                    "items",
-                    JSONArray().put(
-                        JSONObject().put("item_name", "notes/abc.md").put("type", 2).put("updated_time", 123L),
-                    ),
-                )
-                .put("has_more", true)
-                .put("cursor", "cur-9")
+        val change = JSONObject().put("item_name", "notes/abc.md").put("type", 2).put("updated_time", 123L)
+        val page = JSONObject().put("items", JSONArray().put(change)).put("has_more", true).put("cursor", "cur-9")
 
         val parsed = JoplinJson.parseDeltaPage(page)
 
