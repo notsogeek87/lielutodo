@@ -93,8 +93,10 @@ class NotesSync(
                 )
             }
             for (id in plan.toDeleteLocal) notes.deleteById(id)
+            // Diagnostic (échantillons + brut) seulement s'il n'y a encore aucune note en local.
+            val localEmpty = notes.getAllActive().isEmpty()
             val rawDelta =
-                if (plan.toApplyRemote.isEmpty()) {
+                if (plan.toApplyRemote.isEmpty() && localEmpty) {
                     runCatching { api.debugRawDelta().take(300) }.getOrNull()
                 } else {
                     null
@@ -106,7 +108,7 @@ class NotesSync(
                 pulled = plan.toApplyRemote.size,
                 deleted = plan.toDeleteRemote.size + plan.toDeleteLocal.size,
                 changesSeen = changesSeen,
-                samples = samples,
+                samples = if (localEmpty) samples else emptyList(),
                 usedFallback = usedFallback,
                 rawDelta = rawDelta,
             )
