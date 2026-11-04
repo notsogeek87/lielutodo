@@ -60,8 +60,20 @@ class NotesSync(
             val (pulled, remoteDeleted, defaultFolder, newCursor, changesSeen, samples, usedFallback) = pull
             val plan = SyncPlanner.plan(notes.getAllIncludingDeleted(), pulled, remoteDeleted)
             var pushed = 0
+            var folderFallback = defaultFolder
             for (note in plan.toPush) {
-                val parent = note.parentId.ifBlank { defaultFolder }
+                var parent = note.parentId.ifBlank { folderFallback }
+                if (parent.isEmpty()) {
+                    // Aucun carnet connu : on en cherche un via la racine avant d'écrire.
+                    folderFallback = findFirstFolder(api)
+                    parent = folderFallback
+                }
+                if (parent.isEmpty()) {
+                    return fail(
+                        "Aucun carnet Joplin trouvé sur le serveur : la note « ${note.title.ifBlank { "Sans titre" } } » " +
+                            "n'a pas été envoyée (Joplin exige un carnet).",
+                    )
+                }
                 val updatedMs = clock()
                 val itemName = pull.nameById[note.id] ?: "${note.id}.md"
                 val item =
@@ -240,6 +252,17 @@ class NotesSync(
             if (!children.hasMore) break
             page++
         }
+    }
+
+    /** Premier carnet trouvé à la racine (repli si le delta n'en contenait pas). */
+    private suspend fun findFirstFolder(api: JoplinApi): String {
+        val children = api.rootChildren(1)
+        for (change in children.items) {
+            if (!change.name.endsWith(".info")) continue
+            val parsed = JoplinParser.parse(api.itemContent(change.name))
+            if (parsed != null && parsed.type == 2) return parsed.id
+        }
+        return ""
     }
 
     private data class PullResult(
