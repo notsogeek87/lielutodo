@@ -102,7 +102,7 @@ class NotesSyncTest {
             val result = sync.syncNow()
 
             assertTrue(result is SyncResult.Success)
-            val envoye = api.puts.getValue("notes/$id.md")
+            val envoye = api.puts.getValue("$id.md")
             assertTrue(envoye.contains("type_: 1"))
             assertTrue(envoye.startsWith("Locale\n\ncorps\n\n"))
             assertEquals(false, notes.getById(id)?.dirty)
@@ -137,7 +137,7 @@ class NotesSyncTest {
 
             sync.syncNow()
 
-            assertEquals(listOf("notes/$id.md"), api.deletes)
+            assertEquals(listOf("$id.md"), api.deletes)
             assertNull(notes.getById(id))
         }
 
