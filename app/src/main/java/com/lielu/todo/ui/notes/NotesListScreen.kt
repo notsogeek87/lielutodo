@@ -14,6 +14,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Checklist
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material3.AlertDialog
@@ -50,6 +51,7 @@ import com.lielu.todo.ui.formatDateTime
 fun NotesListScreen(
     viewModel: NotesViewModel,
     onNoteClick: (String) -> Unit,
+    onTasksClick: () -> Unit,
     onSettingsClick: () -> Unit,
 ) {
     val context = LocalContext.current
@@ -76,6 +78,9 @@ fun NotesListScreen(
             TopAppBar(
                 title = { Text(stringResource(R.string.app_name)) },
                 actions = {
+                    IconButton(onClick = onTasksClick) {
+                        Icon(Icons.Default.Checklist, contentDescription = "Tâches Vikunja")
+                    }
                     IconButton(onClick = viewModel::onSyncClicked, enabled = syncEnabled) {
                         Icon(Icons.Default.Sync, contentDescription = "Synchroniser avec Joplin")
                     }

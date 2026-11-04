@@ -19,7 +19,7 @@ import com.lielu.todo.data.settings.ServiceConnection
 import com.lielu.todo.data.settings.SettingsRepository
 import com.lielu.todo.data.settings.SyncStatus
 import com.lielu.todo.data.settings.ThemeMode
-import com.lielu.todo.data.vikunja.VikunjaChecker
+import com.lielu.todo.data.vikunja.VikunjaApi
 import com.lielu.todo.ui.describeImport
 import com.lielu.todo.work.AutoBackupScheduler
 import kotlinx.coroutines.flow.Flow
@@ -57,7 +57,7 @@ class SettingsViewModel(
     private val updateManager: UpdateManager,
     val updatesEnabled: Boolean,
     private val notesSync: NotesSync,
-    private val vikunjaChecker: VikunjaChecker,
+    private val vikunjaApi: VikunjaApi,
 ) : ViewModel() {
     /** État brut de la bibliothèque ; l'écran le dessine à sa façon. */
     val updateState = updateManager.state
@@ -216,7 +216,7 @@ class SettingsViewModel(
             opState.value = OpState(inProgress = true)
             val message =
                 try {
-                    val user = vikunjaChecker.testConnection(uiState.value.vikunja)
+                    val user = vikunjaApi.testConnection(uiState.value.vikunja)
                     "Connexion Vikunja OK (utilisateur : $user)."
                 } catch (e: Exception) {
                     "Échec de la connexion Vikunja : ${e.message}"

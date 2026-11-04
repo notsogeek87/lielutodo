@@ -16,9 +16,12 @@ import com.lielu.todo.ui.notes.NotesListScreen
 import com.lielu.todo.ui.notes.NotesViewModel
 import com.lielu.todo.ui.settings.SettingsScreen
 import com.lielu.todo.ui.settings.SettingsViewModel
+import com.lielu.todo.ui.tasks.TasksScreen
+import com.lielu.todo.ui.tasks.TasksViewModel
 
 object AppDestinations {
     const val NOTES = "notes"
+    const val TASKS = "tasks"
     const val NOTE_EDIT = "note_edit/{noteId}"
     const val SETTINGS = "settings"
 
@@ -49,7 +52,25 @@ fun AppNavHost(container: AppContainer) {
             NotesListScreen(
                 viewModel = viewModel,
                 onNoteClick = { noteId -> navController.navigate(AppDestinations.noteEdit(noteId)) },
+                onTasksClick = { navController.navigate(AppDestinations.TASKS) },
                 onSettingsClick = { navController.navigate(AppDestinations.SETTINGS) },
+            )
+        }
+
+        composable(AppDestinations.TASKS) { entry ->
+            val viewModel: TasksViewModel =
+                viewModel(
+                    entry,
+                    factory =
+                        viewModelFactory {
+                            initializer {
+                                TasksViewModel(container.settingsRepository, container.vikunjaApi)
+                            }
+                        },
+                )
+            TasksScreen(
+                viewModel = viewModel,
+                onBackClick = { navController.popBackStack() },
             )
         }
 
@@ -94,7 +115,7 @@ fun AppNavHost(container: AppContainer) {
                                     container.updateManager,
                                     container.updatesEnabled,
                                     container.notesSync,
-                                    container.vikunjaChecker,
+                                    container.vikunjaApi,
                                 )
                             }
                         },
