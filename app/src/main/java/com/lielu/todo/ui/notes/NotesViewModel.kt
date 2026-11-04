@@ -52,14 +52,13 @@ class NotesViewModel(
             .map { it.syncEnabled && it.isConfigured }
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
 
-    /** Services connectés affichés sur la page d'accueil (Joplin avec son statut de synchro, Vikunja, Koplion). */
+    /** Services connectés affichés sur la page d'accueil (Joplin avec son statut de synchro, Vikunja). */
     val connections: StateFlow<List<ConnectionSummary>> =
         combine(
             settingsRepository.joplin,
             settingsRepository.syncStatus,
             settingsRepository.vikunja,
-            settingsRepository.koplion,
-        ) { joplin, syncStatus, vikunja, koplion ->
+        ) { joplin, syncStatus, vikunja ->
             listOf(
                 ConnectionSummary(
                     name = "Joplin",
@@ -74,7 +73,6 @@ class NotesViewModel(
                         },
                 ),
                 ConnectionSummary("Vikunja", vikunja.serverUrl, vikunja.isConfigured),
-                ConnectionSummary("Koplion", koplion.serverUrl, koplion.isConfigured),
             )
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 

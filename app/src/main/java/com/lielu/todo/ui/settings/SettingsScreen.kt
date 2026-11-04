@@ -181,11 +181,6 @@ fun SettingsScreen(
                 connection = uiState.vikunja,
                 onChanged = viewModel::onVikunjaChanged,
             )
-            ServiceConnectionSection(
-                title = "Koplion",
-                connection = uiState.koplion,
-                onChanged = viewModel::onKoplionChanged,
-            )
 
             HorizontalDivider(modifier = Modifier.padding(vertical = 16.dp))
 

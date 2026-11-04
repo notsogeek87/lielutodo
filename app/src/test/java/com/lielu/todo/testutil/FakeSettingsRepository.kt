@@ -19,7 +19,6 @@ class FakeSettingsRepository : SettingsRepository {
     private val joplinState = MutableStateFlow(JoplinSettings())
     private val syncState = MutableStateFlow(SyncStatus())
     private val vikunjaState = MutableStateFlow(ServiceConnection())
-    private val koplionState = MutableStateFlow(ServiceConnection())
 
     override val themeMode: Flow<ThemeMode> = theme
 
@@ -89,11 +88,5 @@ class FakeSettingsRepository : SettingsRepository {
 
     override suspend fun setVikunja(connection: ServiceConnection) {
         vikunjaState.value = connection
-    }
-
-    override val koplion: Flow<ServiceConnection> = koplionState
-
-    override suspend fun setKoplion(connection: ServiceConnection) {
-        koplionState.value = connection
     }
 }

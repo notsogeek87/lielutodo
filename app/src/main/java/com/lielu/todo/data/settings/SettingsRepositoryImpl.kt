@@ -131,13 +131,6 @@ class SettingsRepositoryImpl(
         dataStore.edit { putServiceConnection(it, "vikunja", connection) }
     }
 
-    override val koplion: Flow<ServiceConnection> =
-        dataStore.data.map { prefs -> serviceConnection(prefs, "koplion") }
-
-    override suspend fun setKoplion(connection: ServiceConnection) {
-        dataStore.edit { putServiceConnection(it, "koplion", connection) }
-    }
-
     private fun serviceConnection(
         prefs: Preferences,
         prefix: String,

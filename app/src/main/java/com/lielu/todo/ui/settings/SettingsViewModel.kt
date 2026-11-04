@@ -40,7 +40,6 @@ data class SettingsUiState(
     val joplin: JoplinSettings = JoplinSettings(),
     val syncStatus: SyncStatus = SyncStatus(),
     val vikunja: ServiceConnection = ServiceConnection(),
-    val koplion: ServiceConnection = ServiceConnection(),
     val message: String? = null,
 )
 
@@ -81,16 +80,10 @@ class SettingsViewModel(
             )
         }
 
-    private val servicesState: Flow<Pair<ServiceConnection, ServiceConnection>> =
-        combine(settingsRepository.vikunja, settingsRepository.koplion) { vikunja, koplion ->
-            vikunja to koplion
-        }
-
     val uiState: StateFlow<SettingsUiState> =
-        combine(baseState, servicesState, opState) { base, services, op ->
+        combine(baseState, settingsRepository.vikunja, opState) { base, vikunja, op ->
             base.copy(
-                vikunja = services.first,
-                koplion = services.second,
+                vikunja = vikunja,
                 backupInProgress = op.inProgress,
                 message = op.message,
             )
@@ -214,10 +207,6 @@ class SettingsViewModel(
 
     fun onVikunjaChanged(connection: ServiceConnection) {
         viewModelScope.launch { settingsRepository.setVikunja(connection) }
-    }
-
-    fun onKoplionChanged(connection: ServiceConnection) {
-        viewModelScope.launch { settingsRepository.setKoplion(connection) }
     }
 
     fun onSyncNowRequested() {
