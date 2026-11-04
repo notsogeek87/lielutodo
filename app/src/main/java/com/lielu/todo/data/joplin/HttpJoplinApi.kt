@@ -10,7 +10,7 @@ import java.net.URI
 /**
  * [JoplinApi] sur l'API Data de Joplin Server, en HTTP natif (aucune dépendance ajoutée). Authentification
  * par e-mail + mot de passe, comme le client officiel : `POST <serverUrl>/api/sessions` renvoie un id de
- * session, envoyé ensuite en en-tête `X-API-AUTH` sur chaque appel `/api/*`.
+ * session, envoyé ensuite en en-tête `X-API-AUTH` sur chaque appel de l'API Data.
  */
 class HttpJoplinApi(
     serverUrl: String,
