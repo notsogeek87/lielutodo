@@ -36,7 +36,6 @@ class VikunjaJsonTest {
                 mapOf(2L to "Courses"),
             )
 
-
         assertEquals(7L, task.id)
         assertEquals("Acheter du lait", task.title)
         assertEquals(false, task.done)
