@@ -51,6 +51,15 @@ class JoplinParserTest {
     }
 
     @Test
+    fun parseTolereUnContenuVide() {
+        val item = JoplinParser.parse("id: ${"a".repeat(32)}\ntype_: 1\n")
+
+        assertNotNull(item)
+        assertEquals("", item!!.title)
+        assertEquals("", item.body)
+    }
+
+    @Test
     fun serializeRespecteLeFormat() {
         val texte = JoplinParser.serialize("a".repeat(32), "b".repeat(32), "Titre", "Corps", 1793728870000L)
 

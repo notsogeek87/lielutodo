@@ -47,7 +47,12 @@ object JoplinParser {
         if (id.length != 32 || id.any { !it.isDigit() && it !in 'a'..'f' && it !in 'A'..'F' }) return null
         val title = contentLines.firstOrNull().orEmpty()
         val bodyStart = if (contentLines.size > 1 && contentLines[1].isBlank()) 2 else 1
-        val body = contentLines.subList(bodyStart, contentLines.size).joinToString("\n")
+        val body =
+            if (bodyStart >= contentLines.size) {
+                ""
+            } else {
+                contentLines.subList(bodyStart, contentLines.size).joinToString("\n")
+            }
         return Item(
             id = id,
             type = type,
