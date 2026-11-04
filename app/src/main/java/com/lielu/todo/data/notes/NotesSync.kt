@@ -49,7 +49,13 @@ class NotesSync(
                         "Vérifiez l'adresse (ex. https://notes.lielu.eu, sans /api à la fin).",
                 )
             }
-            val (pulled, remoteDeleted, defaultFolder, newCursor, changesSeen, samples, usedFallback) = pullChanges(api)
+            var pull = pullChanges(api)
+            if (pull.usedCursor && pull.changesSeen == 0) {
+                // Delta vide avec un cursor déjà posé : on l'efface et on refait une synchro complète.
+                settings.setJoplinCursor(null)
+                pull = pullChanges(api)
+            }
+            val (pulled, remoteDeleted, defaultFolder, newCursor, changesSeen, samples, usedFallback) = pull
             val plan = SyncPlanner.plan(notes.getAllIncludingDeleted(), pulled, remoteDeleted)
             var pushed = 0
             for (note in plan.toPush) {
@@ -184,6 +190,7 @@ class NotesSync(
             changesSeen,
             samples,
             usedFallback,
+            initialCursor != null,
         )
     }
 
@@ -219,6 +226,7 @@ class NotesSync(
         val changesSeen: Int,
         val samples: List<String>,
         val usedFallback: Boolean,
+        val usedCursor: Boolean,
     )
 
     private suspend fun fail(message: String): SyncResult {
