@@ -218,7 +218,7 @@ private fun wrapLastLine(
     prefix: String,
     suffix: String,
 ): String {
-    val lines = body.split('\n')
+    val lines = body.split('\n').toMutableList()
     val last = lines.indexOfLast { it.isNotBlank() }
     if (last < 0) return prefix + suffix // rien à entourer : on pose juste les marqueurs
     lines[last] = "$prefix${lines[last]}$suffix"
