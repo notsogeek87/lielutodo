@@ -15,6 +15,8 @@ sealed interface SyncResult {
         val deleted: Int,
         val changesSeen: Int = 0,
         val samples: List<String> = emptyList(),
+        val usedFallback: Boolean = false,
+        val rawDelta: String? = null,
     ) : SyncResult
 
     data class Failure(
@@ -47,7 +49,7 @@ class NotesSync(
                         "Vérifiez l'adresse (ex. https://notes.lielu.eu, sans /api à la fin).",
                 )
             }
-            val (pulled, remoteDeleted, defaultFolder, newCursor, changesSeen, samples) = pullChanges(api)
+            val (pulled, remoteDeleted, defaultFolder, newCursor, changesSeen, samples, usedFallback) = pullChanges(api)
             val plan = SyncPlanner.plan(notes.getAllIncludingDeleted(), pulled, remoteDeleted)
             var pushed = 0
             for (note in plan.toPush) {
@@ -84,6 +86,12 @@ class NotesSync(
                 )
             }
             for (id in plan.toDeleteLocal) notes.deleteById(id)
+            val rawDelta =
+                if (plan.toApplyRemote.isEmpty()) {
+                    runCatching { api.debugRawDelta().take(300) }.getOrNull()
+                } else {
+                    null
+                }
             settings.setJoplinCursor(newCursor)
             settings.recordSyncSuccess(clock())
             SyncResult.Success(
@@ -92,6 +100,8 @@ class NotesSync(
                 deleted = plan.toDeleteRemote.size + plan.toDeleteLocal.size,
                 changesSeen = changesSeen,
                 samples = samples,
+                usedFallback = usedFallback,
+                rawDelta = rawDelta,
             )
         } catch (e: Exception) {
             fail("Échec de la synchronisation : ${e.message}")
@@ -104,7 +114,8 @@ class NotesSync(
      * enfants de la racine (certaines versions de serveur ne remplissent pas le delta initial).
      */
     private suspend fun pullChanges(api: JoplinApi): PullResult {
-        var cursor: String? = settings.joplinCursor.first()
+        val initialCursor = settings.joplinCursor.first()
+        var cursor: String? = initialCursor
         var didResync = false
         val pulled = LinkedHashMap<String, RemoteNote>()
         val remoteDeleted = mutableSetOf<String>()
@@ -159,11 +170,13 @@ class NotesSync(
             if (page.cursor != null) cursor = page.cursor
             if (!page.hasMore) break
         }
-        if (cursor == settings.joplinCursor.first() && changesSeen == 0) {
+        var usedFallback = false
+        if (initialCursor == null && changesSeen == 0) {
             // Delta vide en synchro complète : repli sur la liste des enfants de la racine.
+            usedFallback = true
             listRootChildren(api, pulled, remoteDeleted, samples)
         }
-        return PullResult(pulled.values.toList(), remoteDeleted, defaultFolder, cursor, changesSeen, samples)
+        return PullResult(pulled.values.toList(), remoteDeleted, defaultFolder, cursor, changesSeen, samples, usedFallback)
     }
 
     /** Repli : liste paginée de `GET /api/items/root:/:/children`, mêmes filtres que le delta. */
@@ -197,6 +210,7 @@ class NotesSync(
         val cursor: String?,
         val changesSeen: Int,
         val samples: List<String>,
+        val usedFallback: Boolean,
     )
 
     private suspend fun fail(message: String): SyncResult {

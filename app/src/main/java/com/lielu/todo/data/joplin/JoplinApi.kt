@@ -46,6 +46,9 @@ interface JoplinApi {
     /** Enfants paginés de la racine (repli si le delta initial est vide). */
     suspend fun rootChildren(page: Int): DeltaPage
 
+    /** Première page du delta en JSON brut (diagnostic, tronqué par l'appelant). */
+    suspend fun debugRawDelta(): String
+
     /** Contenu sérialisé brut d'un item (ex. « notes/<id>.md »). */
     suspend fun itemContent(name: String): String
 

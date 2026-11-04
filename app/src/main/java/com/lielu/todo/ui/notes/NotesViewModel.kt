@@ -48,6 +48,9 @@ class NotesViewModel(
                             if (result.pulled == 0 && result.changesSeen > 0) {
                                 append(" — ex. ${result.samples.joinToString { "« $it »" }}")
                             }
+                            if (result.pulled == 0 && result.rawDelta != null) {
+                                append(" — brut: ${result.rawDelta}")
+                            }
                         }
                     is SyncResult.Failure -> result.message
                 }

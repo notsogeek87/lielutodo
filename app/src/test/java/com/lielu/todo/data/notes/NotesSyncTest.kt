@@ -38,6 +38,8 @@ class NotesSyncTest {
 
         override suspend fun rootChildren(page: Int): DeltaPage = DeltaPage(emptyList(), hasMore = false, cursor = null)
 
+        override suspend fun debugRawDelta(): String = "{}"
+
         override suspend fun itemContent(name: String): String = contents.getValue(name)
 
         override suspend fun putContent(
@@ -184,6 +186,8 @@ class NotesSyncTest {
                     override suspend fun delta(cursor: String?): DeltaPage = error("inattendu")
 
                     override suspend fun rootChildren(page: Int): DeltaPage = error("inattendu")
+
+                    override suspend fun debugRawDelta(): String = error("inattendu")
 
                     override suspend fun itemContent(name: String): String = error("inattendu")
 
