@@ -1,5 +1,6 @@
 package com.lielu.todo.ui.notes
 
+import android.widget.TextView
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -33,7 +34,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
-import android.widget.TextView
 import io.noties.markwon.Markwon
 
 @OptIn(ExperimentalMaterial3Api::class)
