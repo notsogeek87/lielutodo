@@ -195,6 +195,7 @@ class NotesSyncTest {
             val result = sync.syncNow()
 
             assertTrue(result is SyncResult.Failure)
-            assertTrue(settings.syncStatus.first().lastError!!.contains("réseau coupé"))
+            val lastError = settings.syncStatus.first().lastError
+            assertTrue(lastError!!.contains("réseau coupé"))
         }
 }
