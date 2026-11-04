@@ -63,8 +63,7 @@ class VikunjaApi {
             tasks.sortedWith(compareBy({ it.done }, { it.dueDate ?: "9999-12-31" }))
         }
 
-    private fun baseUrl(connection: ServiceConnection): String =
-        connection.serverUrl.trim().trimEnd('/') + "/api/v1"
+    private fun baseUrl(connection: ServiceConnection): String = connection.serverUrl.trim().trimEnd('/') + "/api/v1"
 
     private fun login(
         baseUrl: String,

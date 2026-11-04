@@ -13,9 +13,13 @@ import kotlinx.coroutines.launch
 sealed interface TasksUiState {
     data object Loading : TasksUiState
 
-    data class Success(val tasks: List<VikunjaTask>) : TasksUiState
+    data class Success(
+        val tasks: List<VikunjaTask>,
+    ) : TasksUiState
 
-    data class Error(val message: String) : TasksUiState
+    data class Error(
+        val message: String,
+    ) : TasksUiState
 }
 
 class TasksViewModel(
