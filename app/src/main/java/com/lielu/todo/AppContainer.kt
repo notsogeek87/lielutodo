@@ -7,8 +7,8 @@ import com.lielu.githubupdater.UpdateManager
 import com.lielu.todo.backup.AutoBackupRunner
 import com.lielu.todo.backup.BackupManager
 import com.lielu.todo.backup.BackupSection
-import com.lielu.todo.backup.SafBackupFolder
 import com.lielu.todo.backup.NoteBackupSection
+import com.lielu.todo.backup.SafBackupFolder
 import com.lielu.todo.backup.SettingsBackupSection
 import com.lielu.todo.backup.TodoBackupSection
 import com.lielu.todo.calendar.CalendarSync
