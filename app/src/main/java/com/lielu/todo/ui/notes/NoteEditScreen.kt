@@ -164,7 +164,7 @@ fun NoteEditScreen(
                     MarkdownButton("•") { viewModel.onBodyChanged(appendBlock(body, "- élément")) }
                     MarkdownButton("☐") { viewModel.onBodyChanged(appendBlock(body, "- [ ] tâche")) }
                     MarkdownButton("</>") { viewModel.onBodyChanged(appendBlock(body, "`code`")) }
-                    MarkdownButton("🔗") { viewModel.onBodyChanged(appendBlock(body, "[texte](https://…))") }
+                    MarkdownButton("🔗") { viewModel.onBodyChanged(appendBlock(body, "[texte](https://…)")) }
                     MarkdownButton("❝") { viewModel.onBodyChanged(appendBlock(body, "> citation")) }
                 }
                 OutlinedTextField(
