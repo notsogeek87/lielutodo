@@ -41,7 +41,7 @@ class HttpJoplinApi(
                 val response =
                     requestJson(
                         "GET",
-                        "/items/root:/notes:/children?limit=100&page=$page",
+                        "/items/root:/notes/*:/children?limit=100&page=$page",
                         authenticate = true,
                     )
                 val items = response.optJSONArray("items") ?: JSONArray()
