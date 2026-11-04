@@ -107,7 +107,13 @@ class HttpJoplinApi(
         item: JSONObject,
         content: String,
     ): RemoteNote {
-        val firstLine = content.lineSequence().firstOrNull().orEmpty().removePrefix("#").trim()
+        val firstLine =
+            content
+                .lineSequence()
+                .firstOrNull()
+                .orEmpty()
+                .removePrefix("#")
+                .trim()
         return RemoteNote(
             id = id,
             title = firstLine,
@@ -117,8 +123,7 @@ class HttpJoplinApi(
         )
     }
 
-    private fun itemNameToId(itemName: String): String =
-        itemName.removePrefix("notes/").removeSuffix(".md")
+    private fun itemNameToId(itemName: String): String = itemName.removePrefix("notes/").removeSuffix(".md")
 
     /** Ouvre une session avec l'e-mail et le mot de passe ; lève [JoplinApiException] si refusé (403). */
     private fun login(): String {
