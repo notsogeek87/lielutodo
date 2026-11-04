@@ -47,7 +47,7 @@ class NotesSyncTest {
         }
     }
 
-    private fun configuredSettings() =
+    private suspend fun configuredSettings() =
         FakeSettingsRepository().apply {
             setJoplinServerUrl("https://notes.lielu.eu")
             setJoplinApiToken("token-de-test")

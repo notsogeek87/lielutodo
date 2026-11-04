@@ -6,6 +6,7 @@ import com.lielu.todo.data.notes.NotesRepository
 import com.lielu.todo.data.notes.NotesSync
 import com.lielu.todo.data.settings.JoplinSettings
 import com.lielu.todo.data.settings.SettingsRepository
+import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
@@ -15,6 +16,7 @@ import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.launch
 
+@OptIn(FlowPreview::class)
 class NoteEditViewModel(
     private val noteId: String,
     private val notesRepository: NotesRepository,

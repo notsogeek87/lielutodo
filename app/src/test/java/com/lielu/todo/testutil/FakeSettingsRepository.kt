@@ -15,8 +15,8 @@ class FakeSettingsRepository : SettingsRepository {
     private val auto = MutableStateFlow(AutoBackupSettings())
     private val status = MutableStateFlow(BackupStatus())
     private val welcome = MutableStateFlow(false)
-    private val joplin = MutableStateFlow(JoplinSettings())
-    private val sync = MutableStateFlow(SyncStatus())
+    private val joplinState = MutableStateFlow(JoplinSettings())
+    private val syncState = MutableStateFlow(SyncStatus())
 
     override val themeMode: Flow<ThemeMode> = theme
 
@@ -54,27 +54,27 @@ class FakeSettingsRepository : SettingsRepository {
         welcome.value = true
     }
 
-    override val joplin: Flow<JoplinSettings> = joplin
+    override val joplin: Flow<JoplinSettings> = joplinState
 
     override suspend fun setJoplinServerUrl(url: String) {
-        joplin.value = joplin.value.copy(serverUrl = url.trim())
+        joplinState.value = joplinState.value.copy(serverUrl = url.trim())
     }
 
     override suspend fun setJoplinApiToken(token: String) {
-        joplin.value = joplin.value.copy(apiToken = token.trim())
+        joplinState.value = joplinState.value.copy(apiToken = token.trim())
     }
 
     override suspend fun setJoplinSyncEnabled(enabled: Boolean) {
-        joplin.value = joplin.value.copy(syncEnabled = enabled)
+        joplinState.value = joplinState.value.copy(syncEnabled = enabled)
     }
 
-    override val syncStatus: Flow<SyncStatus> = sync
+    override val syncStatus: Flow<SyncStatus> = syncState
 
     override suspend fun recordSyncSuccess(timestamp: Long) {
-        sync.value = SyncStatus(lastSuccessAt = timestamp)
+        syncState.value = SyncStatus(lastSuccessAt = timestamp)
     }
 
     override suspend fun recordSyncFailure(message: String) {
-        sync.value = sync.value.copy(lastError = message)
+        syncState.value = syncState.value.copy(lastError = message)
     }
 }
