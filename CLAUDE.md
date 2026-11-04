@@ -122,5 +122,22 @@ Changer de signature casse la mise à jour (désinstallation nécessaire).
 
 - `ktlint` (config par défaut, `android.set(true)`, `ignoreFailures.set(false)`), `.editorconfig` : 4 espaces,
   ligne max 120, exception de nommage pour les fonctions `@Composable`. `kotlin.code.style=official`.
+  Règles qui ont coûté des builds CI (messages exacts) :
+  - toute déclaration (fonction, constructeur primaire) à **2 paramètres ou plus** se déroule un paramètre par
+    ligne, même courte (« Newline expected after opening parenthesis ») ;
+  - corps d'expression `= …` : s'il tient sur une seule ligne, il va sur la ligne de la signature
+    (`) = Note(...)`, « First line of body expression fits on same line as function signature ») ; s'il est
+    multi-ligne, il commence sur une **nouvelle** ligne (« A multiline expression should start on a new line ») ;
+  - un bloc `{ return x }` doit devenir un corps d'expression (« Function body should be replaced with body
+    expression ») ;
+  - chaînes d'appels : si la chaîne tient sur la ligne, aucun retour avant le `.` (« Unexpected newline before
+    '.' ») ; chaîne longue (4 appels chaînés et plus) : retour avant chaque `.` (« Expected newline before '.' ») ;
+    l'appel terminal après une lambda s'attache au `}` fermant (`}.stateIn(...)`) ;
+  - `debounce`/`conflate`… sont `FlowPreview` : poser `@OptIn(FlowPreview::class)` sur le ViewModel ;
+  - **les commentaires bloc Kotlin s'imbriquent** : ne jamais écrire la séquence `/*` dans un `/** … */`
+    (ex. `` `/api/*` ``) — le commentaire ne se ferme plus et ktlint « failed to parse file ».
+- En local sans réseau (session web), ktlint et Gradle ne tournent pas : ne pas présenter un changement non
+  compilé comme vérifié — la CI de la branche valide (ktlint → tests → assembleRelease).
+- Room : la transaction atomique s'importe explicitement (`import androidx.room.withTransaction`).
 - Aucune couleur en dur dans un écran : tout passe par `ui/theme/Theme.kt`.
 - Textes de l'interface en français.

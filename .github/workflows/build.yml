@@ -86,6 +86,15 @@ jobs:
       - name: Build release APKs (staging + production)
         run: ./gradlew assembleRelease --no-daemon
 
+      # Hors branches de livraison (main/staging), l'APK n'est pas publie en release :
+      # on le joint en artefact du run pour pouvoir le telecharger et tester.
+      - name: Upload APK as run artifact (work branches)
+        if: env.PUBLISH == 'false'
+        uses: actions/upload-artifact@v4
+        with:
+          name: apk-${{ steps.ids.outputs.ref_slug }}-${{ github.run_number }}
+          path: app/build/outputs/apk/*/release/*.apk
+
       - name: Rename APKs
         if: env.PUBLISH == 'true'
         run: |

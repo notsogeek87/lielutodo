@@ -10,12 +10,19 @@ import com.lielu.githubupdater.UpdateManager
 import com.lielu.todo.backup.AutoBackupResult
 import com.lielu.todo.backup.AutoBackupRunner
 import com.lielu.todo.backup.BackupManager
+import com.lielu.todo.data.notes.NotesSync
+import com.lielu.todo.data.notes.SyncResult
 import com.lielu.todo.data.settings.AutoBackupSettings
 import com.lielu.todo.data.settings.BackupStatus
+import com.lielu.todo.data.settings.JoplinSettings
+import com.lielu.todo.data.settings.ServiceConnection
 import com.lielu.todo.data.settings.SettingsRepository
+import com.lielu.todo.data.settings.SyncStatus
 import com.lielu.todo.data.settings.ThemeMode
+import com.lielu.todo.data.vikunja.VikunjaApi
 import com.lielu.todo.ui.describeImport
 import com.lielu.todo.work.AutoBackupScheduler
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -31,6 +38,9 @@ data class SettingsUiState(
     val autoBackup: AutoBackupSettings = AutoBackupSettings(),
     val backupStatus: BackupStatus = BackupStatus(),
     val backupInProgress: Boolean = false,
+    val joplin: JoplinSettings = JoplinSettings(),
+    val syncStatus: SyncStatus = SyncStatus(),
+    val vikunja: ServiceConnection = ServiceConnection(),
     val message: String? = null,
 )
 
@@ -46,23 +56,36 @@ class SettingsViewModel(
     private val scheduler: AutoBackupScheduler,
     private val updateManager: UpdateManager,
     val updatesEnabled: Boolean,
+    private val notesSync: NotesSync,
+    private val vikunjaApi: VikunjaApi,
 ) : ViewModel() {
     /** État brut de la bibliothèque ; l'écran le dessine à sa façon. */
     val updateState = updateManager.state
 
     private val opState = MutableStateFlow(OpState())
 
-    val uiState: StateFlow<SettingsUiState> =
+    // combine() typé s'arrête à 5 flux : on groupe (réglages de base), (autres services), puis l'état d'opération.
+    private val baseState: Flow<SettingsUiState> =
         combine(
             settingsRepository.themeMode,
             settingsRepository.autoBackup,
             settingsRepository.backupStatus,
-            opState,
-        ) { themeMode, autoBackup, status, op ->
+            settingsRepository.joplin,
+            settingsRepository.syncStatus,
+        ) { themeMode, autoBackup, status, joplin, syncStatus ->
             SettingsUiState(
                 themeMode = themeMode,
                 autoBackup = autoBackup,
                 backupStatus = status,
+                joplin = joplin,
+                syncStatus = syncStatus,
+            )
+        }
+
+    val uiState: StateFlow<SettingsUiState> =
+        combine(baseState, settingsRepository.vikunja, opState) { base, vikunja, op ->
+            base.copy(
+                vikunja = vikunja,
                 backupInProgress = op.inProgress,
                 message = op.message,
             )
@@ -163,6 +186,54 @@ class SettingsViewModel(
                     describeImport(stream.use { backupManager.importFrom(it) })
                 } catch (e: Exception) {
                     "Échec de la restauration : ${e.message}"
+                }
+            opState.value = OpState(message = message)
+        }
+    }
+
+    fun onJoplinServerUrlChanged(url: String) {
+        viewModelScope.launch { settingsRepository.setJoplinServerUrl(url) }
+    }
+
+    fun onJoplinEmailChanged(email: String) {
+        viewModelScope.launch { settingsRepository.setJoplinEmail(email) }
+    }
+
+    fun onJoplinPasswordChanged(password: String) {
+        viewModelScope.launch { settingsRepository.setJoplinPassword(password) }
+    }
+
+    fun onJoplinSyncToggled(enabled: Boolean) {
+        viewModelScope.launch { settingsRepository.setJoplinSyncEnabled(enabled) }
+    }
+
+    fun onVikunjaChanged(connection: ServiceConnection) {
+        viewModelScope.launch { settingsRepository.setVikunja(connection) }
+    }
+
+    fun onVikunjaTestClicked() {
+        viewModelScope.launch {
+            opState.value = OpState(inProgress = true)
+            val message =
+                try {
+                    val user = vikunjaApi.testConnection(uiState.value.vikunja)
+                    "Connexion Vikunja OK (utilisateur : $user)."
+                } catch (e: Exception) {
+                    "Échec de la connexion Vikunja : ${e.message}"
+                }
+            opState.value = OpState(message = message)
+        }
+    }
+
+    fun onSyncNowRequested() {
+        viewModelScope.launch {
+            opState.value = OpState(inProgress = true)
+            val message =
+                when (val result = notesSync.syncNow()) {
+                    is SyncResult.Success ->
+                        "Synchronisation : ${result.pushed} envoyée(s), ${result.pulled} reçue(s), " +
+                            "${result.deleted} supprimée(s)."
+                    is SyncResult.Failure -> result.message
                 }
             opState.value = OpState(message = message)
         }

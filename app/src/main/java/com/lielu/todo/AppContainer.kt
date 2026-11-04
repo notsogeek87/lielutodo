@@ -1,16 +1,25 @@
 package com.lielu.todo
 
 import android.content.Context
+import androidx.room.Room
 import com.lielu.githubupdater.UpdateConfig
 import com.lielu.githubupdater.UpdateManager
 import com.lielu.todo.backup.AutoBackupRunner
 import com.lielu.todo.backup.BackupManager
 import com.lielu.todo.backup.BackupSection
+import com.lielu.todo.backup.NoteBackupSection
 import com.lielu.todo.backup.SafBackupFolder
 import com.lielu.todo.backup.SettingsBackupSection
+import com.lielu.todo.data.joplin.HttpJoplinApi
+import com.lielu.todo.data.notes.AppDatabase
+import com.lielu.todo.data.notes.Migrations
+import com.lielu.todo.data.notes.NotesRepository
+import com.lielu.todo.data.notes.NotesRepositoryImpl
+import com.lielu.todo.data.notes.NotesSync
 import com.lielu.todo.data.settings.SettingsRepository
 import com.lielu.todo.data.settings.SettingsRepositoryImpl
 import com.lielu.todo.data.settings.settingsDataStore
+import com.lielu.todo.data.vikunja.VikunjaApi
 import com.lielu.todo.work.AutoBackupScheduler
 import com.lielu.todo.work.AutoBackupWorker
 import kotlinx.coroutines.CoroutineScope
@@ -34,6 +43,14 @@ class AppContainer(
 
     val settingsRepository: SettingsRepository = SettingsRepositoryImpl(appContext.settingsDataStore)
 
+    val database: AppDatabase =
+        Room
+            .databaseBuilder(appContext, AppDatabase::class.java, "lielu-todo.db")
+            .addMigrations(*Migrations.ALL)
+            .build()
+
+    val notesRepository: NotesRepository = NotesRepositoryImpl(database)
+
     /**
      * Données incluses dans toute sauvegarde (manuelle ou automatique) et restaurées à l'import.
      * Chaque section a un identifiant stable : le renommer ou le retirer rend les anciennes sauvegardes
@@ -42,7 +59,20 @@ class AppContainer(
     private val backupSections: List<BackupSection> =
         listOf(
             SettingsBackupSection(settingsRepository),
-            // Ex. : InventoryBackupSection(database), voir CLAUDE.md « Brancher les données de l'app ».
+            NoteBackupSection(notesRepository),
+        )
+
+    /** Client Vikunja : test de connexion (Paramètres) et liste des tâches. */
+    val vikunjaApi = VikunjaApi()
+
+    /** Synchronisation lecture/écriture des notes avec le serveur Joplin réglé dans Paramètres. */
+    val notesSync =
+        NotesSync(
+            settings = settingsRepository,
+            notes = notesRepository,
+            apiFactory = { config ->
+                HttpJoplinApi(serverUrl = config.serverUrl, email = config.email, password = config.password)
+            },
         )
 
     val backupManager = BackupManager(backupSections, appId = appContext.packageName)

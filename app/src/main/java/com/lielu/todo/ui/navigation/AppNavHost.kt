@@ -4,37 +4,99 @@ import androidx.compose.runtime.Composable
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
+import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
+import androidx.navigation.navArgument
 import com.lielu.todo.AppContainer
-import com.lielu.todo.ui.init.InitScreen
-import com.lielu.todo.ui.init.InitViewModel
+import com.lielu.todo.ui.notes.NoteEditScreen
+import com.lielu.todo.ui.notes.NoteEditViewModel
+import com.lielu.todo.ui.notes.NotesListScreen
+import com.lielu.todo.ui.notes.NotesViewModel
 import com.lielu.todo.ui.settings.SettingsScreen
 import com.lielu.todo.ui.settings.SettingsViewModel
+import com.lielu.todo.ui.tasks.TasksScreen
+import com.lielu.todo.ui.tasks.TasksViewModel
 
 object AppDestinations {
-    const val INIT = "init"
+    const val NOTES = "notes"
+    const val TASKS = "tasks"
+    const val NOTE_EDIT = "note_edit/{noteId}"
     const val SETTINGS = "settings"
+
+    fun noteEdit(noteId: String) = "note_edit/$noteId"
 }
 
 @Composable
 fun AppNavHost(container: AppContainer) {
     val navController = rememberNavController()
 
-    NavHost(navController = navController, startDestination = AppDestinations.INIT) {
-        composable(AppDestinations.INIT) { entry ->
-            val viewModel: InitViewModel =
+    NavHost(navController = navController, startDestination = AppDestinations.NOTES) {
+        composable(AppDestinations.NOTES) { entry ->
+            val viewModel: NotesViewModel =
                 viewModel(
                     entry,
                     factory =
                         viewModelFactory {
-                            initializer { InitViewModel(container.settingsRepository, container.backupManager) }
+                            initializer {
+                                NotesViewModel(
+                                    container.settingsRepository,
+                                    container.backupManager,
+                                    container.notesRepository,
+                                    container.notesSync,
+                                )
+                            }
                         },
                 )
-            InitScreen(
+            NotesListScreen(
                 viewModel = viewModel,
+                onNoteClick = { noteId -> navController.navigate(AppDestinations.noteEdit(noteId)) },
+                onTasksClick = { navController.navigate(AppDestinations.TASKS) },
                 onSettingsClick = { navController.navigate(AppDestinations.SETTINGS) },
+            )
+        }
+
+        composable(AppDestinations.TASKS) { entry ->
+            val viewModel: TasksViewModel =
+                viewModel(
+                    entry,
+                    factory =
+                        viewModelFactory {
+                            initializer {
+                                TasksViewModel(container.settingsRepository, container.vikunjaApi)
+                            }
+                        },
+                )
+            TasksScreen(
+                viewModel = viewModel,
+                onBackClick = { navController.popBackStack() },
+            )
+        }
+
+        composable(
+            AppDestinations.NOTE_EDIT,
+            arguments = listOf(navArgument("noteId") { type = NavType.StringType }),
+        ) { entry ->
+            val noteId = entry.arguments?.getString("noteId") ?: return@composable
+            val viewModel: NoteEditViewModel =
+                viewModel(
+                    entry,
+                    factory =
+                        viewModelFactory {
+                            initializer {
+                                NoteEditViewModel(
+                                    noteId,
+                                    container.notesRepository,
+                                    container.notesSync,
+                                    container.settingsRepository,
+                                )
+                            }
+                        },
+                )
+            NoteEditScreen(
+                viewModel = viewModel,
+                onBackClick = { navController.popBackStack() },
             )
         }
 
@@ -52,6 +114,8 @@ fun AppNavHost(container: AppContainer) {
                                     container.autoBackupScheduler,
                                     container.updateManager,
                                     container.updatesEnabled,
+                                    container.notesSync,
+                                    container.vikunjaApi,
                                 )
                             }
                         },
