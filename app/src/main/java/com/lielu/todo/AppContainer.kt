@@ -30,6 +30,7 @@ import com.lielu.todo.reminder.planReminders
 import com.lielu.todo.widget.refreshWidgets
 import com.lielu.todo.work.AutoBackupScheduler
 import com.lielu.todo.work.AutoBackupWorker
+import com.lielu.todo.work.NotesSyncWorker
 import com.lielu.todo.work.SyncWorker
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -123,11 +124,12 @@ class AppContainer(
 
     private val collaborationNotifier = CollaborationNotifier(appContext)
 
-    // WorkManager n'accepte qu'une fabrique : on les enchaîne (sauvegarde automatique, synchronisation).
+    // WorkManager n'accepte qu'une fabrique : on les enchaîne (sauvegarde auto, synchro tâches, synchro notes).
     val workerFactory =
         DelegatingWorkerFactory().apply {
             addFactory(AutoBackupWorker.Factory(autoBackupRunner))
             addFactory(SyncWorker.Factory(todoRepository, session))
+            addFactory(NotesSyncWorker.Factory(notesSync))
         }
 
     /** Utilisé par « Sauvegarder maintenant » et « Restaurer la dernière sauvegarde » (voir SettingsViewModel). */
@@ -172,6 +174,7 @@ class AppContainer(
     @OptIn(FlowPreview::class)
     fun start() {
         SyncWorker.schedule(appContext)
+        NotesSyncWorker.schedule(appContext)
         reminderScheduler.scheduleDaily()
         applicationScope.launch {
             todoRepository.state

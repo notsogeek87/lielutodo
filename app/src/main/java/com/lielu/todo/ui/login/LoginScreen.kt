@@ -17,11 +17,14 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -38,6 +41,8 @@ import com.lielu.todo.R
 import com.lielu.todo.data.api.ApiException
 import com.lielu.todo.data.api.SessionStore
 import com.lielu.todo.data.api.VikunjaClient
+import com.lielu.todo.data.settings.JoplinSettings
+import com.lielu.todo.data.settings.SettingsRepository
 import com.lielu.todo.data.todo.TodoRepository
 import kotlinx.coroutines.launch
 import java.io.IOException
@@ -47,11 +52,12 @@ fun LoginScreen(
     session: SessionStore,
     client: VikunjaClient,
     repository: TodoRepository,
+    settings: SettingsRepository,
 ) {
     val scope = rememberCoroutineScope()
     var server by remember { mutableStateOf(session.baseUrl) }
     var username by remember { mutableStateOf(session.username) }
-    var showServer by remember { mutableStateOf(session.baseUrl.isBlank()) }
+    var showAdvanced by remember { mutableStateOf(session.baseUrl.isBlank()) }
     var password by remember { mutableStateOf("") }
     var totp by remember { mutableStateOf("") }
     var needsTotp by remember { mutableStateOf(false) }
@@ -59,6 +65,16 @@ fun LoginScreen(
     var error by remember { mutableStateOf<String?>(null) }
     // Connexion réussie à un AUTRE compte alors que le précédent a des modifications non envoyées : à confirmer.
     var switchTo by remember { mutableStateOf<Triple<String, String, String>?>(null) }
+
+    // Section Notes (Joplin) : pré-remplie avec les valeurs déjà enregistrées.
+    val savedJoplin by settings.joplin.collectAsState(initial = JoplinSettings())
+    var joplinServer by remember { mutableStateOf("") }
+    var joplinEmail by remember { mutableStateOf("") }
+    var joplinPassword by remember { mutableStateOf("") }
+    LaunchedEffect(savedJoplin) {
+        if (joplinServer.isBlank()) joplinServer = savedJoplin.serverUrl
+        if (joplinEmail.isBlank()) joplinEmail = savedJoplin.email
+    }
 
     fun finish(
         url: String,
@@ -68,7 +84,16 @@ fun LoginScreen(
         // Un autre compte ne doit pas voir le cache du précédent.
         if (url != session.baseUrl || user != session.username) repository.reset()
         session.save(url, token, user, password.takeIf { totp.isBlank() })
-        scope.launch { repository.refresh() }
+        scope.launch {
+            repository.refresh()
+            if (joplinServer.isNotBlank()) {
+                settings.setJoplinServerUrl(joplinServer.trim())
+                settings.setJoplinEmail(joplinEmail.trim())
+                if (joplinPassword.isNotBlank()) settings.setJoplinPassword(joplinPassword)
+                val joplinReady = joplinEmail.isNotBlank() && joplinPassword.isNotBlank()
+                settings.setJoplinSyncEnabled(joplinReady)
+            }
+        }
     }
 
     fun submit() {
@@ -139,20 +164,21 @@ fun LoginScreen(
         Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
             Image(
                 painter = painterResource(R.drawable.ic_logo),
-                contentDescription = "Logo",
+                contentDescription = "Logo (double-tap pour modifier les réglages enregistrés)",
                 modifier =
                     Modifier
                         .size(96.dp)
-                        .pointerInput(Unit) { detectTapGestures(onDoubleTap = { showServer = !showServer }) },
+                        .pointerInput(Unit) { detectTapGestures(onDoubleTap = { showAdvanced = !showAdvanced }) },
             )
         }
         Text("Connexion", style = MaterialTheme.typography.headlineMedium)
+
         Text(
-            "Connectez-vous à votre serveur Vikunja.",
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.outline,
+            "Tâches (Vikunja)",
+            style = MaterialTheme.typography.titleMedium,
+            color = MaterialTheme.colorScheme.primary,
         )
-        if (showServer) {
+        if (showAdvanced) {
             OutlinedTextField(
                 value = server,
                 onValueChange = { server = it },
@@ -189,6 +215,50 @@ fun LoginScreen(
                 modifier = Modifier.fillMaxWidth(),
             )
         }
+
+        HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
+
+        Text(
+            "Notes (Joplin Server)",
+            style = MaterialTheme.typography.titleMedium,
+            color = MaterialTheme.colorScheme.primary,
+        )
+        Text(
+            "Facultatif : synchronise vos notes avec un serveur Joplin.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.outline,
+        )
+        if (showAdvanced) {
+            OutlinedTextField(
+                value = joplinServer,
+                onValueChange = { joplinServer = it },
+                label = { Text("Serveur Joplin") },
+                placeholder = { Text("https://notes.lielu.eu") },
+                singleLine = true,
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
+                modifier = Modifier.fillMaxWidth(),
+            )
+        }
+        OutlinedTextField(
+            value = joplinEmail,
+            onValueChange = { joplinEmail = it },
+            label = { Text("E-mail Joplin") },
+            singleLine = true,
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
+            modifier = Modifier.fillMaxWidth(),
+        )
+        if (showAdvanced) {
+            OutlinedTextField(
+                value = joplinPassword,
+                onValueChange = { joplinPassword = it },
+                label = { Text("Mot de passe Joplin") },
+                singleLine = true,
+                visualTransformation = PasswordVisualTransformation(),
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+                modifier = Modifier.fillMaxWidth(),
+            )
+        }
+
         error?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyMedium) }
         Button(
             onClick = ::submit,

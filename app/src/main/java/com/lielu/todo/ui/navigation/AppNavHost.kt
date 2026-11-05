@@ -79,7 +79,7 @@ fun AppNavHost(
 ) {
     val loggedIn by container.session.loggedIn.collectAsStateWithLifecycle()
     if (!loggedIn) {
-        LoginScreen(container.session, container.vikunjaClient, container.todoRepository)
+        LoginScreen(container.session, container.vikunjaClient, container.todoRepository, container.settingsRepository)
         return
     }
 
@@ -223,9 +223,7 @@ fun AppNavHost(
                             viewModelFactory {
                                 initializer {
                                     NotesViewModel(
-                                        container.settingsRepository,
                                         container.notesRepository,
-                                        container.notesSync,
                                     )
                                 }
                             },
@@ -262,6 +260,7 @@ fun AppNavHost(
                 NoteEditScreen(
                     viewModel = viewModel,
                     onBackClick = { navController.popBackStack() },
+                    onDismiss = { viewModel.onScreenDismissed() },
                 )
             }
         }

@@ -5,20 +5,13 @@ import androidx.lifecycle.viewModelScope
 import com.lielu.todo.data.notes.Folder
 import com.lielu.todo.data.notes.Note
 import com.lielu.todo.data.notes.NotesRepository
-import com.lielu.todo.data.notes.NotesSync
-import com.lielu.todo.data.notes.SyncResult
-import com.lielu.todo.data.settings.SettingsRepository
-import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
 class NotesViewModel(
-    private val settingsRepository: SettingsRepository,
     private val notesRepository: NotesRepository,
-    private val notesSync: NotesSync,
 ) : ViewModel() {
     val notes: StateFlow<List<Note>> =
         notesRepository.notes.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
@@ -26,15 +19,6 @@ class NotesViewModel(
     /** Carnets Joplin connus (pour regrouper/filtrer les notes). */
     val folders: StateFlow<List<Folder>> =
         notesRepository.folders.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
-
-    /** Synchronisation Joplin active et configurée : le bouton « Synchroniser » n'a de sens que si oui. */
-    val syncEnabled: StateFlow<Boolean> =
-        settingsRepository.joplin
-            .map { it.syncEnabled && it.isConfigured }
-            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
-
-    private val _message = MutableStateFlow<String?>(null)
-    val message: StateFlow<String?> = _message
 
     /** Crée une note, affectée au carnet filtré (ou au premier carnet) pour qu'elle soit visible dans Joplin. */
     fun onAddNote(
@@ -47,31 +31,5 @@ class NotesViewModel(
             if (folderId.isNotEmpty()) notesRepository.setParent(note.id, folderId)
             onCreated(note.id)
         }
-    }
-
-    fun onSyncClicked() {
-        viewModelScope.launch {
-            _message.value =
-                when (val result = notesSync.syncNow()) {
-                    is SyncResult.Success ->
-                        buildString {
-                            append(
-                                "Synchronisation : ${result.pushed} envoyée(s), ${result.pulled} reçue(s), " +
-                                    "${result.deleted} supprimée(s) (${result.changesSeen} changements)",
-                            )
-                            if (result.pulled == 0 && result.changesSeen > 0) {
-                                append(" — ex. ${result.samples.joinToString { "« $it »" }}")
-                            }
-                            if (result.pulled == 0 && result.rawDelta != null) {
-                                append(" — brut: ${result.rawDelta}")
-                            }
-                        }
-                    is SyncResult.Failure -> result.message
-                }
-        }
-    }
-
-    fun onMessageShown() {
-        _message.value = null
     }
 }

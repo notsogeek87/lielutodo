@@ -14,6 +14,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Save
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DropdownMenu
@@ -29,6 +30,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -47,12 +49,14 @@ import io.noties.markwon.Markwon
 fun NoteEditScreen(
     viewModel: NoteEditViewModel,
     onBackClick: () -> Unit,
+    onDismiss: () -> Unit = {},
 ) {
     val title by viewModel.title.collectAsState()
     val body by viewModel.body.collectAsState()
     val exists by viewModel.exists.collectAsState()
     val folders by viewModel.folders.collectAsState()
     val parentId by viewModel.parentId.collectAsState()
+    val hasUnsavedChanges by viewModel.hasUnsavedChanges.collectAsState()
     var showDeleteConfirm by remember { mutableStateOf(false) }
     var preview by remember { mutableStateOf(false) }
     var folderMenuOpen by remember { mutableStateOf(false) }
@@ -60,6 +64,10 @@ fun NoteEditScreen(
 
     if (!exists) {
         LaunchedEffect(Unit) { onBackClick() }
+    }
+
+    DisposableEffect(Unit) {
+        onDispose { onDismiss() }
     }
 
     Scaffold(
@@ -72,6 +80,9 @@ fun NoteEditScreen(
                     }
                 },
                 actions = {
+                    IconButton(onClick = viewModel::onSaveClicked, enabled = hasUnsavedChanges) {
+                        Icon(Icons.Default.Save, contentDescription = "Enregistrer")
+                    }
                     IconButton(onClick = { preview = !preview }) {
                         Icon(
                             if (preview) Icons.Default.Edit else Icons.Default.Visibility,
@@ -98,9 +109,9 @@ fun NoteEditScreen(
                 Text(title, style = MaterialTheme.typography.headlineSmall)
                 AndroidView(
                     factory = { context ->
-                        TextView(context).apply { Markwon.create(context).setMarkdown(this, body) }
+                        TextView(context).apply { Markwon.create(context).setMarkdown(this, body.text) }
                     },
-                    update = { view -> Markwon.create(view.context).setMarkdown(view, body) },
+                    update = { view -> Markwon.create(view.context).setMarkdown(view, body.text) },
                     modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
                 )
             }
@@ -157,15 +168,15 @@ fun NoteEditScreen(
                             .padding(top = 12.dp),
                     horizontalArrangement = Arrangement.spacedBy(4.dp),
                 ) {
-                    MarkdownButton("B") { viewModel.onBodyChanged(wrapLastLine(body, "**", "**")) }
-                    MarkdownButton("I") { viewModel.onBodyChanged(wrapLastLine(body, "*", "*")) }
-                    MarkdownButton("S") { viewModel.onBodyChanged(wrapLastLine(body, "~~", "~~")) }
-                    MarkdownButton("H") { viewModel.onBodyChanged(appendBlock(body, "## Titre")) }
-                    MarkdownButton("•") { viewModel.onBodyChanged(appendBlock(body, "- élément")) }
-                    MarkdownButton("☐") { viewModel.onBodyChanged(appendBlock(body, "- [ ] tâche")) }
-                    MarkdownButton("</>") { viewModel.onBodyChanged(appendBlock(body, "`code`")) }
-                    MarkdownButton("🔗") { viewModel.onBodyChanged(appendBlock(body, "[texte](https://…)")) }
-                    MarkdownButton("❝") { viewModel.onBodyChanged(appendBlock(body, "> citation")) }
+                    MarkdownButton("B") { viewModel.wrapSelection("**", "**") }
+                    MarkdownButton("I") { viewModel.wrapSelection("*", "*") }
+                    MarkdownButton("S") { viewModel.wrapSelection("~~", "~~") }
+                    MarkdownButton("H") { viewModel.insertSnippet("## Titre") }
+                    MarkdownButton("•") { viewModel.insertSnippet("- élément") }
+                    MarkdownButton("☐") { viewModel.insertSnippet("- [ ] tâche") }
+                    MarkdownButton("</>") { viewModel.insertSnippet("`code`") }
+                    MarkdownButton("🔗") { viewModel.insertSnippet("[texte](https://…)") }
+                    MarkdownButton("❝") { viewModel.insertSnippet("> citation") }
                 }
                 OutlinedTextField(
                     value = body,
@@ -173,6 +184,12 @@ fun NoteEditScreen(
                     label = { Text("Note (Markdown)") },
                     minLines = 12,
                     modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+                )
+                Text(
+                    "${body.text.split(Regex("\\s+")).filter { it.isNotBlank() }.size} mot(s)",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
                 )
             }
         }
@@ -211,22 +228,3 @@ private fun MarkdownButton(
         Text(label, fontWeight = FontWeight.Bold)
     }
 }
-
-/** Entoure la dernière ligne non vide de [body] avec [prefix]/[suffix] (gras, italique, barré…). */
-private fun wrapLastLine(
-    body: String,
-    prefix: String,
-    suffix: String,
-): String {
-    val lines = body.split('\n').toMutableList()
-    val last = lines.indexOfLast { it.isNotBlank() }
-    if (last < 0) return prefix + suffix // rien à entourer : on pose juste les marqueurs
-    lines[last] = "$prefix${lines[last]}$suffix"
-    return lines.joinToString("\n")
-}
-
-/** Ajoute un modèle Markdown [snippet] en fin de note (sur une nouvelle ligne si besoin). */
-private fun appendBlock(
-    body: String,
-    snippet: String,
-): String = if (body.isEmpty() || body.endsWith("\n")) body + snippet else "$body\n$snippet"
