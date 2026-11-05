@@ -1,15 +1,17 @@
 package com.lielu.todo.data.joplin
 
-/** Une note distante aplatie (titre = première ligne du contenu, corps = le reste). */
+/** Une note distante aplatie (titre = première ligne du contenu, corps = le reste) et son contenu brut. */
 data class RemoteNote(
     val id: String,
     val title: String,
     val body: String,
     val parentId: String,
+    /** `updated_time` de la version distante (ms). */
     val userUpdatedTime: Long,
+    val raw: String? = null,
 )
 
-/** Un changement renvoyé par le delta : [name] = « notes/<id>.md »…, [type] 1=create 2=update 3=delete. */
+/** Un changement renvoyé par le delta : [name] = « <id>.md »…, [type] 1=create 2=update 3=delete. */
 data class DeltaItem(
     val name: String,
     val type: Int,
@@ -45,9 +47,6 @@ interface JoplinApi {
 
     /** Enfants paginés de la racine (repli si le delta initial est vide). */
     suspend fun rootChildren(page: Int): DeltaPage
-
-    /** Première page du delta en JSON brut (diagnostic, tronqué par l'appelant). */
-    suspend fun debugRawDelta(): String
 
     /** Contenu sérialisé brut d'un item (ex. « notes/<id>.md »). */
     suspend fun itemContent(name: String): String

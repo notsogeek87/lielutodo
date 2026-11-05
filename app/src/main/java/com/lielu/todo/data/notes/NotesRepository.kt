@@ -40,6 +40,19 @@ interface NotesRepository {
 
     suspend fun upsert(note: Note)
 
+    /**
+     * Lit puis réécrit une note d'un seul tenant (aucune autre écriture ne s'intercale) : [transform] reçoit la
+     * version actuelle (`null` si absente) et rend la nouvelle (`null` = supprimer). C'est ce qu'utilise la synchro
+     * pour ne jamais écraser une modification faite pendant l'envoi.
+     */
+    suspend fun update(
+        id: String,
+        transform: (Note?) -> Note?,
+    )
+
+    /** Retire des carnets du cache (supprimés côté serveur). */
+    suspend fun removeFolders(ids: Set<String>)
+
     suspend fun deleteById(id: String)
 
     /** Remplace toutes les notes (restauration de sauvegarde), de façon atomique. */

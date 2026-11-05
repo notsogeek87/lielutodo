@@ -57,10 +57,11 @@ class AppContainer(
 
     val applicationScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
-    val settingsRepository: SettingsRepository = SettingsRepositoryImpl(appContext.settingsDataStore)
-
-    /** Serveur Vikunja + jeton. Les tâches elles-mêmes vivent sur le serveur : voir [todoRepository]. */
+    /** Serveur Vikunja + jeton (et mot de passe Joplin chiffré). Les tâches vivent sur le serveur : [todoRepository]. */
     val session = SessionStore(appContext)
+
+    private val settingsImpl = SettingsRepositoryImpl(appContext.settingsDataStore, session)
+    val settingsRepository: SettingsRepository = settingsImpl
 
     /** Verrou, son de complétion et icône d'app : réglages propres à cet appareil. */
     val prefs = AppPrefs(appContext)
@@ -175,6 +176,7 @@ class AppContainer(
     fun start() {
         SyncWorker.schedule(appContext)
         NotesSyncWorker.schedule(appContext)
+        applicationScope.launch { runCatching { settingsImpl.migrateLegacySecrets() } }
         reminderScheduler.scheduleDaily()
         applicationScope.launch {
             todoRepository.state

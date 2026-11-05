@@ -3,8 +3,10 @@
     <include domain="database" path="." />
     <include domain="file" path="datastore/" />
     <!-- Tâches en cache (source de vérité hors ligne), sa copie de secours et les pièces jointes pas encore envoyées.
-         Le jeton de session (SharedPreferences) reste volontairement exclu. -->
+         Notes en cache (+ copie). Le jeton de session et les mots de passe (SharedPreferences) restent volontairement exclus. -->
     <include domain="file" path="todo-cache.json" />
     <include domain="file" path="todo-cache.json.bak" />
+    <include domain="file" path="notes-cache.json" />
+    <include domain="file" path="notes-cache.json.bak" />
     <include domain="file" path="attachments/pending/" />
 </full-backup-content>

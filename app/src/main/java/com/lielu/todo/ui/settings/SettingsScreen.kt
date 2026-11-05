@@ -262,6 +262,13 @@ private fun JoplinSection(
     var serverUrl by remember { mutableStateOf(settings.serverUrl) }
     var email by remember { mutableStateOf(settings.email) }
     var password by remember { mutableStateOf(settings.password) }
+    // Le premier affichage précède la lecture du DataStore : on reprend les valeurs enregistrées dès qu'elles
+    // arrivent, sans écraser ce que l'utilisateur a commencé à taper.
+    LaunchedEffect(settings.serverUrl, settings.email, settings.password) {
+        if (serverUrl.isBlank()) serverUrl = settings.serverUrl
+        if (email.isBlank()) email = settings.email
+        if (password.isBlank()) password = settings.password
+    }
     OutlinedTextField(
         value = serverUrl,
         onValueChange = {

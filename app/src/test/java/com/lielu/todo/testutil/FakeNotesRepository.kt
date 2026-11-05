@@ -58,6 +58,24 @@ class FakeNotesRepository : NotesRepository {
         store.value = store.value.filter { it.id != note.id } + note
     }
 
+    override suspend fun update(
+        id: String,
+        transform: (Note?) -> Note?,
+    ) {
+        val hook = beforeUpdate
+        beforeUpdate = null
+        hook?.invoke()
+        val next = transform(getById(id))
+        store.value = store.value.filter { it.id != id } + listOfNotNull(next)
+    }
+
+    override suspend fun removeFolders(ids: Set<String>) {
+        folderStore.value = folderStore.value.filter { it.id !in ids }
+    }
+
+    /** Appelé avant chaque `update` (simule une modification de l'utilisateur pendant une synchro). */
+    var beforeUpdate: (suspend () -> Unit)? = null
+
     override suspend fun deleteById(id: String) {
         store.value = store.value.filter { it.id != id }
     }

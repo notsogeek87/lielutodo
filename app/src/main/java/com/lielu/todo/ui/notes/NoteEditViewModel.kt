@@ -9,6 +9,7 @@ import com.lielu.todo.data.notes.NotesRepository
 import com.lielu.todo.data.notes.NotesSync
 import com.lielu.todo.data.settings.JoplinSettings
 import com.lielu.todo.data.settings.SettingsRepository
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -27,6 +28,7 @@ class NoteEditViewModel(
     private val notesRepository: NotesRepository,
     private val notesSync: NotesSync,
     private val settingsRepository: SettingsRepository,
+    private val appScope: CoroutineScope,
 ) : ViewModel() {
     private val _title = MutableStateFlow("")
     val title: StateFlow<String> = _title
@@ -121,36 +123,37 @@ class NoteEditViewModel(
         viewModelScope.launch {
             _parentId.value = folderId
             notesRepository.setParent(noteId, folderId)
-            syncIfEnabled()
         }
     }
 
     fun onDeleteConfirmed(onDeleted: () -> Unit) {
         viewModelScope.launch {
             notesRepository.delete(noteId)
-            syncIfEnabled()
             onDeleted()
         }
     }
 
     /** Bouton « Enregistrer » : sauvegarde immédiatement (sans attendre le debounce). */
     fun onSaveClicked() {
-        viewModelScope.launch {
-            save(_title.value, _body.value.text)
-            initial = _title.value to _body.value.text
-            _hasUnsavedChanges.value = false
-        }
+        viewModelScope.launch { save(_title.value, _body.value.text) }
     }
 
-    /** Appelé quand l'écran se ferme : supprime la note si elle est restée vide (titre et corps vides). */
-    fun onScreenDismissed() {
-        viewModelScope.launch {
-            val note = notesRepository.getById(noteId) ?: return@launch
-            if (note.title.isBlank() && note.body.isBlank()) {
-                notesRepository.delete(noteId)
-                syncIfEnabled()
-            }
-        }
+    /**
+     * Fermeture définitive de l'éditeur (pas une rotation) : enregistre la saisie pas encore enregistrée, supprime
+     * la note si elle est restée vide, puis synchronise. Lancé dans le scope de l'application : celui du
+     * ViewModel est déjà annulé à ce moment-là, la dernière frappe serait perdue.
+     */
+    override fun onCleared() {
+        appScope.launch { finish() }
+    }
+
+    suspend fun finish() {
+        val title = _title.value
+        val body = _body.value.text
+        if (initial != null && (title to body) != initial) save(title, body)
+        val note = notesRepository.getById(noteId) ?: return
+        if (!note.deleted && note.title.isBlank() && note.body.isBlank()) notesRepository.delete(noteId)
+        syncIfEnabled()
     }
 
     private suspend fun save(
@@ -160,7 +163,6 @@ class NoteEditViewModel(
         notesRepository.save(noteId, title, body)
         initial = title to body
         _hasUnsavedChanges.value = false
-        syncIfEnabled()
     }
 
     private suspend fun syncIfEnabled() {

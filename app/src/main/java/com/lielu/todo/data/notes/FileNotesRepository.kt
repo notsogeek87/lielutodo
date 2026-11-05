@@ -4,15 +4,20 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
+import java.io.IOException
 import java.util.UUID
 
 /**
- * Notes conservées dans un fichier JSON du stockage interne, écrit de façon atomique (fichier temporaire puis
- * renommage) : même stratégie que le cache des tâches. L'état est tenu en mémoire et exposé en flux.
+ * Notes conservées dans un fichier JSON du stockage interne, même stratégie que le cache des tâches : écriture
+ * atomique (fichier temporaire puis renommage) avec copie de secours `.bak` de la version précédente. Un fichier
+ * illisible n'est jamais écrasé par une liste vide : on relit la copie de secours, sinon il est mis de côté
+ * (`.corrupt`). Toutes les écritures passent par un verrou : l'écran et la synchro ne s'écrasent pas.
  */
 class FileNotesRepository(
     private val file: File,
@@ -20,6 +25,8 @@ class FileNotesRepository(
 ) : NotesRepository {
     private val store = MutableStateFlow<List<Note>>(emptyList())
     private val folderStore = MutableStateFlow<List<Folder>>(emptyList())
+    private val lock = Mutex()
+    private val backup = File(file.parentFile, file.name + ".bak")
 
     override val notes: Flow<List<Note>> =
         store.map { list -> list.filter { !it.deleted }.sortedByDescending { it.userUpdatedTime } }
@@ -27,27 +34,33 @@ class FileNotesRepository(
     override val folders: Flow<List<Folder>> = folderStore
 
     init {
-        val loaded = readAll(file)
+        val loaded = load()
         store.value = loaded.first
         folderStore.value = loaded.second
     }
 
     override suspend fun getFolders(): List<Folder> = folderStore.value
 
-    override suspend fun upsertFolders(folders: List<Folder>) {
-        folderStore.value = (folderStore.value + folders).distinctBy { it.id }.sortedBy { it.title.lowercase() }
-        persist()
-    }
+    override suspend fun upsertFolders(folders: List<Folder>) =
+        mutate {
+            val byId = folderStore.value.associateBy { it.id } + folders.associateBy { it.id }
+            folderStore.value = byId.values.sortedBy { it.title.lowercase() }
+        }
+
+    override suspend fun removeFolders(ids: Set<String>) =
+        mutate { folderStore.value = folderStore.value.filter { it.id !in ids } }
 
     override suspend fun getById(id: String): Note? = store.value.firstOrNull { it.id == id }
 
     override suspend fun create(): Note {
+        val now = clock()
         val note =
             Note(
                 id = UUID.randomUUID().toString().replace("-", ""),
                 title = "",
                 body = "",
-                userUpdatedTime = clock(),
+                userUpdatedTime = now,
+                createdTime = now,
                 dirty = true,
             )
         upsert(note)
@@ -58,94 +71,91 @@ class FileNotesRepository(
         id: String,
         title: String,
         body: String,
-    ) {
-        val current = getById(id) ?: return
-        upsert(current.copy(title = title, body = body, userUpdatedTime = clock(), dirty = true))
-    }
+    ) = update(id) { it?.copy(title = title, body = body, userUpdatedTime = clock(), dirty = true) }
 
-    override suspend fun delete(id: String) {
-        val current = getById(id) ?: return
-        upsert(current.copy(deleted = true, dirty = true, userUpdatedTime = clock()))
-    }
+    override suspend fun delete(id: String) =
+        update(id) { it?.copy(deleted = true, dirty = true, userUpdatedTime = clock()) }
 
     override suspend fun setParent(
         id: String,
         parentId: String,
-    ) {
-        val current = getById(id) ?: return
-        upsert(current.copy(parentId = parentId, userUpdatedTime = clock(), dirty = true))
-    }
+    ) = update(id) { it?.copy(parentId = parentId, userUpdatedTime = clock(), dirty = true) }
 
     override suspend fun getAllActive(): List<Note> = store.value.filter { !it.deleted }
 
     override suspend fun getAllIncludingDeleted(): List<Note> = store.value
 
-    override suspend fun upsert(note: Note) {
-        store.value = store.value.filter { it.id != note.id } + note
-        persist()
+    override suspend fun upsert(note: Note) = update(note.id) { note }
+
+    override suspend fun update(
+        id: String,
+        transform: (Note?) -> Note?,
+    ) = mutate {
+        val current = store.value.firstOrNull { it.id == id }
+        val next = transform(current)
+        if (next != current) {
+            store.value = store.value.filter { it.id != id } + listOfNotNull(next)
+        }
     }
 
-    override suspend fun deleteById(id: String) {
-        store.value = store.value.filter { it.id != id }
-        persist()
+    override suspend fun deleteById(id: String) = update(id) { null }
+
+    override suspend fun replaceAll(notes: List<Note>) = mutate { store.value = notes }
+
+    override suspend fun replaceFolders(folders: List<Folder>) = mutate { folderStore.value = folders }
+
+    private suspend fun mutate(block: () -> Unit) {
+        lock.withLock {
+            block()
+            val notesSnapshot = store.value
+            val foldersSnapshot = folderStore.value
+            withContext(Dispatchers.IO) { writeAll(notesSnapshot, foldersSnapshot) }
+        }
     }
 
-    override suspend fun replaceAll(notes: List<Note>) {
-        store.value = notes
-        persist()
+    private fun load(): Pair<List<Note>, List<Folder>> {
+        if (!file.exists() && !backup.exists()) return emptyList<Note>() to emptyList()
+        runCatching { if (file.exists()) return readAll(file) }
+        runCatching { if (backup.exists()) return readAll(backup) }
+        // Ni le fichier ni sa copie ne se lisent : on les met de côté plutôt que de les écraser au prochain
+        // enregistrement (les notes non envoyées restent récupérables).
+        file.renameTo(File(file.parentFile, file.name + ".corrupt"))
+        return emptyList<Note>() to emptyList()
     }
 
-    override suspend fun replaceFolders(folders: List<Folder>) {
-        folderStore.value = folders
-        persist()
-    }
-
-    private suspend fun persist() {
-        val notesSnapshot = store.value
-        val foldersSnapshot = folderStore.value
-        withContext(Dispatchers.IO) { writeAll(file, notesSnapshot, foldersSnapshot) }
-    }
-
-    private fun readAll(file: File): Pair<List<Note>, List<Folder>> {
-        if (!file.exists()) return emptyList<Note>() to emptyList()
-        return runCatching {
-            val root = JSONObject(file.readText())
-            val notesArray = root.optJSONArray("notes") ?: JSONArray()
-            val foldersArray = root.optJSONArray("folders") ?: JSONArray()
-            val notes = (0 until notesArray.length()).map { noteFromJson(notesArray.getJSONObject(it)) }
-            val folders = (0 until foldersArray.length()).map { folderFromJson(foldersArray.getJSONObject(it)) }
-            notes to folders
-        }.getOrElse { emptyList<Note>() to emptyList() }
+    private fun readAll(source: File): Pair<List<Note>, List<Folder>> {
+        val root = JSONObject(source.readText())
+        val notesArray = root.optJSONArray("notes") ?: JSONArray()
+        val foldersArray = root.optJSONArray("folders") ?: JSONArray()
+        val notes = (0 until notesArray.length()).map { NoteJson.noteFromJson(notesArray.getJSONObject(it)) }
+        val folders = (0 until foldersArray.length()).map { NoteJson.folderFromJson(foldersArray.getJSONObject(it)) }
+        return notes to folders
     }
 
     private fun writeAll(
-        file: File,
         notes: List<Note>,
         folders: List<Folder>,
     ) {
         val notesArray = JSONArray()
-        notes.forEach { notesArray.put(noteToJson(it)) }
+        notes.forEach { notesArray.put(NoteJson.noteToJson(it, includeLocalState = true)) }
         val foldersArray = JSONArray()
-        folders.forEach { foldersArray.put(folderToJson(it)) }
+        folders.forEach { foldersArray.put(NoteJson.folderToJson(it)) }
         val tmp = File(file.parentFile, file.name + ".tmp")
         tmp.writeText(JSONObject().put("notes", notesArray).put("folders", foldersArray).toString())
-        tmp.renameTo(file)
+        if (file.exists()) file.copyTo(backup, overwrite = true)
+        if (!tmp.renameTo(file)) {
+            tmp.copyTo(file, overwrite = true)
+            if (!tmp.delete()) throw IOException("Écriture du cache des notes impossible : $file")
+        }
     }
+}
 
-    private fun folderToJson(folder: Folder): JSONObject =
-        JSONObject()
-            .put("id", folder.id)
-            .put("title", folder.title)
-            .put("parentId", folder.parentId)
-
-    private fun folderFromJson(json: JSONObject): Folder =
-        Folder(
-            id = json.getString("id"),
-            title = json.optString("title"),
-            parentId = json.optString("parentId"),
-        )
-
-    private fun noteToJson(note: Note): JSONObject =
+/** Codec JSON des notes, partagé par le cache disque et la sauvegarde ([com.lielu.todo.backup.NoteBackupSection]). */
+object NoteJson {
+    fun noteToJson(
+        note: Note,
+        includeLocalState: Boolean,
+    ): JSONObject =
         JSONObject()
             .put("id", note.id)
             .put("title", note.title)
@@ -153,9 +163,13 @@ class FileNotesRepository(
             .put("parentId", note.parentId)
             .put("userUpdatedTime", note.userUpdatedTime)
             .put("dirty", note.dirty)
-            .put("deleted", note.deleted)
+            .put("createdTime", note.createdTime)
+            .put("serverRaw", note.serverRaw ?: JSONObject.NULL)
+            .put("serverUpdatedTime", note.serverUpdatedTime)
+            .apply { if (includeLocalState) put("deleted", note.deleted) }
 
-    private fun noteFromJson(json: JSONObject): Note =
+    /** Champs ajoutés après la première version lus avec une valeur par défaut : les anciens fichiers restent lisibles. */
+    fun noteFromJson(json: JSONObject): Note =
         Note(
             id = json.getString("id"),
             title = json.optString("title"),
@@ -164,5 +178,21 @@ class FileNotesRepository(
             userUpdatedTime = json.optLong("userUpdatedTime", 0L),
             dirty = json.optBoolean("dirty", false),
             deleted = json.optBoolean("deleted", false),
+            createdTime = json.optLong("createdTime", 0L),
+            serverRaw = if (json.isNull("serverRaw")) null else json.optString("serverRaw"),
+            serverUpdatedTime = json.optLong("serverUpdatedTime", 0L),
+        )
+
+    fun folderToJson(folder: Folder): JSONObject =
+        JSONObject()
+            .put("id", folder.id)
+            .put("title", folder.title)
+            .put("parentId", folder.parentId)
+
+    fun folderFromJson(json: JSONObject): Folder =
+        Folder(
+            id = json.getString("id"),
+            title = json.optString("title"),
+            parentId = json.optString("parentId"),
         )
 }

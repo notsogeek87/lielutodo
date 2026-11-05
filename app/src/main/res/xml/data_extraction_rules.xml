@@ -5,6 +5,8 @@
         <include domain="file" path="datastore/" />
         <include domain="file" path="todo-cache.json" />
         <include domain="file" path="todo-cache.json.bak" />
+        <include domain="file" path="notes-cache.json" />
+        <include domain="file" path="notes-cache.json.bak" />
         <include domain="file" path="attachments/pending/" />
     </cloud-backup>
     <device-transfer>
@@ -12,6 +14,8 @@
         <include domain="file" path="datastore/" />
         <include domain="file" path="todo-cache.json" />
         <include domain="file" path="todo-cache.json.bak" />
+        <include domain="file" path="notes-cache.json" />
+        <include domain="file" path="notes-cache.json.bak" />
         <include domain="file" path="attachments/pending/" />
     </device-transfer>
 </data-extraction-rules>

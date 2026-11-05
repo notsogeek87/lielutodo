@@ -6,6 +6,7 @@ import org.json.JSONObject
 import java.io.OutputStreamWriter
 import java.net.HttpURLConnection
 import java.net.URI
+import java.net.URLEncoder
 
 /**
  * [JoplinApi] sur le protocole de synchro de Joplin Server (HTTP natif, aucune dépendance ajoutée) :
@@ -32,18 +33,13 @@ class HttpJoplinApi(
 
     override suspend fun delta(cursor: String?): DeltaPage =
         withContext(Dispatchers.IO) {
-            val query = if (cursor == null) "" else "?cursor=$cursor"
+            val query = if (cursor == null) "" else "?cursor=${URLEncoder.encode(cursor, "UTF-8")}"
             JoplinJson.parseDeltaPage(requestJson("GET", "/items/root:/:/delta$query"))
         }
 
     override suspend fun rootChildren(page: Int): DeltaPage =
         withContext(Dispatchers.IO) {
             JoplinJson.parseDeltaPage(requestJson("GET", "/items/root:/:/children?limit=100&page=$page"))
-        }
-
-    override suspend fun debugRawDelta(): String =
-        withContext(Dispatchers.IO) {
-            requestText("GET", "/items/root:/:/delta")
         }
 
     override suspend fun itemContent(name: String): String =

@@ -25,10 +25,12 @@ class NotesSyncTest {
         var failWithResyncOnce = false
         val puts = mutableMapOf<String, String>()
         val deletes = mutableListOf<String>()
+        val deltaCursors = mutableListOf<String?>()
 
         override suspend fun ping(): String = "JoplinServer"
 
         override suspend fun delta(cursor: String?): DeltaPage {
+            deltaCursors += cursor
             if (failWithResyncOnce) {
                 failWithResyncOnce = false
                 throw JoplinApiException("cursor invalide", statusCode = 400, errorCode = "resyncRequired")
@@ -37,8 +39,6 @@ class NotesSyncTest {
         }
 
         override suspend fun rootChildren(page: Int): DeltaPage = DeltaPage(emptyList(), hasMore = false, cursor = null)
-
-        override suspend fun debugRawDelta(): String = "{}"
 
         override suspend fun itemContent(name: String): String = contents.getValue(name)
 
@@ -106,7 +106,7 @@ class NotesSyncTest {
                     dirty = true,
                 ),
             )
-            val sync = NotesSync(settings, notes, apiFactory = { api })
+            val sync = NotesSync(settings, notes, apiFactory = { api }, clock = { 100L })
 
             val result = sync.syncNow()
 
@@ -196,8 +196,6 @@ class NotesSyncTest {
 
                     override suspend fun rootChildren(page: Int): DeltaPage = error("inattendu")
 
-                    override suspend fun debugRawDelta(): String = error("inattendu")
-
                     override suspend fun itemContent(name: String): String = error("inattendu")
 
                     override suspend fun putContent(
@@ -214,5 +212,153 @@ class NotesSyncTest {
             assertTrue(result is SyncResult.Failure)
             val lastError = settings.syncStatus.first().lastError
             assertTrue(lastError!!.contains("réseau coupé"))
+        }
+
+    private fun todoContent(
+        id: String,
+        title: String,
+        body: String,
+        updated: Long,
+    ): String =
+        "$title\n\n$body\n\nid: $id\nparent_id: folder-1\nupdated_time: ${JoplinParser.formatTime(updated)}\n" +
+            "author: Moi\nis_todo: 1\ntodo_due: 1700000000000\nencryption_applied: 0\ntype_: 1\n"
+
+    private fun folderContent(id: String): String = "Carnet\n\nid: $id\nparent_id: \ntype_: 2\n"
+
+    @Test
+    fun uneModificationLocaleGardeLesProprietesJoplin() =
+        runTest {
+            val settings = configuredSettings()
+            val notes = FakeNotesRepository()
+            val api = FakeJoplinApi()
+            val id = "1".repeat(32)
+            api.changes = listOf(DeltaItem("$id.md", type = 1, updatedTime = 50L))
+            api.contents["$id.md"] = todoContent(id, "A faire", "corps", 50_000L)
+            val sync = NotesSync(settings, notes, apiFactory = { api }, clock = { 90_000L })
+            sync.syncNow()
+            notes.save(id, "A faire vite", "corps modifié")
+            api.changes = emptyList()
+
+            sync.syncNow()
+
+            val envoye = api.puts.getValue("$id.md")
+            assertTrue(envoye.startsWith("A faire vite\n\ncorps modifié\n\n"))
+            assertTrue(envoye.contains("is_todo: 1"))
+            assertTrue(envoye.contains("todo_due: 1700000000000"))
+            assertTrue(envoye.contains("author: Moi"))
+            assertEquals(false, notes.getById(id)?.dirty)
+        }
+
+    @Test
+    fun uneModificationPendantLEnvoiResteAEnvoyer() =
+        runTest {
+            val settings = configuredSettings()
+            val notes = FakeNotesRepository()
+            val api = FakeJoplinApi()
+            val id = "2".repeat(32)
+            notes.upsert(
+                Note(id = id, title = "v1", body = "", parentId = "folder-1", userUpdatedTime = 1L, dirty = true),
+            )
+            // L'utilisateur tape pendant que v1 part au serveur.
+            notes.beforeUpdate = { notes.save(id, "v2", "") }
+            val sync = NotesSync(settings, notes, apiFactory = { api })
+
+            sync.syncNow()
+
+            assertTrue(api.puts.getValue("$id.md").startsWith("v1"))
+            assertEquals("v2", notes.getById(id)?.title)
+            assertEquals(true, notes.getById(id)?.dirty)
+        }
+
+    @Test
+    fun unConflitGardeLesDeuxVersions() =
+        runTest {
+            val settings = configuredSettings()
+            val notes = FakeNotesRepository()
+            val api = FakeJoplinApi()
+            val id = "3".repeat(32)
+            notes.upsert(
+                Note(
+                    id = id,
+                    title = "Note",
+                    body = "version téléphone",
+                    parentId = "folder-1",
+                    userUpdatedTime = 60_000L,
+                    dirty = true,
+                    serverRaw = todoContent(id, "Note", "origine", 50_000L),
+                    serverUpdatedTime = 50_000L,
+                ),
+            )
+            api.changes = listOf(DeltaItem("$id.md", type = 1, updatedTime = 80L))
+            api.contents["$id.md"] = todoContent(id, "Note", "version ordinateur", 80_000L)
+            val sync = NotesSync(settings, notes, apiFactory = { api })
+
+            val result = sync.syncNow()
+
+            assertEquals(1, (result as SyncResult.Success).conflicts)
+            assertEquals("version téléphone", notes.getById(id)?.body)
+            val copie = notes.getAllActive().single { it.id != id }
+            assertTrue(copie.title.startsWith("Note (conflit"))
+            assertEquals("version ordinateur", copie.body)
+            assertEquals(2, api.puts.size)
+        }
+
+    @Test
+    fun laSynchroResteIncrementaleQuandRienNAChange() =
+        runTest {
+            val settings = configuredSettings()
+            settings.setJoplinCursor("c0")
+            val notes = FakeNotesRepository()
+            notes.upsertFolders(listOf(Folder("f".repeat(32), "Carnet")))
+            notes.upsert(
+                Note(id = "4".repeat(32), title = "t", body = "", userUpdatedTime = 1L, serverUpdatedTime = 1L),
+            )
+            val api = FakeJoplinApi()
+            val sync = NotesSync(settings, notes, apiFactory = { api })
+
+            sync.syncNow()
+
+            assertEquals(listOf<String?>("c0"), api.deltaCursors)
+        }
+
+    @Test
+    fun uneNoteChiffreeEstIgnoree() =
+        runTest {
+            val settings = configuredSettings()
+            val notes = FakeNotesRepository()
+            val api = FakeJoplinApi()
+            val id = "5".repeat(32)
+            api.changes = listOf(DeltaItem("$id.md", type = 1, updatedTime = 50L))
+            api.contents["$id.md"] = "\n\nid: $id\nencryption_applied: 1\nencryption_cipher_text: xyz\ntype_: 1\n"
+            val sync = NotesSync(settings, notes, apiFactory = { api })
+
+            val result = sync.syncNow()
+
+            assertEquals(1, (result as SyncResult.Success).encryptedSkipped)
+            assertNull(notes.getById(id))
+        }
+
+    @Test
+    fun supprimerUneNoteSynchroniseeLaMetALaCorbeilleJoplin() =
+        runTest {
+            val settings = configuredSettings()
+            val notes = FakeNotesRepository()
+            val api = FakeJoplinApi()
+            val id = "6".repeat(32)
+            val folder = "f".repeat(32)
+            api.changes = listOf(DeltaItem("$id.md", type = 1, updatedTime = 50L), DeltaItem("$folder.md", 1, 50L))
+            api.contents["$id.md"] = todoContent(id, "A jeter", "", 50_000L)
+            api.contents["$folder.md"] = folderContent(folder)
+            val sync = NotesSync(settings, notes, apiFactory = { api }, clock = { 90_000L })
+            sync.syncNow()
+            assertEquals(listOf(Folder(folder, "Carnet")), notes.getFolders())
+            notes.delete(id)
+            api.changes = emptyList()
+
+            sync.syncNow()
+
+            assertTrue(api.deletes.isEmpty())
+            assertTrue(api.puts.getValue("$id.md").contains("deleted_time: 90000"))
+            assertNull(notes.getById(id))
         }
 }

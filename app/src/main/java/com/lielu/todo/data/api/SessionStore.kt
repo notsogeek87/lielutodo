@@ -4,6 +4,7 @@ import android.content.Context
 import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyProperties
 import android.util.Base64
+import com.lielu.todo.data.settings.SecretStore
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import java.security.KeyStore
@@ -21,7 +22,7 @@ import javax.crypto.spec.GCMParameterSpec
  */
 class SessionStore(
     context: Context,
-) {
+) : SecretStore {
     private val prefs = context.applicationContext.getSharedPreferences("session", Context.MODE_PRIVATE)
 
     private val _loggedIn = MutableStateFlow(token != null)
@@ -58,6 +59,27 @@ class SessionStore(
     fun updateToken(token: String) {
         prefs.edit().putString(KEY_TOKEN, token).apply()
     }
+
+    /**
+     * Mot de passe du serveur Joplin (notes), chiffré comme celui de Vikunja : hors DataStore, donc jamais dans
+     * une sauvegarde Android ni dans un export. Survit à la déconnexion Vikunja (autre serveur).
+     */
+    override var joplinPassword: String
+        get() = prefs.getString(KEY_JOPLIN_PASSWORD, null)?.let { runCatching { decrypt(it) }.getOrNull() }.orEmpty()
+        set(value) {
+            val encrypted = value.takeIf { it.isNotEmpty() }?.let { runCatching { encrypt(it) }.getOrNull() }
+            prefs
+                .edit()
+                .apply {
+                    if (encrypted !=
+                        null
+                    ) {
+                        putString(KEY_JOPLIN_PASSWORD, encrypted)
+                    } else {
+                        remove(KEY_JOPLIN_PASSWORD)
+                    }
+                }.apply()
+        }
 
     fun forgetPassword() {
         prefs.edit().remove(KEY_PASSWORD).apply()
@@ -107,6 +129,7 @@ class SessionStore(
         private const val KEY_TOKEN = "token"
         private const val KEY_USER = "username"
         private const val KEY_PASSWORD = "password_enc"
+        private const val KEY_JOPLIN_PASSWORD = "joplin_password_enc"
         private const val ANDROID_KEYSTORE = "AndroidKeyStore"
         private const val KEY_ALIAS = "lielutodo_session"
         private const val TRANSFORMATION = "AES/GCM/NoPadding"

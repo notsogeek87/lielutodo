@@ -109,8 +109,18 @@ class SettingsViewModel(
             val message =
                 when (val result = notesSync.syncNow()) {
                     is SyncResult.Success ->
-                        "Synchronisation : ${result.pushed} envoyée(s), ${result.pulled} reçue(s), " +
-                            "${result.deleted} supprimée(s)."
+                        buildString {
+                            append(
+                                "Synchronisation : ${result.pushed} envoyée(s), ${result.pulled} reçue(s), " +
+                                    "${result.deleted} supprimée(s).",
+                            )
+                            if (result.conflicts > 0) {
+                                append(" ${result.conflicts} conflit(s) : la version du serveur est gardée en copie.")
+                            }
+                            if (result.encryptedSkipped > 0) {
+                                append(" ${result.encryptedSkipped} note(s) chiffrée(s) ignorée(s).")
+                            }
+                        }
                     is SyncResult.Failure -> result.message
                 }
             opState.value = OpState(message = message)

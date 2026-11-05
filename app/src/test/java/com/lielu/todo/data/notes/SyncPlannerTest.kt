@@ -84,7 +84,7 @@ class SyncPlannerTest {
                 remoteDeleted = emptySet(),
             )
 
-        assertEquals(listOf("a"), plan.toDeleteRemote)
+        assertEquals(listOf("a"), plan.toDeleteRemote.map { it.id })
         assertTrue(plan.toPush.isEmpty())
     }
 
@@ -111,5 +111,34 @@ class SyncPlannerTest {
 
         assertEquals(1, plan.toPush.size)
         assertTrue(plan.toDeleteLocal.isEmpty())
+    }
+
+    @Test
+    fun versionDistanteChangeeDepuisLaBasePendantUneModificationLocaleEstUnConflit() {
+        val base = local("a", updated = 30, dirty = true).copy(body = "ici", serverUpdatedTime = 10)
+        val plan =
+            SyncPlanner.plan(
+                local = listOf(base),
+                pulled = listOf(remote("a", updated = 20).copy(body = "ailleurs")),
+                remoteDeleted = emptySet(),
+            )
+
+        assertEquals(listOf("a"), plan.toPush.map { it.id })
+        assertEquals(listOf("ailleurs"), plan.conflicts.map { it.body })
+        assertTrue(plan.toApplyRemote.isEmpty())
+    }
+
+    @Test
+    fun versionDistanteInchangeeDepuisLaBaseNEstPasUnConflit() {
+        val base = local("a", updated = 30, dirty = true).copy(body = "ici", serverUpdatedTime = 20)
+        val plan =
+            SyncPlanner.plan(
+                local = listOf(base),
+                pulled = listOf(remote("a", updated = 20).copy(body = "avant")),
+                remoteDeleted = emptySet(),
+            )
+
+        assertTrue(plan.conflicts.isEmpty())
+        assertEquals(1, plan.toPush.size)
     }
 }

@@ -30,7 +30,6 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -39,6 +38,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -49,7 +50,6 @@ import io.noties.markwon.Markwon
 fun NoteEditScreen(
     viewModel: NoteEditViewModel,
     onBackClick: () -> Unit,
-    onDismiss: () -> Unit = {},
 ) {
     val title by viewModel.title.collectAsState()
     val body by viewModel.body.collectAsState()
@@ -64,10 +64,6 @@ fun NoteEditScreen(
 
     if (!exists) {
         LaunchedEffect(Unit) { onBackClick() }
-    }
-
-    DisposableEffect(Unit) {
-        onDispose { onDismiss() }
     }
 
     Scaffold(
@@ -107,11 +103,18 @@ fun NoteEditScreen(
                         .verticalScroll(rememberScrollState()),
             ) {
                 Text(title, style = MaterialTheme.typography.headlineSmall)
+                // Couleur du thème de l'app (et non du thème Android, faux si le mode sombre est forcé dans l'app).
+                val textColor = MaterialTheme.colorScheme.onSurface.toArgb()
+                val linkColor = MaterialTheme.colorScheme.primary.toArgb()
+                val context = LocalContext.current
+                val markwon = remember(context) { Markwon.create(context) }
                 AndroidView(
-                    factory = { context ->
-                        TextView(context).apply { Markwon.create(context).setMarkdown(this, body.text) }
+                    factory = { TextView(it) },
+                    update = { view ->
+                        view.setTextColor(textColor)
+                        view.setLinkTextColor(linkColor)
+                        markwon.setMarkdown(view, body.text)
                     },
-                    update = { view -> Markwon.create(view.context).setMarkdown(view, body.text) },
                     modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
                 )
             }

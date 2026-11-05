@@ -74,4 +74,23 @@ class JoplinParserTest {
         assertEquals("Corps", reparsed.body)
         assertEquals(1793728870000L, reparsed.updatedTime)
     }
+
+    @Test
+    fun patchGardeLesProprietesEtRemplaceLeContenu() {
+        val brut =
+            "Ancien\n\nancien corps\n\nid: ${"a".repeat(32)}\nparent_id: p1\nauthor: Moi\n" +
+                "is_todo: 1\ntodo_due: 1700000000000\nupdated_time: 2020-01-01T00:00:00.000Z\ntype_: 1\n"
+
+        val texte = JoplinParser.patch(brut, "Nouveau", "corps", "p2", 1793728870000L)
+
+        assertTrue(texte.startsWith("Nouveau\n\ncorps\n\n"))
+        assertTrue(texte.contains("author: Moi\n"))
+        assertTrue(texte.contains("is_todo: 1\n"))
+        assertTrue(texte.contains("todo_due: 1700000000000\n"))
+        assertTrue(texte.contains("parent_id: p2\n"))
+        assertTrue(texte.endsWith("type_: 1\n"))
+        val relu = JoplinParser.parse(texte)!!
+        assertEquals("corps", relu.body)
+        assertEquals(1793728870000L, relu.updatedTime)
+    }
 }

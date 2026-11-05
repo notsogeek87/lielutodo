@@ -253,6 +253,7 @@ fun AppNavHost(
                                         container.notesRepository,
                                         container.notesSync,
                                         container.settingsRepository,
+                                        container.applicationScope,
                                     )
                                 }
                             },
@@ -260,7 +261,6 @@ fun AppNavHost(
                 NoteEditScreen(
                     viewModel = viewModel,
                     onBackClick = { navController.popBackStack() },
-                    onDismiss = { viewModel.onScreenDismissed() },
                 )
             }
         }

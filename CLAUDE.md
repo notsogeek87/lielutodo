@@ -173,6 +173,28 @@ rester lisible ET modifiable hors ligne.
 - Piège d'édition : après un reformatage ktlint, un `str.replace` sur du code déjà reformaté peut ne rien changer en
   silence. Vérifier chaque point d'entrée UI (grep) et préférer un remplacement qui échoue si l'ancre manque.
 
+## Notes (Joplin Server)
+
+Écran Notes (icône sur l'accueil), synchronisé en lecture/écriture avec un Joplin Server (`https://notes.lielu.eu`)
+via son protocole de synchro (`POST /api/sessions` → `X-API-AUTH`, delta `items/root:/:/delta` + cursor).
+
+- `data/joplin` : `JoplinApi`/`HttpJoplinApi`, `JoplinParser` (format d'item `BaseItem.serialize`). Une note existante
+  est renvoyée avec `patch()` sur son contenu serveur (`Note.serverRaw`) : seuls titre, corps, carnet et dates changent,
+  les autres propriétés (to-do, échéance, auteur…) sont gardées — même raison que `Task.raw`. `serialize()` = nouvelle
+  note seulement. Items chiffrés (E2EE, `encryption_applied: 1`) ignorés, jamais réécrits.
+- `data/notes` : `FileNotesRepository` (`notes-cache.json` atomique + `.bak`, un cache illisible est mis de côté en
+  `.corrupt`, jamais écrasé ; toutes les écritures sous verrou, `update(id) { … }` pour lire-modifier-écrire).
+  `NotesSync` : une synchro à la fois (Mutex) ; une note modifiée pendant son envoi reste `dirty` ; delta incrémental
+  (resync complète seulement sur `resyncRequired` ou cache vide). `SyncPlanner` (pur, testé) : version distante
+  changée depuis `serverUpdatedTime` alors que la note est modifiée ici = conflit, la version distante est gardée dans
+  une copie « (conflit …) ». Suppression locale = corbeille Joplin (`deleted_time`), pas de suppression définitive.
+- Éditeur : enregistrement local différé (400 ms), synchro à la FERMETURE (`onCleared` → `applicationScope`, qui
+  enregistre aussi la dernière frappe et supprime une note restée vide) ; `NotesSyncWorker` toutes les 30 min.
+- Identifiants : URL et e-mail dans le DataStore ; mot de passe chiffré dans `SessionStore` (hors sauvegarde Android et
+  hors export). `NoteBackupSection` exporte notes (avec état de synchro et `serverRaw`) et carnets.
+- Tests : `NotesSyncTest` (faux serveur Joplin), `SyncPlannerTest`, `FileNotesRepositoryTest`, `JoplinParserTest`.
+- APK d'une branche de travail : artefact du run CI (`apk-<branche>-<run>`), jamais versionné dans le dépôt.
+
 ## Version web (`web/`)
 
 Même serveur Vikunja, même logique « local d'abord » que l'APK, en site statique sans build (ES modules, voir

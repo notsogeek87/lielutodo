@@ -68,15 +68,29 @@ class NoteBackupSectionTest {
         }
 
     @Test
-    fun lesNotesSupprimeesNeSontPasExportees() =
+    fun uneSuppressionEnAttenteEtLeContenuServeurSurviventALaRestauration() =
         runTest {
             val notes = FakeNotesRepository()
-            notes.upsert(Note(id = "a", title = "t", body = "", userUpdatedTime = 1L))
+            notes.upsert(
+                Note(
+                    id = "a",
+                    title = "t",
+                    body = "",
+                    userUpdatedTime = 1L,
+                    serverRaw = "brut",
+                    serverUpdatedTime = 5L,
+                ),
+            )
             notes.upsert(Note(id = "b", title = "s", body = "", userUpdatedTime = 2L, deleted = true, dirty = true))
             val section = NoteBackupSection(notes)
 
             val exported = section.export()
+            notes.replaceAll(emptyList())
+            section.restore(exported)
 
-            assertEquals(1, exported.getJSONArray("notes").length())
+            assertEquals("brut", notes.getById("a")?.serverRaw)
+            assertEquals(5L, notes.getById("a")?.serverUpdatedTime)
+            assertEquals(true, notes.getById("b")?.deleted)
+            assertEquals(1, notes.getAllActive().size)
         }
 }

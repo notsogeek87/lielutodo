@@ -1,14 +1,15 @@
 package com.lielu.todo.backup
 
-import com.lielu.todo.data.notes.Folder
-import com.lielu.todo.data.notes.Note
+import com.lielu.todo.data.notes.NoteJson
 import com.lielu.todo.data.notes.NotesRepository
 import org.json.JSONArray
 import org.json.JSONObject
 
 /**
- * Les notes dans les sauvegardes (manuelles ou automatiques). Les notes marquées supprimées (en attente
- * de synchro Joplin) ne sont pas exportées ; `restore` remplace tout, de façon atomique.
+ * Les notes dans les sauvegardes (manuelles ou automatiques), avec leur état de synchro : une modification ou une
+ * suppression pas encore envoyée à Joplin le reste après restauration, et le contenu serveur gardé (`serverRaw`)
+ * évite de perdre les propriétés Joplin au prochain envoi. `restore` lit tout le fichier avant de remplacer quoi
+ * que ce soit.
  */
 class NoteBackupSection(
     private val notes: NotesRepository,
@@ -17,54 +18,23 @@ class NoteBackupSection(
 
     override suspend fun export(): JSONObject {
         val array = JSONArray()
-        for (note in notes.getAllActive()) {
-            array.put(
-                JSONObject()
-                    .put("id", note.id)
-                    .put("title", note.title)
-                    .put("body", note.body)
-                    .put("parentId", note.parentId)
-                    .put("userUpdatedTime", note.userUpdatedTime)
-                    .put("dirty", note.dirty),
-            )
-        }
+        notes.getAllIncludingDeleted().forEach { array.put(NoteJson.noteToJson(it, includeLocalState = true)) }
         val foldersArray = JSONArray()
-        for (folder in notes.getFolders()) {
-            foldersArray.put(
-                JSONObject()
-                    .put("id", folder.id)
-                    .put("title", folder.title)
-                    .put("parentId", folder.parentId),
-            )
-        }
+        notes.getFolders().forEach { foldersArray.put(NoteJson.folderToJson(it)) }
         return JSONObject().put("notes", array).put("folders", foldersArray)
     }
 
     override suspend fun restore(data: JSONObject) {
         val array = data.optJSONArray("notes") ?: return
-        val restored =
-            (0 until array.length()).map { i ->
-                val json = array.getJSONObject(i)
-                Note(
-                    id = json.getString("id"),
-                    title = json.optString("title"),
-                    body = json.optString("body"),
-                    parentId = json.optString("parentId"),
-                    userUpdatedTime = json.optLong("userUpdatedTime", 0L),
-                    dirty = json.optBoolean("dirty", false),
-                )
+        val restored = (0 until array.length()).map { NoteJson.noteFromJson(array.getJSONObject(it)) }
+        val foldersArray = data.optJSONArray("folders")
+        val folders =
+            foldersArray?.let {
+                (0 until it.length()).map { i ->
+                    NoteJson.folderFromJson(it.getJSONObject(i))
+                }
             }
         notes.replaceAll(restored)
-        val foldersArray = data.optJSONArray("folders") ?: return
-        val folders =
-            (0 until foldersArray.length()).map { i ->
-                val json = foldersArray.getJSONObject(i)
-                Folder(
-                    id = json.getString("id"),
-                    title = json.optString("title"),
-                    parentId = json.optString("parentId"),
-                )
-            }
-        notes.replaceFolders(folders)
+        if (folders != null) notes.replaceFolders(folders)
     }
 }

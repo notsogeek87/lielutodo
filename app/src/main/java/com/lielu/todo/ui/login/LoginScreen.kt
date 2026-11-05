@@ -90,7 +90,9 @@ fun LoginScreen(
                 settings.setJoplinServerUrl(joplinServer.trim())
                 settings.setJoplinEmail(joplinEmail.trim())
                 if (joplinPassword.isNotBlank()) settings.setJoplinPassword(joplinPassword)
-                val joplinReady = joplinEmail.isNotBlank() && joplinPassword.isNotBlank()
+                // Mot de passe non retapé (champ masqué) : celui déjà enregistré reste valable.
+                val joplinReady =
+                    joplinEmail.isNotBlank() && (joplinPassword.isNotBlank() || savedJoplin.password.isNotBlank())
                 settings.setJoplinSyncEnabled(joplinReady)
             }
         }

@@ -45,11 +45,10 @@ class NoteEditViewModelTest {
             val settings = FakeSettingsRepository()
             val notes = FakeNotesRepository()
             val note = notes.create()
-            val vm = NoteEditViewModel(note.id, notes, syncStub(settings, notes), settings)
+            val vm = NoteEditViewModel(note.id, notes, syncStub(settings, notes), settings, backgroundScope)
             testDispatcher.scheduler.advanceUntilIdle()
 
-            vm.onScreenDismissed()
-            testDispatcher.scheduler.advanceUntilIdle()
+            vm.finish()
 
             assertTrue(notes.getById(note.id)?.deleted == true)
         }
@@ -61,11 +60,10 @@ class NoteEditViewModelTest {
             val notes = FakeNotesRepository()
             val note = notes.create()
             notes.save(note.id, "Titre", "Contenu")
-            val vm = NoteEditViewModel(note.id, notes, syncStub(settings, notes), settings)
+            val vm = NoteEditViewModel(note.id, notes, syncStub(settings, notes), settings, backgroundScope)
             testDispatcher.scheduler.advanceUntilIdle()
 
-            vm.onScreenDismissed()
-            testDispatcher.scheduler.advanceUntilIdle()
+            vm.finish()
 
             assertNotNull(notes.getById(note.id))
         }
@@ -77,11 +75,10 @@ class NoteEditViewModelTest {
             val notes = FakeNotesRepository()
             val note = notes.create()
             notes.upsert(Note(id = note.id, title = "Titre seul", body = "", userUpdatedTime = 1L, dirty = true))
-            val vm = NoteEditViewModel(note.id, notes, syncStub(settings, notes), settings)
+            val vm = NoteEditViewModel(note.id, notes, syncStub(settings, notes), settings, backgroundScope)
             testDispatcher.scheduler.advanceUntilIdle()
 
-            vm.onScreenDismissed()
-            testDispatcher.scheduler.advanceUntilIdle()
+            vm.finish()
 
             assertNotNull(notes.getById(note.id))
         }
@@ -101,7 +98,7 @@ class NoteEditViewModelTest {
                     dirty = true,
                 ),
             )
-            val vm = NoteEditViewModel(note.id, notes, syncStub(settings, notes), settings)
+            val vm = NoteEditViewModel(note.id, notes, syncStub(settings, notes), settings, backgroundScope)
             testDispatcher.scheduler.advanceUntilIdle()
             vm.onBodyChanged(TextFieldValue("le mot important ici", TextRange(7, 16)))
 
@@ -118,7 +115,7 @@ class NoteEditViewModelTest {
             val notes = FakeNotesRepository()
             val note = notes.create()
             notes.upsert(Note(id = note.id, title = "t", body = "abc", userUpdatedTime = 1L, dirty = true))
-            val vm = NoteEditViewModel(note.id, notes, syncStub(settings, notes), settings)
+            val vm = NoteEditViewModel(note.id, notes, syncStub(settings, notes), settings, backgroundScope)
             testDispatcher.scheduler.advanceUntilIdle()
             vm.onBodyChanged(TextFieldValue("abc", TextRange(1)))
 
@@ -136,7 +133,7 @@ class NoteEditViewModelTest {
             val notes = FakeNotesRepository()
             val note = notes.create()
             notes.upsert(Note(id = note.id, title = "t", body = "avant apres", userUpdatedTime = 1L, dirty = true))
-            val vm = NoteEditViewModel(note.id, notes, syncStub(settings, notes), settings)
+            val vm = NoteEditViewModel(note.id, notes, syncStub(settings, notes), settings, backgroundScope)
             testDispatcher.scheduler.advanceUntilIdle()
             vm.onBodyChanged(TextFieldValue("avant apres", TextRange(5)))
 
@@ -153,7 +150,7 @@ class NoteEditViewModelTest {
             val notes = FakeNotesRepository()
             val note = notes.create()
             notes.upsert(Note(id = note.id, title = "t", body = "ligne1\nligne2", userUpdatedTime = 1L, dirty = true))
-            val vm = NoteEditViewModel(note.id, notes, syncStub(settings, notes), settings)
+            val vm = NoteEditViewModel(note.id, notes, syncStub(settings, notes), settings, backgroundScope)
             testDispatcher.scheduler.advanceUntilIdle()
             vm.onBodyChanged(TextFieldValue("ligne1\nligne2", TextRange(7)))
 
@@ -161,5 +158,22 @@ class NoteEditViewModelTest {
 
             val bodyValue = vm.body.first()
             assertEquals("ligne1\n- élémentligne2", bodyValue.text)
+        }
+
+    @Test
+    fun laDerniereFrappeEstEnregistreeALaFermeture() =
+        runTest {
+            val settings = FakeSettingsRepository()
+            val notes = FakeNotesRepository()
+            val note = notes.create()
+            notes.save(note.id, "Titre", "début")
+            val vm = NoteEditViewModel(note.id, notes, syncStub(settings, notes), settings, backgroundScope)
+            testDispatcher.scheduler.advanceUntilIdle()
+            vm.onBodyChanged(TextFieldValue("début et fin"))
+
+            // Fermeture avant la fin du délai d'enregistrement automatique.
+            vm.finish()
+
+            assertEquals("début et fin", notes.getById(note.id)?.body)
         }
 }

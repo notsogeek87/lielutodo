@@ -7,12 +7,25 @@ import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.withContext
+
+/** Rangement du mot de passe Joplin hors DataStore (le DataStore part dans la sauvegarde Android). */
+interface SecretStore {
+    var joplinPassword: String
+}
 
 class SettingsRepositoryImpl(
     private val dataStore: DataStore<Preferences>,
+    private val secrets: SecretStore,
 ) : SettingsRepository {
+    private val joplinPassword = MutableStateFlow(secrets.joplinPassword)
+
     override val themeMode: Flow<ThemeMode> =
         dataStore.data.map { prefs -> ThemeMode.fromStorageValue(prefs[Keys.THEME_MODE]) }
 
@@ -79,14 +92,21 @@ class SettingsRepositoryImpl(
     }
 
     override val joplin: Flow<JoplinSettings> =
-        dataStore.data.map { prefs ->
+        combine(dataStore.data, joplinPassword) { prefs, password ->
             JoplinSettings(
                 serverUrl = prefs[Keys.JOPLIN_SERVER_URL] ?: "",
                 email = prefs[Keys.JOPLIN_EMAIL] ?: "",
-                password = prefs[Keys.JOPLIN_PASSWORD] ?: "",
+                password = password.ifEmpty { prefs[Keys.LEGACY_JOPLIN_PASSWORD].orEmpty() },
                 syncEnabled = prefs[Keys.JOPLIN_SYNC_ENABLED] ?: false,
             )
         }
+
+    /** Les premières versions rangeaient le mot de passe Joplin en clair dans le DataStore : on le déplace. */
+    suspend fun migrateLegacySecrets() {
+        val legacy = dataStore.data.first()[Keys.LEGACY_JOPLIN_PASSWORD] ?: return
+        if (joplinPassword.value.isEmpty() && legacy.isNotEmpty()) setJoplinPassword(legacy)
+        dataStore.edit { it.remove(Keys.LEGACY_JOPLIN_PASSWORD) }
+    }
 
     override suspend fun setJoplinServerUrl(url: String) {
         dataStore.edit { it[Keys.JOPLIN_SERVER_URL] = url.trim() }
@@ -97,7 +117,8 @@ class SettingsRepositoryImpl(
     }
 
     override suspend fun setJoplinPassword(password: String) {
-        dataStore.edit { it[Keys.JOPLIN_PASSWORD] = password }
+        withContext(Dispatchers.IO) { secrets.joplinPassword = password }
+        joplinPassword.value = password
     }
 
     override suspend fun setJoplinSyncEnabled(enabled: Boolean) {
@@ -146,7 +167,9 @@ class SettingsRepositoryImpl(
         val WELCOME_SHOWN = booleanPreferencesKey("welcome_shown")
         val JOPLIN_SERVER_URL = stringPreferencesKey("joplin_server_url")
         val JOPLIN_EMAIL = stringPreferencesKey("joplin_email")
-        val JOPLIN_PASSWORD = stringPreferencesKey("joplin_password")
+
+        /** Ancien emplacement (en clair, sauvegardé par Android) : lu une fois puis effacé. */
+        val LEGACY_JOPLIN_PASSWORD = stringPreferencesKey("joplin_password")
         val JOPLIN_SYNC_ENABLED = booleanPreferencesKey("joplin_sync_enabled")
         val LAST_SYNC_AT = longPreferencesKey("last_sync_at")
         val LAST_SYNC_ERROR = stringPreferencesKey("last_sync_error")

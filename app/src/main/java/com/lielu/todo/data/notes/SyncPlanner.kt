@@ -6,18 +6,26 @@ import com.lielu.todo.data.joplin.RemoteNote
 data class SyncPlan(
     /** Notes locales modifiées à pousser vers le serveur. */
     val toPush: List<Note>,
-    /** Ids de notes à supprimer côté serveur (supprimées localement). */
-    val toDeleteRemote: List<String>,
-    /** Notes reçues du delta à écrire en local (nouvelles ou plus récentes que la copie locale). */
+    /** Notes supprimées localement, à mettre à la corbeille côté serveur. */
+    val toDeleteRemote: List<Note>,
+    /** Notes reçues à écrire en local (nouvelles ou plus récentes que la copie locale propre). */
     val toApplyRemote: List<RemoteNote>,
-    /** Ids de notes locales à supprimer (supprimées côté serveur). */
+    /** Ids de notes locales à supprimer (supprimées côté serveur, sans modification locale en attente). */
     val toDeleteLocal: List<String>,
+    /**
+     * Versions distantes modifiées ailleurs pendant que la note l'était aussi ici : la version locale est poussée,
+     * la version distante est gardée à côté dans une copie « (conflit) » — rien n'est perdu.
+     */
+    val conflicts: List<RemoteNote>,
 )
 
 /**
- * Découpe une synchronisation en actions. Règle de conflit : dernier modifié gagne — une note locale
- * modifiée ([Note.dirty]) est toujours poussée (elle écrase la version distante), une note reçue plus
- * récente que la copie locale propre est appliquée, une note supprimée d'un côté est supprimée de l'autre.
+ * Découpe une synchronisation en actions.
+ * - Note locale propre : la version distante l'emporte si elle est plus récente que la dernière version connue.
+ * - Note locale modifiée ([Note.dirty]) : poussée. Si la version distante a aussi changé depuis
+ *   [Note.serverUpdatedTime] (ou si on ne la connaît pas) avec un contenu différent, c'est un conflit : la version
+ *   distante est conservée dans une copie.
+ * - Suppression d'un côté sans modification de l'autre : appliquée de l'autre côté.
  */
 object SyncPlanner {
     fun plan(
@@ -27,13 +35,32 @@ object SyncPlanner {
     ): SyncPlan {
         val localById = local.associateBy { it.id }
         val toPush = local.filter { it.dirty && !it.deleted }
-        val toDeleteRemote = local.filter { it.deleted }.map { it.id }
-        val toApplyRemote =
-            pulled.filter { remote ->
-                val localNote = localById[remote.id]
-                localNote == null || (!localNote.dirty && remote.userUpdatedTime > localNote.userUpdatedTime)
+        val toDeleteRemote = local.filter { it.deleted }
+        val toApplyRemote = mutableListOf<RemoteNote>()
+        val conflicts = mutableListOf<RemoteNote>()
+        for (remote in pulled) {
+            val localNote = localById[remote.id]
+            when {
+                localNote == null -> toApplyRemote += remote
+                localNote.deleted -> Unit
+                !localNote.dirty -> {
+                    val known = localNote.serverUpdatedTime.takeIf { it > 0 } ?: localNote.userUpdatedTime
+                    if (remote.userUpdatedTime > known) toApplyRemote += remote
+                }
+                remoteChangedSinceBase(localNote, remote) && !sameContent(localNote, remote) -> conflicts += remote
             }
+        }
         val toDeleteLocal = local.filter { it.id in remoteDeleted && !it.dirty }.map { it.id }
-        return SyncPlan(toPush, toDeleteRemote, toApplyRemote, toDeleteLocal)
+        return SyncPlan(toPush, toDeleteRemote, toApplyRemote, toDeleteLocal, conflicts)
     }
+
+    private fun remoteChangedSinceBase(
+        local: Note,
+        remote: RemoteNote,
+    ): Boolean = local.serverUpdatedTime == 0L || remote.userUpdatedTime > local.serverUpdatedTime
+
+    private fun sameContent(
+        local: Note,
+        remote: RemoteNote,
+    ): Boolean = local.title == remote.title && local.body == remote.body
 }
