@@ -52,7 +52,8 @@ async function request(s, method, path, { query, body } = {}) {
       headers: {
         Accept: 'application/json',
         ...(s.token ? { Authorization: `Bearer ${s.token}` } : {}),
-        ...(body ? { 'Content-Type': 'application/json' } : {}),
+        // Déclaré même sans corps (DELETE d'une affectation…), comme VikunjaClient.kt : Vikunja refuse un autre type (415).
+        ...(body || method !== 'GET' ? { 'Content-Type': 'application/json' } : {}),
       },
       body: body ? JSON.stringify(body) : undefined,
     });
