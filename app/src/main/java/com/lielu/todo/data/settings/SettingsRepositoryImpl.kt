@@ -94,7 +94,8 @@ class SettingsRepositoryImpl(
     override val joplin: Flow<JoplinSettings> =
         combine(dataStore.data, joplinPassword) { prefs, password ->
             JoplinSettings(
-                serverUrl = prefs[Keys.JOPLIN_SERVER_URL] ?: "",
+                // Jamais saisi : serveur par défaut (les identifiants suffisent alors pour synchroniser).
+                serverUrl = prefs[Keys.JOPLIN_SERVER_URL]?.takeIf { it.isNotBlank() } ?: DEFAULT_JOPLIN_SERVER,
                 email = prefs[Keys.JOPLIN_EMAIL] ?: "",
                 password = password.ifEmpty { prefs[Keys.LEGACY_JOPLIN_PASSWORD].orEmpty() },
                 syncEnabled = prefs[Keys.JOPLIN_SYNC_ENABLED] ?: false,

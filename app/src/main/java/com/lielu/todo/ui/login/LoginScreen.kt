@@ -41,6 +41,7 @@ import com.lielu.todo.R
 import com.lielu.todo.data.api.ApiException
 import com.lielu.todo.data.api.SessionStore
 import com.lielu.todo.data.api.VikunjaClient
+import com.lielu.todo.data.settings.DEFAULT_JOPLIN_SERVER
 import com.lielu.todo.data.settings.JoplinSettings
 import com.lielu.todo.data.settings.SettingsRepository
 import com.lielu.todo.data.todo.TodoRepository
@@ -279,6 +280,3 @@ fun LoginScreen(
 }
 
 private const val HTTP_PRECONDITION_FAILED = 412
-
-/** Serveur Joplin par défaut (adresse cachée sur cette page, modifiable par double appui sur le logo). */
-private const val DEFAULT_JOPLIN_SERVER = "https://notes.lielu.eu"

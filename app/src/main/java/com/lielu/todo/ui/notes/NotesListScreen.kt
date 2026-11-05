@@ -26,6 +26,7 @@ import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Badge
 import androidx.compose.material3.BadgedBox
+import androidx.compose.material3.Button
 import androidx.compose.material3.ElevatedCard
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
@@ -43,6 +44,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -54,13 +56,78 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.lielu.todo.data.joplin.ShareStatus
 import com.lielu.todo.data.notes.Folder
 import com.lielu.todo.data.notes.Note
+import com.lielu.todo.data.settings.DEFAULT_JOPLIN_SERVER
 import com.lielu.todo.ui.common.SectionHeader
 import com.lielu.todo.ui.formatDateTime
+
+/** Notes pas encore connectées : on le dit et on propose la connexion ici même (serveur par défaut pré-rempli). */
+@Composable
+private fun NotesConnectCard(viewModel: NotesViewModel) {
+    val saved by viewModel.joplin.collectAsState()
+    val connecting by viewModel.connecting.collectAsState()
+    var server by remember { mutableStateOf("") }
+    var email by remember { mutableStateOf("") }
+    var password by remember { mutableStateOf("") }
+    LaunchedEffect(saved) {
+        if (server.isBlank()) server = saved.serverUrl.ifBlank { DEFAULT_JOPLIN_SERVER }
+        if (email.isBlank()) email = saved.email
+        if (password.isEmpty()) password = saved.password
+    }
+    ElevatedCard(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)) {
+        Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Default.CloudOff, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                Text(
+                    "Notes non connectées",
+                    style = MaterialTheme.typography.titleMedium,
+                    modifier = Modifier.padding(start = 8.dp),
+                )
+            }
+            Text(
+                "Connectez votre compte Joplin pour retrouver et synchroniser vos notes.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            OutlinedTextField(
+                value = server,
+                onValueChange = { server = it },
+                label = { Text("Serveur Joplin") },
+                singleLine = true,
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
+                modifier = Modifier.fillMaxWidth(),
+            )
+            OutlinedTextField(
+                value = email,
+                onValueChange = { email = it },
+                label = { Text("E-mail Joplin") },
+                singleLine = true,
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
+                modifier = Modifier.fillMaxWidth(),
+            )
+            OutlinedTextField(
+                value = password,
+                onValueChange = { password = it },
+                label = { Text("Mot de passe Joplin") },
+                singleLine = true,
+                visualTransformation = PasswordVisualTransformation(),
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+                modifier = Modifier.fillMaxWidth(),
+            )
+            if (connecting) LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+            Button(
+                onClick = { viewModel.onConnect(server, email, password) },
+                enabled = !connecting && email.isNotBlank() && password.isNotEmpty(),
+                modifier = Modifier.fillMaxWidth(),
+            ) { Text(if (connecting) "Connexion…" else "Connecter mes notes") }
+        }
+    }
+}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -78,6 +145,8 @@ fun NotesListScreen(
     val share by viewModel.share.collectAsState()
     val message by viewModel.message.collectAsState()
     val savedFolder by viewModel.selectedFolder.collectAsState()
+    val syncing by viewModel.syncing.collectAsState()
+    val showConnect by viewModel.showConnect.collectAsState()
     // Carnet mémorisé mais supprimé entre-temps : retour à « Tous ».
     val selectedFolder = savedFolder?.takeIf { id -> folders.isEmpty() || folders.any { it.id == id } }
     var searchQuery by remember { mutableStateOf("") }
@@ -124,131 +193,139 @@ fun NotesListScreen(
             }
         },
     ) { paddingValues ->
-        Column(modifier = Modifier.fillMaxSize().padding(paddingValues)) {
-            OutlinedTextField(
-                value = searchQuery,
-                onValueChange = { searchQuery = it },
-                leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
-                placeholder = { Text("Rechercher dans les notes") },
-                singleLine = true,
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
-            )
-            if (folders.isNotEmpty()) {
-                Row(
-                    modifier =
-                        Modifier
-                            .fillMaxWidth()
-                            .horizontalScroll(rememberScrollState())
-                            .padding(horizontal = 16.dp, vertical = 8.dp),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    FilterChip(
-                        selected = selectedFolder == null,
-                        onClick = { viewModel.onSelectFolder(null) },
-                        label = { Text("Tous") },
-                    )
-                    folders.forEach { folder ->
+        // Tirer vers le bas : synchronise les notes avec Joplin (les partages compris).
+        PullToRefreshBox(
+            isRefreshing = syncing,
+            onRefresh = viewModel::onRefresh,
+            modifier = Modifier.fillMaxSize().padding(paddingValues),
+        ) {
+            Column(modifier = Modifier.fillMaxSize()) {
+                if (showConnect) NotesConnectCard(viewModel)
+                OutlinedTextField(
+                    value = searchQuery,
+                    onValueChange = { searchQuery = it },
+                    leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
+                    placeholder = { Text("Rechercher dans les notes") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+                )
+                if (folders.isNotEmpty()) {
+                    Row(
+                        modifier =
+                            Modifier
+                                .fillMaxWidth()
+                                .horizontalScroll(rememberScrollState())
+                                .padding(horizontal = 16.dp, vertical = 8.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
                         FilterChip(
-                            selected = selectedFolder == folder.id,
-                            onClick = { viewModel.onSelectFolder(folder.id) },
-                            label = { Text(folder.title) },
-                            leadingIcon =
-                                if (folder.shareId.isNotBlank()) {
-                                    { Icon(Icons.Default.People, contentDescription = "Partagé") }
-                                } else {
-                                    null
-                                },
+                            selected = selectedFolder == null,
+                            onClick = { viewModel.onSelectFolder(null) },
+                            label = { Text("Tous") },
+                        )
+                        folders.forEach { folder ->
+                            FilterChip(
+                                selected = selectedFolder == folder.id,
+                                onClick = { viewModel.onSelectFolder(folder.id) },
+                                label = { Text(folder.title) },
+                                leadingIcon =
+                                    if (folder.shareId.isNotBlank()) {
+                                        { Icon(Icons.Default.People, contentDescription = "Partagé") }
+                                    } else {
+                                        null
+                                    },
+                            )
+                        }
+                    }
+                }
+                // Carnet choisi : son partage (un sous-carnet ne se partage pas, règle Joplin).
+                folders.firstOrNull { it.id == selectedFolder }?.let { folder ->
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(
+                            when {
+                                folder.shareId.isNotBlank() -> "Carnet partagé"
+                                folder.dirty -> "Carnet pas encore envoyé à Joplin"
+                                else -> "Carnet personnel"
+                            },
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.weight(1f),
+                        )
+                        if (syncReady && folder.parentId.isBlank()) {
+                            TextButton(onClick = { viewModel.onOpenShare(folder) }) {
+                                Icon(Icons.Default.PersonAdd, contentDescription = null)
+                                Text("Partager", modifier = Modifier.padding(start = 6.dp))
+                            }
+                        }
+                    }
+                }
+                val query = searchQuery.trim().lowercase()
+                val visible =
+                    notes
+                        .filter { selectedFolder == null || it.parentId == selectedFolder }
+                        .filter { note ->
+                            query.isEmpty() ||
+                                note.title.lowercase().contains(query) ||
+                                note.body.lowercase().contains(query)
+                        }
+                val folderTitle = folders.firstOrNull { it.id == selectedFolder }?.title
+                if (notes.isEmpty()) {
+                    Column(
+                        modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(24.dp),
+                        verticalArrangement = Arrangement.Center,
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                    ) {
+                        Text(
+                            when {
+                                folderTitle != null -> "Aucune note dans « $folderTitle »."
+                                syncing -> "Récupération de vos notes…"
+                                else ->
+                                    "Aucune note. Touchez + pour en créer une, ou tirez vers le bas pour synchroniser."
+                            },
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
-                }
-            }
-            // Carnet choisi : son partage (un sous-carnet ne se partage pas, règle Joplin).
-            folders.firstOrNull { it.id == selectedFolder }?.let { folder ->
-                Row(
-                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Text(
-                        when {
-                            folder.shareId.isNotBlank() -> "Carnet partagé"
-                            folder.dirty -> "Carnet pas encore envoyé à Joplin"
-                            else -> "Carnet personnel"
-                        },
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.weight(1f),
-                    )
-                    if (syncReady && folder.parentId.isBlank()) {
-                        TextButton(onClick = { viewModel.onOpenShare(folder) }) {
-                            Icon(Icons.Default.PersonAdd, contentDescription = null)
-                            Text("Partager", modifier = Modifier.padding(start = 6.dp))
-                        }
+                } else if (visible.isEmpty()) {
+                    Column(
+                        modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(24.dp),
+                        verticalArrangement = Arrangement.Center,
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                    ) {
+                        Text(
+                            "Aucun résultat pour « $searchQuery ».",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
                     }
-                }
-            }
-            val query = searchQuery.trim().lowercase()
-            val visible =
-                notes
-                    .filter { selectedFolder == null || it.parentId == selectedFolder }
-                    .filter { note ->
-                        query.isEmpty() ||
-                            note.title.lowercase().contains(query) ||
-                            note.body.lowercase().contains(query)
-                    }
-            val folderTitle = folders.firstOrNull { it.id == selectedFolder }?.title
-            if (notes.isEmpty()) {
-                Column(
-                    modifier = Modifier.fillMaxSize().padding(24.dp),
-                    verticalArrangement = Arrangement.Center,
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                ) {
-                    Text(
-                        if (folderTitle != null) {
-                            "Aucune note dans « $folderTitle »."
-                        } else {
-                            "Aucune note. Touchez + pour en créer une, ou synchronisez votre serveur Joplin " +
-                                "depuis les paramètres."
-                        },
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-            } else if (visible.isEmpty()) {
-                Column(
-                    modifier = Modifier.fillMaxSize().padding(24.dp),
-                    verticalArrangement = Arrangement.Center,
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                ) {
-                    Text(
-                        "Aucun résultat pour « $searchQuery ».",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-            } else {
-                LazyColumn(
-                    modifier = Modifier.fillMaxWidth(),
-                    contentPadding = PaddingValues(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    if (selectedFolder == null && folders.isNotEmpty()) {
-                        // Regroupé par carnet, comme dans Joplin.
-                        val byFolder = visible.groupBy { it.parentId }
-                        val ordered =
-                            folders.filter { byFolder.containsKey(it.id) } +
-                                listOf(Folder("", "Sans carnet")).filter { byFolder.containsKey("") }
-                        ordered.forEach { folder ->
-                            val group = byFolder[folder.id].orEmpty()
-                            item(key = "header-${folder.id}") {
-                                SectionHeader(title = folder.title, count = group.size)
+                } else {
+                    LazyColumn(
+                        modifier = Modifier.fillMaxWidth(),
+                        contentPadding = PaddingValues(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        if (selectedFolder == null && folders.isNotEmpty()) {
+                            // Regroupé par carnet, comme dans Joplin.
+                            val byFolder = visible.groupBy { it.parentId }
+                            val ordered =
+                                folders.filter { byFolder.containsKey(it.id) } +
+                                    listOf(Folder("", "Sans carnet")).filter { byFolder.containsKey("") }
+                            ordered.forEach { folder ->
+                                val group = byFolder[folder.id].orEmpty()
+                                item(key = "header-${folder.id}") {
+                                    SectionHeader(title = folder.title, count = group.size)
+                                }
+                                items(group, key = { it.id }) { note ->
+                                    NoteCard(note = note, onClick = { onNoteClick(note.id) })
+                                }
                             }
-                            items(group, key = { it.id }) { note ->
+                        } else {
+                            items(visible, key = { it.id }) { note ->
                                 NoteCard(note = note, onClick = { onNoteClick(note.id) })
                             }
-                        }
-                    } else {
-                        items(visible, key = { it.id }) { note ->
-                            NoteCard(note = note, onClick = { onNoteClick(note.id) })
                         }
                     }
                 }

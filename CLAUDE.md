@@ -206,6 +206,10 @@ via son protocole de synchro (`POST /api/sessions` → `X-API-AUTH`, delta `item
   (`resourceContent`/`resourceBlob`), gardé hors ligne (APK : `files/joplin-resources/`, hors sauvegarde ; web : Cache
   Storage `lielutodo-joplin-resources`, épargné par `sw.js`). Aperçu : `NoteImages.split` (APK) / `renderMarkdown` +
   `data-jres` (web) ; une note qui contient une image s'ouvre en aperçu. CSP du site : `img-src … blob: https:`.
+- APK : notes synchronisées à chaque ouverture/retour au premier plan (`MainActivity.syncNotesOnOpen`), « tirer pour
+  rafraîchir » sur l'onglet Notes (`NotesSync.syncing`), carte « Notes non connectées » avec formulaire pré-rempli
+  (`DEFAULT_JOPLIN_SERVER`, aussi valeur par défaut du réglage). Serveur + e-mail Joplin font partie de la section
+  `settings` des sauvegardes (restaurés seulement si absents) ; le mot de passe jamais.
 - Web : la synchro des notes est visible (`meta.syncing`/`meta.progress` : ligne d'état sous le titre, roue du haut,
   « Récupération de vos notes… » à la première) ; contenus téléchargés 6 par 6. La page de connexion a, comme l'APK, une
   section Notes facultative.

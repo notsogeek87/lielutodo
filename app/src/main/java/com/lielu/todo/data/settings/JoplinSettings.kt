@@ -16,6 +16,9 @@ data class JoplinSettings(
     val isConfigured: Boolean get() = serverUrl.isNotBlank() && email.isNotBlank() && password.isNotBlank()
 }
 
+/** Serveur Joplin proposé par défaut (page de connexion, Paramètres, onglet Notes). */
+const val DEFAULT_JOPLIN_SERVER = "https://notes.lielu.eu"
+
 /** Résultat de la dernière synchronisation Joplin, pour l'afficher dans Paramètres. */
 data class SyncStatus(
     val lastSuccessAt: Long? = null,

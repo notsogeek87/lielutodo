@@ -9,7 +9,10 @@ import com.lielu.todo.data.notes.Folder
 import com.lielu.todo.data.notes.Note
 import com.lielu.todo.data.notes.NotesRepository
 import com.lielu.todo.data.notes.NotesSync
+import com.lielu.todo.data.notes.SyncResult
 import com.lielu.todo.data.settings.AppPrefs
+import com.lielu.todo.data.settings.DEFAULT_JOPLIN_SERVER
+import com.lielu.todo.data.settings.JoplinSettings
 import com.lielu.todo.data.settings.SettingsRepository
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -78,6 +81,22 @@ class NotesViewModel(
             .map { it.syncEnabled && it.isConfigured }
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
 
+    /** Réglages Joplin enregistrés (formulaire de connexion de l'onglet, pré-rempli). */
+    val joplin: StateFlow<JoplinSettings> =
+        settingsRepository.joplin.stateIn(viewModelScope, SharingStarted.Eagerly, JoplinSettings())
+
+    /** Notes pas (ou plus) connectées : l'onglet propose la connexion. Faux tant que les réglages ne sont pas lus. */
+    val showConnect: StateFlow<Boolean> =
+        settingsRepository.joplin
+            .map { !(it.syncEnabled && it.isConfigured) }
+            .stateIn(viewModelScope, SharingStarted.Eagerly, false)
+
+    /** Synchro en cours : roue du « tirer pour rafraîchir ». */
+    val syncing: StateFlow<Boolean> = notesSync.syncing
+
+    private val _connecting = MutableStateFlow(false)
+    val connecting: StateFlow<Boolean> = _connecting
+
     private val _invitations = MutableStateFlow<List<ShareInvitation>>(emptyList())
     val invitations: StateFlow<List<ShareInvitation>> = _invitations
 
@@ -89,6 +108,47 @@ class NotesViewModel(
 
     init {
         refreshInvitations()
+    }
+
+    /** Tirer vers le bas : synchronise les notes (et les invitations de partage). */
+    fun onRefresh() {
+        viewModelScope.launch {
+            val joplin = settingsRepository.joplin.first()
+            if (!joplin.syncEnabled || !joplin.isConfigured) {
+                _message.value = "Notes non connectées : renseignez votre compte Joplin ci-dessus."
+                return@launch
+            }
+            val result = notesSync.syncNow()
+            if (result is SyncResult.Failure) _message.value = result.message
+            refreshInvitations()
+        }
+    }
+
+    /** Connexion depuis l'onglet Notes : enregistre les identifiants puis lance une première synchro. */
+    fun onConnect(
+        serverUrl: String,
+        email: String,
+        password: String,
+    ) {
+        if (email.isBlank() || password.isEmpty()) {
+            _message.value = "E-mail et mot de passe Joplin requis."
+            return
+        }
+        viewModelScope.launch {
+            _connecting.value = true
+            settingsRepository.setJoplinServerUrl(serverUrl.trim().ifBlank { DEFAULT_JOPLIN_SERVER })
+            settingsRepository.setJoplinEmail(email.trim())
+            settingsRepository.setJoplinPassword(password)
+            settingsRepository.setJoplinSyncEnabled(true)
+            val result = notesSync.syncNow()
+            _connecting.value = false
+            _message.value =
+                when (result) {
+                    is SyncResult.Success -> "Notes Joplin connectées"
+                    is SyncResult.Failure -> result.message
+                }
+            refreshInvitations()
+        }
     }
 
     fun onMessageShown() {

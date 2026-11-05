@@ -10,6 +10,8 @@ import com.lielu.todo.data.joplin.ShareStatus
 import com.lielu.todo.data.settings.JoplinSettings
 import com.lielu.todo.data.settings.SettingsRepository
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -63,7 +65,20 @@ class NotesSync(
     private fun api(config: JoplinSettings): JoplinApi =
         cachedApi?.takeIf { it.first == config }?.second ?: apiFactory(config).also { cachedApi = config to it }
 
-    suspend fun syncNow(): SyncResult = running.withLock { sync() }
+    private val _syncing = MutableStateFlow(false)
+
+    /** Synchro en cours (écran Notes : roue du « tirer pour rafraîchir »). */
+    val syncing: StateFlow<Boolean> = _syncing
+
+    suspend fun syncNow(): SyncResult =
+        running.withLock {
+            _syncing.value = true
+            try {
+                sync()
+            } finally {
+                _syncing.value = false
+            }
+        }
 
     /**
      * Fichier d'une ressource Joplin (image jointe `![…](:/<id>)`) : lu dans [resourceDir] s'il a déjà été téléchargé,

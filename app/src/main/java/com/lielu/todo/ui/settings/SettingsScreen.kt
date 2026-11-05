@@ -60,6 +60,7 @@ import com.lielu.todo.BuildConfig
 import com.lielu.todo.R
 import com.lielu.todo.data.settings.AutoBackupSettings
 import com.lielu.todo.data.settings.BackupStatus
+import com.lielu.todo.data.settings.DEFAULT_JOPLIN_SERVER
 import com.lielu.todo.data.settings.JoplinSettings
 import com.lielu.todo.data.settings.SyncStatus
 import com.lielu.todo.data.settings.ThemeMode
@@ -265,7 +266,8 @@ private fun JoplinSection(
     // Le premier affichage précède la lecture du DataStore : on reprend les valeurs enregistrées dès qu'elles
     // arrivent, sans écraser ce que l'utilisateur a commencé à taper.
     LaunchedEffect(settings.serverUrl, settings.email, settings.password) {
-        if (serverUrl.isBlank()) serverUrl = settings.serverUrl
+        // Serveur par défaut déjà saisi (comme sur la page de connexion).
+        if (serverUrl.isBlank()) serverUrl = settings.serverUrl.ifBlank { DEFAULT_JOPLIN_SERVER }
         if (email.isBlank()) email = settings.email
         if (password.isBlank()) password = settings.password
     }

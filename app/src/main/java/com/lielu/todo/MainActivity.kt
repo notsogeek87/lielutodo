@@ -23,6 +23,8 @@ import com.lielu.todo.ui.navigation.AppNavHost
 import com.lielu.todo.ui.theme.ThemedContent
 import com.lielu.todo.ui.update.AppUpdateViewModel
 import com.lielu.todo.ui.update.UpdatePrompt
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
     /** Tâche à ouvrir (clic sur une notification de rappel ou sur une ligne du widget), consommée par la navigation. */
@@ -87,12 +89,23 @@ class MainActivity : ComponentActivity() {
 
     override fun onStart() {
         super.onStart()
+        syncNotesOnOpen()
         val prefs = (application as LieluApplication).container.prefs
         if (prefs.lockEnabled &&
             stoppedAt > 0 &&
             System.currentTimeMillis() - stoppedAt > RELOCK_AFTER_MS
         ) {
             locked = true
+        }
+    }
+
+    /** À chaque ouverture (ou retour au premier plan) : notes et partages remis à jour, sans attendre les 30 min. */
+    private fun syncNotesOnOpen() {
+        val container = (application as LieluApplication).container
+        if (container.notesSync.syncing.value) return
+        container.applicationScope.launch {
+            val joplin = container.settingsRepository.joplin.first()
+            if (joplin.syncEnabled && joplin.isConfigured) container.notesSync.syncNow()
         }
     }
 
