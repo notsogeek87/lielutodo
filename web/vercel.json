@@ -4,6 +4,10 @@
     {
       "source": "/vk/:path*",
       "destination": "https://task.lielu.eu/:path*"
+    },
+    {
+      "source": "/jp/:path*",
+      "destination": "https://notes.lielu.eu/:path*"
     }
   ],
   "headers": [

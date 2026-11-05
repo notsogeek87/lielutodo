@@ -12,7 +12,7 @@ self.addEventListener('activate', (e) => {
 
 self.addEventListener('fetch', (e) => {
   const url = new URL(e.request.url);
-  if (e.request.method !== 'GET' || url.origin !== location.origin || url.pathname.startsWith('/vk/')) return;
+  if (e.request.method !== 'GET' || url.origin !== location.origin || url.pathname.startsWith('/vk/') || url.pathname.startsWith('/jp/')) return;
   e.respondWith(
     fetch(e.request)
       .then((res) => {

@@ -286,3 +286,54 @@ select.field { appearance: auto; }
 .nav-item.nav-warn { color: var(--overdue); }
 .failed-op { display: grid; gap: 4px; padding: 10px 0; border-bottom: 1px solid var(--line); }
 .failed-why { font-size: 12px; color: var(--overdue); }
+
+/* ---------- Notes (Joplin) ---------- */
+.notes-actions { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
+.notes-search { margin: 0 0 10px; }
+.notes-chips { display: flex; gap: 6px; flex-wrap: wrap; margin: 0 0 14px; }
+.notes-chips .pill { text-decoration: none; display: inline-flex; align-items: center; gap: 4px; }
+.notes-chips .pill.sel { background: var(--active); color: var(--brand-ink); border-color: var(--brand); }
+.note-card { display: block; text-decoration: none; padding: 12px 14px; border: 1px solid var(--line); border-radius: var(--radius); margin: 0 0 8px; background: var(--surface); }
+.note-card:hover { border-color: var(--line-strong); background: var(--hover); }
+.note-title { font-weight: 600; font-size: 15px; overflow-wrap: anywhere; }
+.note-preview { color: var(--muted); margin-top: 2px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; }
+.note-meta { display: flex; flex-wrap: wrap; gap: 4px 12px; margin-top: 6px; font-size: 12px; color: var(--faint); }
+.note-meta span { display: inline-flex; align-items: center; gap: 3px; }
+.note-pending { color: var(--brand); }
+.notes-connect { max-width: 420px; display: grid; gap: 10px; padding: 16px; border: 1px solid var(--line); border-radius: var(--radius); margin: 0 0 16px; }
+.notes-connect h2 { margin: 0; font-size: 18px; }
+.notes-connect .err { color: var(--overdue); min-height: 1em; }
+.note-editor { display: flex; flex-direction: column; gap: 8px; min-height: 100%; }
+.note-bar { display: flex; align-items: center; gap: 4px; position: sticky; top: 0; background: var(--bg); padding: 4px 0; z-index: 2; }
+.note-bar .grow { flex: 1; }
+.note-bar .icon-btn[disabled] { opacity: .35; cursor: default; }
+.note-folder { width: auto; max-width: 45%; padding: 4px 8px; }
+.note-title-input { font-size: 24px; font-weight: 700; border: 0; outline: 0; background: transparent; padding: 4px 0; width: 100%; }
+.note-title-input::placeholder, .note-body::placeholder { color: var(--faint); }
+.md-toolbar { display: flex; gap: 2px; flex-wrap: wrap; border-bottom: 1px solid var(--line); padding-bottom: 6px; position: sticky; top: 40px; background: var(--bg); z-index: 2; }
+.md-toolbar.dim { opacity: .5; }
+.note-body { width: 100%; min-height: 240px; border: 0; outline: 0; background: transparent; resize: none; font: 15px/1.6 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; padding: 4px 0; overflow: hidden; }
+.note-status { margin: 0; padding: 4px 0 16px; }
+.md { font-size: 15px; line-height: 1.6; overflow-wrap: anywhere; }
+.md h2, .md h3, .md h4 { margin: 14px 0 6px; line-height: 1.25; }
+.md p { margin: 0 0 10px; }
+.md ul, .md ol { margin: 0 0 10px; padding-left: 22px; }
+.md .md-tasks { list-style: none; padding-left: 2px; }
+.md .md-task.done { color: var(--muted); text-decoration: line-through; }
+.md .md-box { color: var(--brand); }
+.md blockquote { margin: 0 0 10px; padding: 2px 12px; border-left: 3px solid var(--line-strong); color: var(--muted); }
+.md code { background: var(--hover); padding: 1px 4px; border-radius: 4px; font-size: 13px; }
+.md pre { background: var(--hover); padding: 10px; border-radius: var(--radius); overflow-x: auto; }
+.md pre code { background: none; padding: 0; }
+.md a { color: var(--brand); }
+.share-form { display: flex; gap: 6px; }
+.share-form .field { flex: 1; min-width: 0; }
+.share-row { display: flex; align-items: center; gap: 8px; padding: 8px 0; border-bottom: 1px solid var(--line); }
+.share-row .grow { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+@media (max-width: 860px) {
+  .view-head:has(.notes-actions) { flex-wrap: wrap; }
+  .view-head:has(.notes-actions) h1 { flex-basis: 100%; overflow-wrap: break-word; }
+  .notes-actions { justify-content: flex-start; }
+  .note-title-input { font-size: 21px; }
+  .note-folder { max-width: 40%; }
+}

@@ -34,7 +34,8 @@ object SyncPlanner {
         remoteDeleted: Set<String>,
     ): SyncPlan {
         val localById = local.associateBy { it.id }
-        val toPush = local.filter { it.dirty && !it.deleted }
+        // Brouillon vide jamais envoyé (note qu'on vient d'ouvrir) : rien à envoyer tant qu'on n'y a rien écrit.
+        val toPush = local.filter { it.dirty && !it.deleted && !isEmptyDraft(it) }
         val toDeleteRemote = local.filter { it.deleted }
         val toApplyRemote = mutableListOf<RemoteNote>()
         val conflicts = mutableListOf<RemoteNote>()
@@ -53,6 +54,9 @@ object SyncPlanner {
         val toDeleteLocal = local.filter { it.id in remoteDeleted && !it.dirty }.map { it.id }
         return SyncPlan(toPush, toDeleteRemote, toApplyRemote, toDeleteLocal, conflicts)
     }
+
+    private fun isEmptyDraft(note: Note): Boolean =
+        note.serverRaw == null && note.title.isBlank() && note.body.isBlank()
 
     private fun remoteChangedSinceBase(
         local: Note,

@@ -193,6 +193,23 @@ via son protocole de synchro (`POST /api/sessions` → `X-API-AUTH`, delta `item
 - Identifiants : URL et e-mail dans le DataStore ; mot de passe chiffré dans `SessionStore` (hors sauvegarde Android et
   hors export). `NoteBackupSection` exporte notes (avec état de synchro et `serverRaw`) et carnets.
 - Tests : `NotesSyncTest` (faux serveur Joplin), `SyncPlannerTest`, `FileNotesRepositoryTest`, `JoplinParserTest`.
+- Carnets : créés ici (hors ligne aussi, `Folder.dirty`), envoyés AVANT leurs notes. Partage (en ligne,
+  `NotesSync.shareFolder`, ordre vérifié contre un vrai serveur) : synchro → `POST /api/shares {folder_id}` → carnet et
+  notes renvoyés avec `share_id` → `POST /api/shares/{id}/users {email}`. Toute note d'un carnet partagé part avec son
+  `share_id` (sinon les autres ne la voient pas). Invitations : `GET /api/share_users`, `PATCH … {status: 1|2}`. Seuls
+  les carnets à la racine se partagent.
+- Format d'item : JAMAIS de retour à la ligne final (Joplin lit les propriétés depuis la dernière ligne : un `\n` final =
+  « Missing required property: type_ », écriture refusée). Session réutilisée entre synchros : le serveur répond 429
+  après quelques connexions rapprochées.
+- Brouillon vide jamais envoyé : ni envoyé ni gardé (`SyncPlanner`/`planSync`).
+- Test contre un vrai serveur : `JoplinServerIntegrationTest` (Kotlin) et le test « intégration » de
+  `web/test/notes.test.mjs`, ignorés sans `JOPLIN_IT_URL` (+ `JOPLIN_IT_USER1/PASS1`, `USER2/PASS2`). Serveur local :
+  `docker run -d --network host -e APP_BASE_URL=http://localhost:22300 -e APP_PORT=22300 -e MAX_TIME_DRIFT=0
+  joplin/server:latest` (admin@localhost / admin ; `MAX_TIME_DRIFT=0` si NTP est bloqué).
+- Web : `web/js/notes/` (`joplin.js` = parser + client, `notes-store.js` = store + synchro + partage, `markdown.js` =
+  édition + rendu sûr, `notes-view.js` = écrans). Même logique que l'APK : toute évolution de l'un se porte sur l'autre
+  (cas de test miroirs dans `MarkdownEditingTest`/`notes.test.mjs`). Joplin Server n'autorise le CORS que pour
+  joplinapp.org : le site passe TOUJOURS par la réécriture `/jp/*` (`vercel.json`, racine et `web/`).
 - APK d'une branche de travail : artefact du run CI (`apk-<branche>-<run>`), jamais versionné dans le dépôt.
 
 ## Version web (`web/`)

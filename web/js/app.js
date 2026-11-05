@@ -7,6 +7,8 @@ import { searchTasks, fold } from './search.js';
 import { mountComposer } from './composer.js';
 import { openDetail } from './detail.js';
 import { buildView, inboxProject, openTasks, sectionHtml, weekStrip } from './views.js';
+import { createNotesStore } from './notes/notes-store.js';
+import { createNotesView } from './notes/notes-view.js';
 import {
   $, $$, closePopover, closeTopModal, confirmDialog, esc, menu, modal, promptDialog, toast, PROJECT_COLORS,
 } from './ui.js';
@@ -38,16 +40,20 @@ let store = null;
 let ctx = null;
 let route = { name: 'inbox' };
 let detail = null;
+let notes = null;
+let notesView = null;
 
 // ---------- Routage (hash) ----------
 function parseRoute() {
   const [, name = 'inbox', arg] = location.hash.split('/');
+  if (name === 'notes') return { name, id: arg && /^[0-9a-f]{32}$/i.test(arg) ? arg : null };
+  if (name === 'note' && /^[0-9a-f]{32}$/i.test(arg || '')) return { name, id: arg };
   const id = Number(arg);
   if (['inbox', 'today', 'upcoming', 'completed', 'filters'].includes(name)) return { name };
   if (['project', 'label', 'filter'].includes(name) && Number.isFinite(id)) return { name, id };
   return { name: 'inbox' };
 }
-export const go = (hash) => { if (location.hash === hash) render(); else location.hash = hash; };
+export const go = (hash) => { if (location.hash === hash) { route = parseRoute(); render(); } else location.hash = hash; };
 
 // ---------- Démarrage ----------
 function boot() {
@@ -68,13 +74,24 @@ function boot() {
     openQuickAdd,
     onDetailClosed: () => { detail = null; },
   };
+  // Notes Joplin : même logique « local d'abord », serveur à part (voir js/notes/).
+  notes = createNotesStore();
+  notesView = createNotesView(notes, go);
   route = parseRoute();
   renderShell();
   store.subscribe(scheduleRender);
-  window.addEventListener('hashchange', () => { route = parseRoute(); ui.sidebarOpen = false; ui.upcomingStart = null; render(); closeAllOverlays(); });
-  window.addEventListener('online', () => store.refresh());
-  document.addEventListener('visibilitychange', () => { if (!document.hidden) store.refresh(); });
-  setInterval(() => { if (!document.hidden) store.refresh(); }, 60_000);
+  notes.subscribe(scheduleRender);
+  const refreshAll = () => { store.refresh(); notes.sync(); };
+  window.addEventListener('hashchange', () => {
+    if (route.name === 'note') notesView.leave();
+    route = parseRoute(); ui.sidebarOpen = false; ui.upcomingStart = null; render(); closeAllOverlays();
+  });
+  window.addEventListener('online', refreshAll);
+  window.addEventListener('pagehide', () => notesView.flushOnHide());
+  document.addEventListener('visibilitychange', () => { if (document.hidden) notesView.flushOnHide(); else refreshAll(); });
+  setInterval(() => { if (!document.hidden) refreshAll(); }, 60_000);
+  notes.sync();
+  notes.refreshInvitations();
   document.addEventListener('keydown', onKey);
   store.refresh();
   if ('serviceWorker' in navigator && location.protocol.startsWith('http')) navigator.serviceWorker.register('sw.js').catch(() => {});
@@ -220,6 +237,7 @@ function renderSidebar() {
       ${navItem('#/upcoming', `<span class="nav-ic-upcoming">${icon('upcoming', 18)}</span>`, 'À venir', 0, isRoute('upcoming'))}
       ${navItem('#/filters', `<span class="nav-ic-filters">${icon('filters', 18)}</span>`, 'Filtres et étiquettes', 0, isRoute('filters') || isRoute('label') || isRoute('filter'))}
       ${navItem('#/completed', icon('checkCircle', 18), 'Terminées', 0, isRoute('completed'))}
+      ${navItem('#/notes', icon('note', 18), 'Notes', notes.meta.invitations.length, route.name === 'notes' || route.name === 'note')}
       ${s.failed.length ? `<button class="nav-item nav-warn" data-act="failed-ops">${icon('offline', 18)}<span class="label">Modifications non envoyées</span><span class="count">${s.failed.length}</span></button>` : ''}
       ${favorites.length ? section('favorites', 'Favoris', favorites.map((p) => `<a class="nav-item" href="#/project/${p.id}"><i class="dot" style="background:${colorOf(p.hex)}"></i><span class="label">${esc(p.title)}</span></a>`).join('')) : ''}
       ${section('projects', 'Mes projets', roots.map((p) => projectRow(p, 0)).join('') || '<div class="menu-sub">Aucun projet</div>', 'add-project')}
@@ -261,6 +279,10 @@ function renderBadge() {
 // ---------- Contenu ----------
 function renderContent() {
   const content = $('#content');
+  // Le bouton + du bas ajoute une tâche ; il n'a pas de sens dans les notes (elles ont leur bouton).
+  $('.fab')?.toggleAttribute('hidden', route.name === 'notes' || route.name === 'note');
+  if (route.name === 'notes') return notesView.renderList(content, route.id);
+  if (route.name === 'note') return notesView.renderEditor(content, route.id);
   if (route.name === 'filters') return renderBrowse(content);
   const scrollTop = $('#scroller').scrollTop;
   const view = buildView(store.state, route, ui);
@@ -442,13 +464,24 @@ function openSettings() {
       <div><div class="menu-sub" style="padding-left:0">Compte</div><div>${esc(store.state.user?.name || store.state.user?.username || '')}</div><div class="view-sub" style="margin:2px 0 0">${esc(sess.baseUrl)}${sess.viaProxy ? ' (via ce site)' : ''}</div></div>
       <div><div class="menu-sub" style="padding-left:0">Thème</div>
         <div style="display:flex;gap:6px">${[['auto', 'Auto'], ['light', 'Clair'], ['dark', 'Sombre']].map(([v, l]) => `<button class="btn${theme === v ? ' primary' : ''}" data-theme="${v}">${l}</button>`).join('')}</div></div>
+      <div><div class="menu-sub" style="padding-left:0">Notes Joplin</div>
+        ${notes.connected
+    ? `<div>${esc(notes.connection?.email || '')}</div><div class="view-sub" style="margin:2px 0 6px">${esc(notes.connection?.baseUrl || '')}${notes.connection?.viaProxy ? ' (via ce site)' : ''}</div><button class="btn" data-notes-disconnect>Déconnecter les notes</button>`
+    : '<div class="view-sub" style="margin:0 0 6px">Non connectées.</div><a class="btn" href="#/notes" data-close>Connecter mes notes</a>'}</div>
       <div><div class="menu-sub" style="padding-left:0">Données</div>
         <div style="display:flex;gap:6px;flex-wrap:wrap"><button class="btn" data-export>${icon('download', 16)} Exporter</button><button class="btn" data-import>${icon('upload', 16)} Importer</button><input type="file" accept="application/json,.json" hidden></div>
-        <div class="view-sub" style="margin:6px 0 0">Raccourcis : <b>Q</b> ajout rapide · <b>/</b> recherche · <b>G</b> puis <b>I</b>/<b>T</b>/<b>U</b> pour aller à Boîte de réception/Aujourd'hui/À venir · <b>M</b> menu.</div></div>
+        <div class="view-sub" style="margin:6px 0 0">Raccourcis : <b>Q</b> ajout rapide · <b>/</b> recherche · <b>G</b> puis <b>I</b>/<b>T</b>/<b>U</b>/<b>N</b> pour aller à Boîte de réception/Aujourd'hui/À venir/Notes · dans une note : <b>Ctrl+B</b>/<b>I</b>/<b>K</b>, <b>Ctrl+Z</b> · <b>M</b> menu.</div></div>
       <div style="display:flex;gap:6px"><button class="btn danger" data-logout>${icon('logout', 16)} Se déconnecter</button></div>
     </div>`, { sheet: true });
   m.root.addEventListener('click', (e) => {
     if (e.target.closest('[data-close]')) return m.close();
+    if (e.target.closest('[data-notes-disconnect]')) {
+      const unsent = notes.state.notes.filter((n) => n.dirty).length;
+      confirmDialog(unsent
+        ? `Déconnecter les notes ? ${unsent} note${unsent > 1 ? 's' : ''} pas encore envoyée${unsent > 1 ? 's' : ''} restera${unsent > 1 ? 'ont' : ''} dans ce navigateur.`
+        : 'Déconnecter les notes Joplin de ce navigateur ?', 'Déconnecter', false).then((ok) => { if (ok) { notes.disconnect(); m.close(); } });
+      return;
+    }
     const th = e.target.closest('[data-theme]');
     if (th) { LS.set('theme', th.dataset.theme); applyTheme(); $$('[data-theme]', m.root).forEach((b) => b.classList.toggle('primary', b === th)); }
     if (e.target.closest('[data-export]')) {
@@ -532,7 +565,7 @@ async function onClick(e) {
     case 'scrim': ui.sidebarOpen = false; render(); break;
     case 'quick-add': ui.sidebarOpen = false; openQuickAdd(); break;
     case 'search': ui.sidebarOpen = false; openSearch(); break;
-    case 'sync': store.refresh(); toast('Synchronisation…', { ms: 1200 }); break;
+    case 'sync': store.refresh(); notes.sync(); toast('Synchronisation…', { ms: 1200 }); break;
     case 'settings': openSettings(); break;
     case 'failed-ops': ui.sidebarOpen = false; openFailedOps(); break;
     case 'add-project': addProject(); break;
@@ -643,7 +676,7 @@ function onKey(e) {
   if (typing || e.ctrlKey || e.metaKey || e.altKey || document.querySelector('.backdrop')) return;
   if (gPending) {
     gPending = false;
-    const dest = { i: '#/inbox', t: '#/today', u: '#/upcoming', f: '#/filters' }[e.key];
+    const dest = { i: '#/inbox', t: '#/today', u: '#/upcoming', f: '#/filters', n: '#/notes' }[e.key];
     if (dest) { e.preventDefault(); go(dest); }
     return;
   }

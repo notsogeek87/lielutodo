@@ -92,11 +92,25 @@ async function api(req, res, url) {
   return json(res, 404, { message: `Route inconnue ${m} ${path}` });
 }
 
+async function relayJoplin(req, res, url) {
+  const target = process.env.JOPLIN_DEV_URL;
+  if (!target) return json(res, 503, { error: 'JOPLIN_DEV_URL non défini : lancez un Joplin Server de dev' });
+  const chunks = [];
+  for await (const c of req) chunks.push(c);
+  const headers = {};
+  for (const h of ['content-type', 'x-api-auth', 'x-api-min-version']) if (req.headers[h]) headers[h] = req.headers[h];
+  const r = await fetch(`${target}${url.pathname.slice(3)}${url.search}`, { method: req.method, headers, body: chunks.length ? Buffer.concat(chunks) : undefined });
+  res.writeHead(r.status, { 'Content-Type': r.headers.get('content-type') || 'application/json' });
+  res.end(Buffer.from(await r.arrayBuffer()));
+}
+
 http.createServer(async (req, res) => {
   const url = new URL(req.url, `http://${req.headers.host}`);
   try {
     if (url.pathname.startsWith('/api/v1')) return await api(req, res, url);
     if (url.pathname.startsWith('/vk/')) { url.pathname = url.pathname.slice(3); return await api(req, res, url); }
+    // Notes : relais vers un vrai Joplin Server de dev (JOPLIN_DEV_URL, ex. http://localhost:22300), comme /jp sur Vercel.
+    if (url.pathname.startsWith('/jp/')) return await relayJoplin(req, res, url);
     let file = normalize(url.pathname).replace(/^(\.\.[/\\])+/, '');
     if (file === '/' || file === '\\') file = '/index.html';
     const data = await readFile(join(ROOT, file));

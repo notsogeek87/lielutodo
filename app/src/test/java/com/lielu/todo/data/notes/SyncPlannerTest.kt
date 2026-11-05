@@ -141,4 +141,20 @@ class SyncPlannerTest {
         assertTrue(plan.conflicts.isEmpty())
         assertEquals(1, plan.toPush.size)
     }
+
+    @Test
+    fun unBrouillonVideNEstPasEnvoye() {
+        val plan =
+            SyncPlanner.plan(
+                local =
+                    listOf(
+                        Note(id = "a", title = "", body = " ", dirty = true),
+                        Note(id = "b", title = "x", body = "", dirty = true),
+                    ),
+                pulled = emptyList(),
+                remoteDeleted = emptySet(),
+            )
+
+        assertEquals(listOf("b"), plan.toPush.map { it.id })
+    }
 }
