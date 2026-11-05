@@ -34,8 +34,10 @@ class NoteEditViewModelTest {
         Dispatchers.resetMain()
     }
 
-    private fun syncStub(settings: FakeSettingsRepository, notes: FakeNotesRepository) =
-        NotesSync(settings, notes, apiFactory = { error("pas de réseau dans les tests") })
+    private fun syncStub(
+        settings: FakeSettingsRepository,
+        notes: FakeNotesRepository,
+    ) = NotesSync(settings, notes, apiFactory = { error("pas de réseau dans les tests") })
 
     @Test
     fun noteVideEstSupprimeeALaFermeture() =
