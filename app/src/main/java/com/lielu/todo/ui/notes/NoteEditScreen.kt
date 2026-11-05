@@ -1,6 +1,9 @@
 package com.lielu.todo.ui.notes
 
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.widget.TextView
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -9,6 +12,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
@@ -41,6 +45,7 @@ import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.AssistChipDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -59,16 +64,22 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.input.ImeAction
@@ -78,6 +89,8 @@ import androidx.compose.ui.viewinterop.AndroidView
 import io.noties.markwon.Markwon
 import io.noties.markwon.ext.strikethrough.StrikethroughPlugin
 import io.noties.markwon.ext.tasklist.TaskListPlugin
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -96,6 +109,7 @@ fun NoteEditScreen(
     val canRedo by viewModel.canRedo.collectAsState()
     var showDeleteConfirm by remember { mutableStateOf(false) }
     var preview by rememberSaveable { mutableStateOf(false) }
+    var autoPreviewDone by rememberSaveable { mutableStateOf(false) }
     var menuOpen by remember { mutableStateOf(false) }
     val titleFocus = remember { FocusRequester() }
     val bodyFocus = remember { FocusRequester() }
@@ -109,6 +123,11 @@ fun NoteEditScreen(
         if (startsEmpty == true) {
             titleFocus.requestFocus()
             keyboard?.show()
+        }
+        // Note avec images jointes : ouverte en aperçu (on voit les images), le crayon repasse en édition.
+        if (startsEmpty == false && !autoPreviewDone) {
+            autoPreviewDone = true
+            if (NoteImages.hasImages(body.text)) preview = true
         }
     }
 
@@ -176,7 +195,12 @@ fun NoteEditScreen(
                     .padding(horizontal = 16.dp),
         ) {
             if (preview) {
-                NotePreview(title = title, body = body.text, modifier = Modifier.weight(1f))
+                NotePreview(
+                    title = title,
+                    body = body.text,
+                    loadResource = viewModel::loadResource,
+                    modifier = Modifier.weight(1f),
+                )
             } else {
                 BasicTextField(
                     value = title,
@@ -354,11 +378,12 @@ private fun ToolButton(
     IconButton(onClick = onClick) { Icon(icon, contentDescription = description) }
 }
 
-/** Aperçu rendu (Markwon : barré et cases à cocher compris), aux couleurs du thème de l'app. */
+/** Aperçu rendu (Markwon : barré et cases à cocher compris), aux couleurs du thème de l'app, images jointes comprises. */
 @Composable
 private fun NotePreview(
     title: String,
     body: String,
+    loadResource: suspend (String) -> ByteArray?,
     modifier: Modifier = Modifier,
 ) {
     val textColor = MaterialTheme.colorScheme.onSurface.toArgb()
@@ -374,20 +399,95 @@ private fun NotePreview(
                 .usePlugin(TaskListPlugin.create(linkColor, outlineColor, checkColor))
                 .build()
         }
+    val parts = remember(body) { NoteImages.split(body) }
     Column(modifier = modifier.fillMaxWidth().verticalScroll(rememberScrollState())) {
         Text(
             title.ifBlank { "Sans titre" },
             style = MaterialTheme.typography.headlineSmall,
             color = MaterialTheme.colorScheme.onSurface,
         )
-        AndroidView(
-            factory = { TextView(it) },
-            update = { view ->
-                view.setTextColor(textColor)
-                view.setLinkTextColor(linkColor)
-                markwon.setMarkdown(view, body)
-            },
-            modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
-        )
+        parts.forEachIndexed { index, part ->
+            val top = if (index == 0) 12.dp else 4.dp
+            when (part) {
+                is NotePart.Text ->
+                    AndroidView(
+                        factory = { TextView(it) },
+                        update = { view ->
+                            view.setTextColor(textColor)
+                            view.setLinkTextColor(linkColor)
+                            markwon.setMarkdown(view, part.markdown)
+                        },
+                        modifier = Modifier.fillMaxWidth().padding(top = top),
+                    )
+                is NotePart.Image ->
+                    NoteImage(part, loadResource, Modifier.fillMaxWidth().padding(top = top, bottom = 4.dp))
+            }
+        }
     }
+}
+
+private sealed interface ImageState {
+    data object Loading : ImageState
+
+    data object Missing : ImageState
+
+    data class Ready(
+        val bitmap: ImageBitmap,
+    ) : ImageState
+}
+
+/** Image jointe Joplin : téléchargée (ou relue hors ligne), réduite à la largeur de l'écran pour économiser la mémoire. */
+@Composable
+private fun NoteImage(
+    image: NotePart.Image,
+    loadResource: suspend (String) -> ByteArray?,
+    modifier: Modifier = Modifier,
+) {
+    val maxWidth = LocalContext.current.resources.displayMetrics.widthPixels
+    val state by produceState<ImageState>(ImageState.Loading, image.resourceId) {
+        val bytes = loadResource(image.resourceId)
+        val bitmap = bytes?.let { withContext(Dispatchers.Default) { decodeScaled(it, maxWidth) } }
+        value = bitmap?.let { ImageState.Ready(it.asImageBitmap()) } ?: ImageState.Missing
+    }
+    when (val s = state) {
+        is ImageState.Ready ->
+            Image(
+                bitmap = s.bitmap,
+                contentDescription = image.alt.ifBlank { "Image" },
+                contentScale = ContentScale.FillWidth,
+                modifier = modifier.clip(MaterialTheme.shapes.medium),
+            )
+        ImageState.Loading ->
+            Surface(
+                color = MaterialTheme.colorScheme.surfaceVariant,
+                shape = MaterialTheme.shapes.medium,
+                modifier = modifier.height(160.dp),
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    CircularProgressIndicator(modifier = Modifier.size(28.dp), strokeWidth = 3.dp)
+                }
+            }
+        ImageState.Missing ->
+            Text(
+                "🖼 ${image.alt.ifBlank {
+                    "Image"
+                }} — indisponible (serveur Joplin injoignable ou notes non connectées)",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.outline,
+                modifier = modifier,
+            )
+    }
+}
+
+/** Décode en divisant la taille par 2 tant que l'image dépasse [maxWidth] (photos de plusieurs Mo). */
+private fun decodeScaled(
+    bytes: ByteArray,
+    maxWidth: Int,
+): Bitmap? {
+    val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+    BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
+    if (bounds.outWidth <= 0) return null
+    var sample = 1
+    while (bounds.outWidth / (sample * 2) >= maxWidth) sample *= 2
+    return BitmapFactory.decodeByteArray(bytes, 0, bytes.size, BitmapFactory.Options().apply { inSampleSize = sample })
 }

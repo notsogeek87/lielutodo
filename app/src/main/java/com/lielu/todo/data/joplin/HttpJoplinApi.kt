@@ -61,6 +61,12 @@ class HttpJoplinApi(
         }
     }
 
+    override suspend fun resourceContent(id: String): ByteArray =
+        withContext(Dispatchers.IO) {
+            require(id.matches(Regex("[0-9a-fA-F]{32}"))) { "Identifiant de ressource invalide" }
+            requestOnce("GET", "/items/root:/.resource/$id:/content", null, null, true, allowRelogin = true)
+        }
+
     override suspend fun createShare(folderId: String): String =
         withContext(Dispatchers.IO) {
             requestJson("POST", "/shares", JSONObject().put("folder_id", folderId)).getString("id")
@@ -114,7 +120,7 @@ class HttpJoplinApi(
         rawBody: String? = null,
         authenticate: Boolean = true,
     ): JSONObject =
-        requestOnce(method, path, payload, rawBody, authenticate, allowRelogin = authenticate)
+        requestText(method, path, payload, rawBody, authenticate)
             .let { if (it.isBlank()) JSONObject() else JSONObject(it) }
 
     private fun requestText(
@@ -123,7 +129,9 @@ class HttpJoplinApi(
         payload: JSONObject? = null,
         rawBody: String? = null,
         authenticate: Boolean = true,
-    ): String = requestOnce(method, path, payload, rawBody, authenticate, allowRelogin = authenticate)
+    ): String =
+        requestOnce(method, path, payload, rawBody, authenticate, allowRelogin = authenticate)
+            .toString(Charsets.UTF_8)
 
     private fun requestOnce(
         method: String,
@@ -132,7 +140,7 @@ class HttpJoplinApi(
         rawBody: String?,
         authenticate: Boolean,
         allowRelogin: Boolean,
-    ): String {
+    ): ByteArray {
         if (authenticate && sessionId == null) sessionId = login()
         val connection =
             (URI("$baseUrl$path").toURL().openConnection() as HttpURLConnection).apply {
@@ -182,7 +190,7 @@ class HttpJoplinApi(
                     JoplinJson.parseErrorCode(detail),
                 )
             }
-            return connection.inputStream.use { it.readBytes().toString(Charsets.UTF_8) }
+            return connection.inputStream.use { it.readBytes() }
         } catch (e: JoplinApiException) {
             throw e
         } catch (e: Exception) {

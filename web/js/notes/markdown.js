@@ -125,7 +125,7 @@ export function titleFromBody(body) {
 export function plainPreview(body, max = 160) {
   return String(body).split('\n').map((l) => l.trim()).filter(Boolean).map((line) => {
     const box = /^[-*+] \[([ xX])] /.exec(line);
-    const clean = line.replace(markerMatch(line) ?? '', '').replace(/(\*\*|__|~~|`|\*)/g, '');
+    const clean = line.replace(markerMatch(line) ?? '', '').replace(/!\[([^\]]*)]\([^)\s]+\)/g, '🖼 $1').replace(/(\*\*|__|~~|`|\*)/g, '');
     return box ? `${box[1] === ' ' ? '☐' : '☑'} ${clean}` : clean;
   }).join(' · ').slice(0, max);
 }
@@ -136,16 +136,28 @@ const safeUrl = (u) => (/^(https?:|mailto:)/i.test(u) ? u : '#');
 
 function inline(text) {
   const codes = [];
+  const tokens = []; // images et liens de ressources : à l'abri du gras/italique (attributs alt, ids)
+  const keep = (html) => { tokens.push(html); return `\u0001${tokens.length - 1}\u0001`; };
   let s = esc(text).replace(/`([^`]+)`/g, (_, c) => { codes.push(c); return `\u0000${codes.length - 1}\u0000`; });
   s = s
+    // Image jointe Joplin : `![nom](:/<id de ressource>)`, chargée ensuite depuis le serveur (data-jres).
+    .replace(/!\[([^\]]*)]\(:\/([0-9a-fA-F]{32})\)/g, (_, alt, id) => keep(`<img class="md-img" data-jres="${id.toLowerCase()}" alt="${alt}">`))
+    .replace(/!\[([^\]]*)]\((https?:[^)\s]+)\)/g, (_, alt, url) => keep(`<img class="md-img" src="${url}" alt="${alt}" loading="lazy">`))
+    // Autre pièce jointe Joplin : lien ouvert depuis le serveur.
+    .replace(/\[([^\]]+)]\(:\/([0-9a-fA-F]{32})\)/g, (_, label, id) => keep(`<a href="#" data-jres-link="${id.toLowerCase()}">${label}</a>`))
     .replace(/\[([^\]]+)]\(([^)\s]+)\)/g, (_, label, url) => `<a href="${safeUrl(url.replace(/&amp;/g, '&'))}" target="_blank" rel="noopener noreferrer">${label}</a>`)
     .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
     .replace(/__([^_]+)__/g, '<strong>$1</strong>')
     .replace(/~~([^~]+)~~/g, '<del>$1</del>')
     .replace(/(^|[^*])\*([^*]+)\*/g, '$1<em>$2</em>')
     .replace(/(^|[^\w])_([^_]+)_(?=$|[^\w])/g, '$1<em>$2</em>');
-  return s.replace(/\u0000(\d+)\u0000/g, (_, i) => `<code>${codes[Number(i)]}</code>`);
+  return s
+    .replace(/\u0001(\d+)\u0001/g, (_, i) => tokens[Number(i)])
+    .replace(/\u0000(\d+)\u0000/g, (_, i) => `<code>${codes[Number(i)]}</code>`);
 }
+
+/** Ids des ressources Joplin (`:/<id>`) citées dans une note. */
+export const resourceIds = (md) => [...new Set([...String(md).matchAll(/\]\(:\/([0-9a-fA-F]{32})\)/g)].map((m) => m[1].toLowerCase()))];
 
 /** Markdown courant (titres, listes, cases, citations, code, liens, gras/italique/barré) → HTML sûr. */
 export function renderMarkdown(md) {

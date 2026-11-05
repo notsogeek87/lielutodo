@@ -45,7 +45,7 @@ export function createNotesStore({ storage = globalThis.localStorage, apiFactory
   // Brouillon vide jamais envoyé (onglet fermé sur une nouvelle note) : rien à garder.
   state.notes = state.notes.filter((n) => n.serverRaw != null || n.deleted || n.title.trim() || n.body.trim());
   let conn = read(CONN_KEY);
-  const meta = { syncing: false, error: null, needsLogin: false, offline: false, invitations: [], allInvitations: [] };
+  const meta = { syncing: false, progress: 0, error: null, needsLogin: false, offline: false, invitations: [], allInvitations: [] };
   const listeners = new Set();
   let api = conn?.sessionId ? apiFactory(conn) : null;
   let chain = Promise.resolve();
@@ -113,6 +113,22 @@ export function createNotesStore({ storage = globalThis.localStorage, apiFactory
   }
 
   // ---------- Synchro ----------
+  /** Contenus de plusieurs items, quelques requêtes en parallèle (première synchro : des centaines de notes). */
+  async function fetchAll(names, parallel = 6) {
+    const out = new Map();
+    let next = 0;
+    const worker = async () => {
+      while (next < names.length) {
+        const name = names[next++];
+        out.set(name, await api.itemContent(name));
+        meta.progress++;
+        if (meta.progress % 10 === 0) emit();
+      }
+    };
+    await Promise.all(Array.from({ length: Math.min(parallel, names.length) }, worker));
+    return out;
+  }
+
   async function pull(cursor) {
     const acc = { pulled: new Map(), remoteDeleted: new Set(), names: new Map(), folders: [], deletedFolders: new Set(), defaultFolder: '', encrypted: 0 };
     const add = (name, content) => {
@@ -144,12 +160,12 @@ export function createNotesStore({ storage = globalThis.localStorage, apiFactory
         throw e;
       }
       seen += page.items.length;
-      for (const change of page.items) {
-        if (ignored(change.name)) continue;
+      const wanted = page.items.filter((c) => !ignored(c.name) && (c.type === 3 || c.name.endsWith('.md')));
+      const contents = await fetchAll(wanted.filter((c) => c.type !== 3).map((c) => c.name));
+      for (const change of wanted) {
         const idFromName = change.name.replace(/\.md$/, '').split('/').pop();
         if (change.type === 3) { acc.remoteDeleted.add(idFromName); acc.deletedFolders.add(idFromName); acc.pulled.delete(idFromName); continue; }
-        if (!change.name.endsWith('.md')) continue;
-        add(change.name, await api.itemContent(change.name));
+        add(change.name, contents.get(change.name));
       }
       if (page.cursor) cursor = page.cursor;
       if (!page.hasMore) break;
@@ -157,7 +173,9 @@ export function createNotesStore({ storage = globalThis.localStorage, apiFactory
     if (full && seen === 0) {
       for (let p = 1; ; p++) {
         const children = await api.rootChildren(p);
-        for (const c of children.items) if (!ignored(c.name) && c.name.endsWith('.md')) add(c.name, await api.itemContent(c.name));
+        const names = children.items.map((c) => c.name).filter((n) => !ignored(n) && n.endsWith('.md'));
+        const contents = await fetchAll(names);
+        names.forEach((n) => add(n, contents.get(n)));
         if (!children.hasMore) break;
       }
     }
@@ -267,9 +285,41 @@ export function createNotesStore({ storage = globalThis.localStorage, apiFactory
     if (!api) return Promise.resolve(null);
     return exclusive(async () => {
       meta.syncing = true;
+      meta.progress = 0;
       emit();
       try { return await guard(runSync); } catch { return null; } finally { meta.syncing = false; emit(); }
     });
+  }
+
+  // ---------- Pièces jointes (ressources Joplin) ----------
+  // Fichier d'une ressource (`![…](:/<id>)`) : gardé dans le Cache Storage du navigateur pour rester visible hors
+  // ligne ; une adresse blob: par ressource et par onglet. Échec (hors ligne, jamais téléchargée) = null, réessayé
+  // au prochain affichage.
+  const RES_CACHE = 'lielutodo-joplin-resources';
+  const resUrls = new Map();
+  function resourceUrl(id) {
+    if (!/^[0-9a-f]{32}$/.test(id)) return Promise.resolve(null);
+    if (!resUrls.has(id)) {
+      const key = `/__joplin-resource/${id}`;
+      const p = (async () => {
+        let cache = null;
+        try {
+          cache = await globalThis.caches?.open(RES_CACHE);
+          const hit = await cache?.match(key);
+          if (hit) return URL.createObjectURL(await hit.blob());
+        } catch { cache = null; }
+        if (!api) return null;
+        const blob = await api.resourceBlob(id);
+        try { await cache?.put(key, new Response(blob)); } catch { /* pas de cache : affichage quand même */ }
+        return URL.createObjectURL(blob);
+      })().catch((e) => {
+        if (e instanceof JoplinAuthError) { meta.needsLogin = true; meta.error = e.message; emit(); }
+        return null;
+      });
+      p.then((url) => { if (!url) resUrls.delete(id); });
+      resUrls.set(id, p);
+    }
+    return resUrls.get(id);
   }
 
   // ---------- Partage (en ligne) ----------
@@ -335,7 +385,7 @@ export function createNotesStore({ storage = globalThis.localStorage, apiFactory
     get connected() { return !!api; },
     subscribe(fn) { listeners.add(fn); return () => listeners.delete(fn); },
     note, folder, create, save, setParent, remove, createFolder,
-    connect, disconnect, sync,
+    connect, disconnect, sync, resourceUrl,
     shareFolder, shareRecipients, removeShareRecipient, stopSharing, refreshInvitations, respondToInvitation,
     clearError() { meta.error = null; },
     reset() { state = emptyState(); try { storage.removeItem(STATE_KEY); } catch { /* ok */ } emit(); },

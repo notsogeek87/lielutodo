@@ -59,6 +59,9 @@ interface JoplinApi {
 
     suspend fun deleteItem(name: String)
 
+    /** Fichier d'une ressource (image jointe `![…](:/<id>)`) : `GET …/.resource/<id>:/content`. */
+    suspend fun resourceContent(id: String): ByteArray = unsupported()
+
     // Partage de carnet (Joplin Server, en ligne uniquement). Par défaut non pris en charge : les faux serveurs
     // des tests qui ne s'en servent pas n'ont rien à implémenter.
 

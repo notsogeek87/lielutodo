@@ -80,6 +80,7 @@ class AppContainer(
             apiFactory = { config ->
                 HttpJoplinApi(serverUrl = config.serverUrl, email = config.email, password = config.password)
             },
+            resourceDir = File(appContext.filesDir, "joplin-resources"),
         )
 
     /** Tâches, projets et étiquettes : copie locale + file d'écritures, resynchronisée avec le serveur. */

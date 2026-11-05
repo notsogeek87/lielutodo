@@ -202,6 +202,13 @@ via son protocole de synchro (`POST /api/sessions` → `X-API-AUTH`, delta `item
   « Missing required property: type_ », écriture refusée). Session réutilisée entre synchros : le serveur répond 429
   après quelques connexions rapprochées.
 - Brouillon vide jamais envoyé : ni envoyé ni gardé (`SyncPlanner`/`planSync`).
+- Images jointes (`![nom](:/<id>)`, ressource Joplin) : fichier lu par `GET /api/items/root:/.resource/<id>:/content`
+  (`resourceContent`/`resourceBlob`), gardé hors ligne (APK : `files/joplin-resources/`, hors sauvegarde ; web : Cache
+  Storage `lielutodo-joplin-resources`, épargné par `sw.js`). Aperçu : `NoteImages.split` (APK) / `renderMarkdown` +
+  `data-jres` (web) ; une note qui contient une image s'ouvre en aperçu. CSP du site : `img-src … blob: https:`.
+- Web : la synchro des notes est visible (`meta.syncing`/`meta.progress` : ligne d'état sous le titre, roue du haut,
+  « Récupération de vos notes… » à la première) ; contenus téléchargés 6 par 6. La page de connexion a, comme l'APK, une
+  section Notes facultative.
 - Test contre un vrai serveur : `JoplinServerIntegrationTest` (Kotlin) et le test « intégration » de
   `web/test/notes.test.mjs`, ignorés sans `JOPLIN_IT_URL` (+ `JOPLIN_IT_USER1/PASS1`, `USER2/PASS2`). Serveur local :
   `docker run -d --network host -e APP_BASE_URL=http://localhost:22300 -e APP_PORT=22300 -e MAX_TIME_DRIFT=0

@@ -134,7 +134,7 @@ const useProxy = (baseUrl) => {
   return normalizeNotesUrl(baseUrl) === DEFAULT_NOTES_SERVER || ['localhost', '127.0.0.1'].includes(location.hostname);
 };
 
-async function rawRequest(conn, method, path, { json, raw, auth = true } = {}) {
+async function rawRequest(conn, method, path, { json, raw, auth = true, binary = false } = {}) {
   const base = conn.viaProxy ? `${PROXY_PREFIX}/api` : `${conn.baseUrl}/api`;
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
@@ -155,6 +155,7 @@ async function rawRequest(conn, method, path, { json, raw, auth = true } = {}) {
   } finally {
     clearTimeout(timer);
   }
+  if (binary && res.ok) return res.blob();
   const text = await res.text();
   if (!res.ok) {
     let detail = '';
@@ -215,6 +216,8 @@ export function createJoplinApi(conn) {
     itemContent: (name) => req('GET', `/items/root:/${name}:/content`),
     putContent: (name, content) => json('PUT', `/items/root:/${name}:/content`, { raw: content }),
     deleteItem: (name) => req('DELETE', `/items/root:/${name}:`),
+    /** Fichier d'une ressource (image jointe, `![…](:/<id>)`) : `.resource/<id>`, en Blob. */
+    resourceBlob: (id) => req('GET', `/items/root:/.resource/${id}:/content`, { binary: true }),
     createShare: async (folderId) => (await json('POST', '/shares', { json: { folder_id: folderId } })).id,
     addShareRecipient: (shareId, email) => json('POST', `/shares/${shareId}/users`, { json: { email: email.trim() } }),
     shareRecipients: async (shareId) => ((await json('GET', `/shares/${shareId}/users`)).items || [])

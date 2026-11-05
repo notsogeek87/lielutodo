@@ -1,11 +1,12 @@
 // Hors ligne : la coque de l'app est mise en cache (réseau d'abord, cache en secours). L'API n'est jamais mise en
-// cache ici : les données hors ligne vivent dans le store local de l'app.
+// cache ici : les données hors ligne vivent dans le store local de l'app (images des notes : cache
+// « lielutodo-joplin-resources », rempli par l'app et gardé ici).
 const CACHE = 'lielutodo-shell-v1';
 
 self.addEventListener('install', () => self.skipWaiting());
 self.addEventListener('activate', (e) => {
   e.waitUntil(
-    caches.keys().then((keys) => Promise.all(keys.filter((k) => k !== CACHE).map((k) => caches.delete(k))))
+    caches.keys().then((keys) => Promise.all(keys.filter((k) => k !== CACHE && !k.startsWith('lielutodo-joplin-')).map((k) => caches.delete(k))))
       .then(() => self.clients.claim()),
   );
 });

@@ -324,6 +324,15 @@ select.field { appearance: auto; }
 .md blockquote { margin: 0 0 10px; padding: 2px 12px; border-left: 3px solid var(--line-strong); color: var(--muted); }
 .md code { background: var(--hover); padding: 1px 4px; border-radius: 4px; font-size: 13px; }
 .md pre { background: var(--hover); padding: 10px; border-radius: var(--radius); overflow-x: auto; }
+.md .md-img { display: block; max-width: 100%; height: auto; border-radius: var(--radius); margin: 6px 0; }
+.md .md-img.loading { min-height: 120px; width: 100%; max-width: 360px; background: var(--hover); animation: pulse 1.2s ease-in-out infinite; }
+.md .md-img-missing { display: inline-block; padding: 8px 10px; border: 1px dashed var(--line-strong); border-radius: var(--radius); color: var(--muted); font-size: 13px; }
+@keyframes pulse { 50% { opacity: .5; } }
+.notes-sync { display: flex; align-items: center; gap: 6px; min-height: 18px; margin: -4px 0 8px; font-size: 12px; color: var(--muted); }
+.notes-sync:empty { display: none; }
+.login-section { margin: 18px 0 8px; padding-top: 14px; border-top: 1px solid var(--line); }
+.login-section h2 { margin: 0; font-size: 15px; color: var(--brand); }
+.login-section p { margin: 2px 0 10px; font-size: 13px; }
 .md pre code { background: none; padding: 0; }
 .md a { color: var(--brand); }
 .share-form { display: flex; gap: 6px; }

@@ -94,6 +94,17 @@ test('rendu : mise en forme courante, aucun HTML injecté', () => {
   assert.ok(!html.includes('javascript:'));
 });
 
+test('rendu : image jointe Joplin (:/id), image web, pièce jointe ; alt et adresse échappés', () => {
+  const id = '208a92216ff547e1b0383d7cdc31c298';
+  const html = md.renderMarkdown(`Affiche 2\n![signal_2026*10.png](:/${id})\n![x" onerror="a](https://lielu.eu/i.png?a=1&b=2) [doc.pdf](:/${id.replace('8', '9')})`);
+  assert.ok(html.includes(`<img class="md-img" data-jres="${id}" alt="signal_2026*10.png">`));
+  assert.ok(html.includes('src="https://lielu.eu/i.png?a=1&amp;b=2"'));
+  assert.ok(html.includes('alt="x&quot; onerror=&quot;a"'));
+  assert.ok(html.includes('data-jres-link="209a92216ff547e1b0383d7cdc31c298"'));
+  assert.deepEqual(md.resourceIds(`![a](:/${id}) [b](:/${id})`), [id]);
+  assert.equal(md.plainPreview(`Affiche ![s.png](:/${id})`), 'Affiche 🖼 s.png');
+});
+
 // ---------- Store contre un faux Joplin Server ----------
 function fakeJoplin() {
   const items = new Map();
@@ -169,6 +180,38 @@ test('store : partager pose share_id sur le carnet et ses notes AVANT d’invite
   assert.deepEqual(fake.log, [`share ${f.id}`, `put ${f.id}.md`, `put ${n.id}.md`, 'invite s1 bob@lielu.eu']);
   assert.ok(fake.items.get(`${n.id}.md`).includes('share_id: s1'));
   await assert.rejects(store.shareFolder(f.id, 'pas-un-email'), /invalide/);
+});
+
+test('store : image jointe téléchargée une fois depuis .resource/<id>', async () => {
+  const fake = fakeJoplin();
+  let calls = 0;
+  fake.api.resourceBlob = async (id) => { calls++; assert.equal(id, 'ab'.repeat(16)); return new Blob(['png'], { type: 'image/png' }); };
+  const store = newStore(fake);
+  assert.equal(await store.resourceUrl('ab'.repeat(16)), null); // pas connecté : rien
+  await store.connect('u', 'e', 'p');
+  const url = await store.resourceUrl('ab'.repeat(16));
+  assert.ok(url.startsWith('blob:'));
+  assert.equal(await store.resourceUrl('ab'.repeat(16)), url);
+  assert.equal(calls, 1);
+  assert.equal(await store.resourceUrl('../x'), null);
+});
+
+test('store : la synchro compte les éléments reçus (affichés pendant la première synchro)', async () => {
+  const fake = fakeJoplin();
+  const f = serializeFolder({ id: 'f'.repeat(32), title: 'Carnet', updatedTime: 1000 });
+  fake.external(`${'f'.repeat(32)}.md`, f);
+  for (let i = 0; i < 12; i++) {
+    const id = i.toString(16).padStart(32, '0');
+    fake.external(`${id}.md`, serializeNote({ id, parentId: 'f'.repeat(32), title: `N${i}`, body: '', updatedTime: 1000 }));
+  }
+  const store = newStore(fake);
+  await store.connect('u', 'e', 'p');
+  let seenSyncing = false;
+  store.subscribe(() => { if (store.meta.syncing && store.meta.progress) seenSyncing = true; });
+  await store.sync();
+  assert.ok(seenSyncing);
+  assert.equal(store.meta.progress, 13);
+  assert.equal(store.state.notes.length, 12);
 });
 
 test('store : supprimer une note jamais envoyée la retire sans appel serveur', async () => {

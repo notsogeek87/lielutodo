@@ -187,6 +187,9 @@ class NoteEditViewModel(
         _canRedo.value = redoStack.isNotEmpty()
     }
 
+    /** Fichier d'une image jointe (ressource Joplin), gardé hors ligne une fois téléchargé ; null si indisponible. */
+    suspend fun loadResource(id: String): ByteArray? = notesSync.resource(id)
+
     fun onFolderSelected(folderId: String) {
         viewModelScope.launch {
             _parentId.value = folderId

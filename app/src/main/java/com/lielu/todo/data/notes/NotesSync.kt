@@ -9,9 +9,12 @@ import com.lielu.todo.data.joplin.ShareRecipient
 import com.lielu.todo.data.joplin.ShareStatus
 import com.lielu.todo.data.settings.JoplinSettings
 import com.lielu.todo.data.settings.SettingsRepository
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
+import java.io.File
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
@@ -46,6 +49,8 @@ class NotesSync(
     private val notes: NotesRepository,
     private val apiFactory: (JoplinSettings) -> JoplinApi,
     private val clock: () -> Long = System::currentTimeMillis,
+    /** Fichiers des ressources Joplin (images jointes) déjà téléchargés, pour les revoir hors ligne. */
+    private val resourceDir: File? = null,
 ) {
     private val running = Mutex()
 
@@ -59,6 +64,33 @@ class NotesSync(
         cachedApi?.takeIf { it.first == config }?.second ?: apiFactory(config).also { cachedApi = config to it }
 
     suspend fun syncNow(): SyncResult = running.withLock { sync() }
+
+    /**
+     * Fichier d'une ressource Joplin (image jointe `![…](:/<id>)`) : lu dans [resourceDir] s'il a déjà été téléchargé,
+     * sinon demandé au serveur puis gardé. Null si indisponible (hors ligne, notes non connectées, id invalide).
+     * Hors du verrou de synchro : une image s'affiche même pendant une longue synchro.
+     */
+    suspend fun resource(id: String): ByteArray? {
+        if (!id.matches(RESOURCE_ID)) return null
+        val cached = resourceDir?.let { File(it, id.lowercase()) }
+        if (cached != null && cached.isFile) {
+            withContext(Dispatchers.IO) { runCatching { cached.readBytes() }.getOrNull() }?.let { return it }
+        }
+        val config = settings.joplin.first()
+        if (!config.syncEnabled || !config.isConfigured) return null
+        val bytes = runCatching { api(config).resourceContent(id) }.getOrNull() ?: return null
+        if (cached != null) {
+            withContext(Dispatchers.IO) {
+                runCatching {
+                    cached.parentFile?.mkdirs()
+                    val tmp = File(cached.parentFile, "${cached.name}.tmp")
+                    tmp.writeBytes(bytes)
+                    if (!tmp.renameTo(cached)) tmp.delete()
+                }
+            }
+        }
+        return bytes
+    }
 
     private suspend fun sync(): SyncResult {
         val config = settings.joplin.first()
@@ -543,3 +575,5 @@ class NotesSync(
         return SyncResult.Failure(message)
     }
 }
+
+private val RESOURCE_ID = Regex("[0-9a-fA-F]{32}")

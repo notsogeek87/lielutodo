@@ -8,6 +8,7 @@ import { mountComposer } from './composer.js';
 import { openDetail } from './detail.js';
 import { buildView, inboxProject, openTasks, sectionHtml, weekStrip } from './views.js';
 import { createNotesStore } from './notes/notes-store.js';
+import { DEFAULT_NOTES_SERVER } from './notes/joplin.js';
 import { createNotesView, lastNotesHash } from './notes/notes-view.js';
 import {
   $, $$, closePopover, closeTopModal, confirmDialog, esc, menu, modal, promptDialog, toast, PROJECT_COLORS,
@@ -107,6 +108,9 @@ function closeAllOverlays() { closePopover(); while (closeTopModal()); }
 
 // ---------- Connexion ----------
 function renderLogin(message = '') {
+  // Notes Joplin : section facultative, comme dans l'app (rien n'est fait si l'e-mail Joplin reste vide).
+  const notesStore = notes || createNotesStore();
+  const jp = notesStore.connected ? notesStore.connection : null;
   $('#app').innerHTML = `
     <div class="login-wrap"><form class="login" autocomplete="on">
       <img class="logo" src="icon.svg" alt="" width="64" height="64">
@@ -115,9 +119,16 @@ function renderLogin(message = '') {
       <div class="fl"><label for="usr">Pseudo ou adresse e-mail</label><input class="field" id="usr" name="username" type="text" autocomplete="username" autocapitalize="off" spellcheck="false" required></div>
       <div class="fl"><label for="pwd">Mot de passe</label><input class="field" id="pwd" name="password" type="password" autocomplete="current-password" required></div>
       <div class="fl" id="totp-wrap" hidden><label for="totp">Code à deux facteurs</label><input class="field" id="totp" name="totp" inputmode="numeric" autocomplete="one-time-code" maxlength="8"></div>
+      <div class="login-section">
+        <h2>Notes (Joplin Server)</h2>
+        ${jp ? `<p>Connectées : ${esc(jp.email)}</p>` : `<p>Facultatif : synchronise vos notes avec un serveur Joplin.</p>
+        <details class="fl"><summary class="view-sub">Serveur Joplin</summary><input class="field" id="jp-srv" name="jpServer" value="${esc(DEFAULT_NOTES_SERVER)}" inputmode="url" autocapitalize="off" spellcheck="false" aria-label="Serveur Joplin"></details>
+        <div class="fl"><label for="jp-mail">E-mail Joplin</label><input class="field" id="jp-mail" name="jpEmail" type="email" autocomplete="off" autocapitalize="off" spellcheck="false"></div>
+        <div class="fl"><label for="jp-pwd">Mot de passe Joplin</label><input class="field" id="jp-pwd" name="jpPassword" type="password" autocomplete="off"></div>`}
+      </div>
       <div class="err" role="alert">${esc(message)}</div>
       <button class="btn primary">Se connecter</button>
-      <small>Vos tâches restent lisibles et modifiables hors ligne.</small>
+      <small>Vos tâches et vos notes restent lisibles et modifiables hors ligne.</small>
     </form></div>`;
   const form = $('.login');
   form.addEventListener('submit', async (e) => {
@@ -129,10 +140,19 @@ function renderLogin(message = '') {
     btn.disabled = true;
     btn.textContent = 'Connexion…';
     try {
+      if (!jp && f.jpEmail.value.trim() && !f.jpPassword.value) throw new Error('Entrez le mot de passe Joplin (ou videz l’e-mail Joplin).');
       sess = await login(f.server.value, f.username.value.trim(), f.password.value, f.totp.value);
       session.save(sess);
+      let notesError = '';
+      if (!jp && f.jpEmail.value.trim()) {
+        btn.textContent = 'Connexion des notes…';
+        try {
+          await notesStore.connect(f.jpServer.value || DEFAULT_NOTES_SERVER, f.jpEmail.value.trim(), f.jpPassword.value);
+        } catch (jex) { notesError = `Notes non connectées : ${jex.message || 'connexion impossible'}`; }
+      }
       location.hash = '#/inbox';
       boot();
+      if (notesError) toast(notesError, { error: true, ms: 8000 });
     } catch (ex) {
       if (ex instanceof ApiError && ex.code === 412) {
         $('#totp-wrap', form).hidden = false;
@@ -259,7 +279,9 @@ function syncText() {
 }
 
 function renderBadge() {
-  const { offline, syncing } = store.meta;
+  const { offline } = store.meta;
+  // Tâches OU notes en cours de synchro : la roue tourne (la première synchro des notes peut être longue).
+  const syncing = store.meta.syncing || !!notes?.meta.syncing;
   const pending = store.state.ops.length;
   const el = $('#sync-badge');
   if (el) {

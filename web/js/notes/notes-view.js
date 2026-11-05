@@ -72,11 +72,13 @@ export function createNotesView(store, go) {
     if (!$('#notes-search', head)) {
       head.innerHTML = `
         <div class="view-head"><h1 id="notes-title"></h1><span id="notes-actions" class="notes-actions"></span></div>
+        <div id="notes-sync" class="notes-sync" aria-live="polite"></div>
         <div class="search-box notes-search">${icon('search', 16)}<input class="field" id="notes-search" type="search" placeholder="Rechercher dans les notes" value="${esc(query)}" autocomplete="off"></div>
         <div class="notes-chips" id="notes-chips"></div>`;
       $('#notes-search', head).addEventListener('input', (e) => { query = e.target.value; drawList(content, folderId); });
     }
     $('#notes-title', head).textContent = folder ? folder.title : 'Notes';
+    $('#notes-sync', head).innerHTML = syncStatus();
     document.title = `${folder ? folder.title : 'Notes'} – LieluTodo`;
     $('#notes-actions', head).innerHTML = `
       ${connected ? `<button class="btn${invitations.length ? ' primary' : ''}" data-nact="invitations" title="Carnets partagés et invitations">${icon('users', 16)} Partages${invitations.length ? ` · ${invitations.length}` : ''}</button>` : ''}
@@ -87,6 +89,22 @@ export function createNotesView(store, go) {
       <a class="pill${folderId ? '' : ' sel'}" href="#/notes">Toutes</a>
       ${s.folders.map((f) => `<a class="pill${f.id === folderId ? ' sel' : ''}" href="#/notes/${f.id}">${f.shareId ? icon('users', 14) : icon('folder', 14)} ${esc(f.title)}${f.dirty ? ' ·' : ''}</a>`).join('')}` : '';
     drawList(content, folderId);
+  }
+
+  /** État de la synchro des notes, visible tant qu'elle tourne (la première peut prendre un moment). */
+  function syncStatus() {
+    if (!store.connected) return '';
+    const m = store.meta;
+    const s = store.state;
+    const unsent = s.notes.filter((n) => n.dirty).length;
+    if (m.syncing) {
+      return `${icon('sync', 14, 'spin')} Synchronisation des notes…${m.progress ? ` ${m.progress} élément${m.progress > 1 ? 's' : ''} reçu${m.progress > 1 ? 's' : ''}` : ''}`;
+    }
+    if (m.needsLogin) return '';
+    if (m.offline) return `${icon('offline', 14)} Serveur Joplin injoignable${unsent ? ` · ${unsent} note${unsent > 1 ? 's' : ''} à envoyer` : ''}`;
+    if (unsent) return `${icon('sync', 14)} ${unsent} note${unsent > 1 ? 's' : ''} à envoyer`;
+    if (s.lastSync) return `${icon('check', 14)} À jour · ${new Intl.DateTimeFormat('fr-FR', { hour: '2-digit', minute: '2-digit' }).format(s.lastSync)}`;
+    return '';
   }
 
   function drawList(content, folderId) {
@@ -106,7 +124,10 @@ export function createNotesView(store, go) {
     }
     const folder = folderId ? store.folder(folderId) : null;
     const status = folder ? `<div class="view-sub">${folder.shareId ? `${icon('users', 14)} Carnet partagé` : folder.dirty ? 'Carnet pas encore envoyé à Joplin' : 'Carnet personnel'}</div>` : '';
-    const empty = !notes.length
+    const firstSync = store.connected && store.meta.syncing && !store.state.lastSync && !q;
+    const empty = !notes.length && firstSync
+      ? `<div class="empty"><div class="big">${icon('sync', 40, 'spin')}</div><h2>Récupération de vos notes…</h2><p>La première synchronisation avec Joplin peut prendre un moment.${store.meta.progress ? ` ${store.meta.progress} élément${store.meta.progress > 1 ? 's' : ''} reçu${store.meta.progress > 1 ? 's' : ''}.` : ''}</p></div>`
+      : !notes.length
       ? `<div class="empty"><div class="big">${icon('note', 40)}</div><h2>${q ? 'Aucun résultat' : 'Aucune note'}</h2><p>${q ? `Rien ne correspond à « ${esc(query)} ».` : 'Créez votre première note avec « Nouvelle note ».'}</p></div>` : '';
     list.innerHTML = banner + status + notes.map((n) => {
       const f = store.folder(n.parentId);
@@ -255,6 +276,8 @@ export function createNotesView(store, go) {
     if (content.dataset.view === key && editor?.id === id) { drawEditorStatus(content); return; }
     content.dataset.view = key;
     editor = { id, initial: { title: n.title, body: n.body }, history: [], redo: [], lastEditAt: 0, timer: null, last: null, preview: false };
+    // Note avec images jointes : ouverte en aperçu (on voit les images), le crayon repasse en édition.
+    const startInPreview = md.resourceIds(n.body).length > 0;
     document.title = `${n.title || 'Note'} – LieluTodo`;
     content.innerHTML = `
       <div class="note-editor">
@@ -283,6 +306,7 @@ export function createNotesView(store, go) {
     autosize(body);
     // Nouvelle note : on écrit tout de suite (focus immédiat, sinon les premières lettres tapées sont perdues).
     if (!n.title && !n.body) title.focus();
+    if (startInPreview) togglePreview(content);
 
     title.addEventListener('input', () => scheduleSave(content));
     title.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); body.focus(); } });
@@ -390,7 +414,39 @@ export function createNotesView(store, go) {
     pane.hidden = !editor.preview;
     ta.hidden = editor.preview;
     $('.md-toolbar', content).classList.toggle('dim', editor.preview);
-    if (editor.preview) pane.innerHTML = md.renderMarkdown(ta.value) || '<p class="view-sub">Note vide.</p>';
+    const btn = $('[data-md=preview]', content);
+    if (btn) {
+      btn.innerHTML = icon(editor.preview ? 'edit' : 'eye');
+      btn.title = editor.preview ? 'Modifier' : 'Aperçu';
+      btn.setAttribute('aria-label', btn.title);
+    }
+    if (editor.preview) {
+      pane.innerHTML = md.renderMarkdown(ta.value) || '<p class="view-sub">Note vide.</p>';
+      loadResources(pane);
+    }
+  }
+
+  /** Images et pièces jointes Joplin de l'aperçu : téléchargées depuis le serveur (puis gardées hors ligne). */
+  function loadResources(pane) {
+    pane.querySelectorAll('img[data-jres]').forEach((img) => {
+      img.classList.add('loading');
+      store.resourceUrl(img.dataset.jres).then((url) => {
+        img.classList.remove('loading');
+        if (url) { img.src = url; return; }
+        const miss = document.createElement('span');
+        miss.className = 'md-img-missing';
+        miss.textContent = `🖼 ${img.alt || 'Image'} — ${store.connected ? 'indisponible (serveur Joplin injoignable)' : 'connectez vos notes pour l’afficher'}`;
+        img.replaceWith(miss);
+      });
+    });
+    pane.querySelectorAll('a[data-jres-link]').forEach((a) => {
+      a.addEventListener('click', async (e) => {
+        e.preventDefault();
+        const url = await store.resourceUrl(a.dataset.jresLink);
+        if (url) window.open(url, '_blank', 'noopener');
+        else toast('Pièce jointe indisponible : serveur Joplin injoignable.', { error: true });
+      });
+    });
   }
 
   function scheduleSave(content) {
@@ -426,7 +482,9 @@ export function createNotesView(store, go) {
     $('[data-md=undo]', content)?.toggleAttribute('disabled', !editor.history.length);
     $('[data-md=redo]', content)?.toggleAttribute('disabled', !editor.redo.length);
     const words = ($('.note-body', content)?.value || '').split(/\s+/).filter(Boolean).length;
-    const state = editor.dirty ? 'Enregistrement…' : n?.dirty ? 'Enregistrée · pas encore envoyée à Joplin' : 'Enregistrée';
+    const state = editor.dirty ? 'Enregistrement…'
+      : n?.dirty && store.meta.syncing ? 'Envoi à Joplin…'
+        : n?.dirty ? 'Enregistrée · pas encore envoyée à Joplin' : store.meta.syncing ? 'Enregistrée · synchronisation…' : 'Enregistrée · synchronisée';
     const el = $('.note-status', content);
     if (el) el.textContent = `${state} · ${words} mot${words > 1 ? 's' : ''}`;
   }
