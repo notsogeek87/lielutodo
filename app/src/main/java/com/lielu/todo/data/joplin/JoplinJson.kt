@@ -27,6 +27,36 @@ object JoplinJson {
         )
     }
 
+    /** `GET /api/shares/{id}/users` : `{items:[{id, status, user:{email}}]}`. */
+    fun parseRecipients(json: JSONObject): List<ShareRecipient> {
+        val array = json.optJSONArray("items") ?: JSONArray()
+        return (0 until array.length()).map {
+            val item = array.getJSONObject(it)
+            ShareRecipient(
+                shareUserId = item.getString("id"),
+                email = item.optJSONObject("user")?.optString("email").orEmpty(),
+                status = ShareStatus.of(item.optInt("status", 0)),
+            )
+        }
+    }
+
+    /** `GET /api/share_users` : `{items:[{id, status, share:{folder_id, user:{full_name, email}}}]}`. */
+    fun parseInvitations(json: JSONObject): List<ShareInvitation> {
+        val array = json.optJSONArray("items") ?: JSONArray()
+        return (0 until array.length()).map {
+            val item = array.getJSONObject(it)
+            val share = item.optJSONObject("share")
+            val owner = share?.optJSONObject("user")
+            ShareInvitation(
+                shareUserId = item.getString("id"),
+                status = ShareStatus.of(item.optInt("status", 0)),
+                folderId = share?.optString("folder_id").orEmpty(),
+                ownerName = owner?.optString("full_name").orEmpty(),
+                ownerEmail = owner?.optString("email").orEmpty(),
+            )
+        }
+    }
+
     /** Code d'erreur applicatif d'une réponse d'erreur (ex. resyncRequired), s'il est présent. */
     fun parseErrorCode(body: String?): String? =
         body

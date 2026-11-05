@@ -11,24 +11,38 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.CloudOff
+import androidx.compose.material.icons.filled.CreateNewFolder
+import androidx.compose.material.icons.filled.Mail
+import androidx.compose.material.icons.filled.People
+import androidx.compose.material.icons.filled.PersonAdd
+import androidx.compose.material.icons.filled.PersonRemove
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Badge
+import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.ElevatedCard
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -37,8 +51,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.lielu.todo.data.joplin.ShareStatus
 import com.lielu.todo.data.notes.Folder
 import com.lielu.todo.data.notes.Note
 import com.lielu.todo.ui.common.SectionHeader
@@ -53,8 +69,20 @@ fun NotesListScreen(
 ) {
     val notes by viewModel.notes.collectAsState()
     val folders by viewModel.folders.collectAsState()
+    val syncReady by viewModel.syncReady.collectAsState()
+    val invitations by viewModel.invitations.collectAsState()
+    val share by viewModel.share.collectAsState()
+    val message by viewModel.message.collectAsState()
     var selectedFolder by remember { mutableStateOf<String?>(null) }
     var searchQuery by remember { mutableStateOf("") }
+    var showNewFolder by remember { mutableStateOf(false) }
+    var showInvitations by remember { mutableStateOf(false) }
+    val snackbar = remember { SnackbarHostState() }
+    LaunchedEffect(message) {
+        val text = message ?: return@LaunchedEffect
+        snackbar.showSnackbar(text)
+        viewModel.onMessageShown()
+    }
 
     Scaffold(
         topBar = {
@@ -65,9 +93,22 @@ fun NotesListScreen(
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Retour")
                     }
                 },
+                actions = {
+                    if (invitations.isNotEmpty()) {
+                        IconButton(onClick = { showInvitations = true }) {
+                            BadgedBox(badge = { Badge { Text("${invitations.size}") } }) {
+                                Icon(Icons.Default.Mail, contentDescription = "Carnets partagés avec vous")
+                            }
+                        }
+                    }
+                    IconButton(onClick = { showNewFolder = true }) {
+                        Icon(Icons.Default.CreateNewFolder, contentDescription = "Nouveau carnet")
+                    }
+                },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Transparent),
             )
         },
+        snackbarHost = { SnackbarHost(snackbar) },
         floatingActionButton = {
             FloatingActionButton(onClick = { viewModel.onAddNote(selectedFolder, onNoteClick) }) {
                 Icon(Icons.Default.Add, contentDescription = "Nouvelle note")
@@ -102,7 +143,37 @@ fun NotesListScreen(
                             selected = selectedFolder == folder.id,
                             onClick = { selectedFolder = folder.id },
                             label = { Text(folder.title) },
+                            leadingIcon =
+                                if (folder.shareId.isNotBlank()) {
+                                    { Icon(Icons.Default.People, contentDescription = "Partagé") }
+                                } else {
+                                    null
+                                },
                         )
+                    }
+                }
+            }
+            // Carnet choisi : son partage (un sous-carnet ne se partage pas, règle Joplin).
+            folders.firstOrNull { it.id == selectedFolder }?.let { folder ->
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        when {
+                            folder.shareId.isNotBlank() -> "Carnet partagé"
+                            folder.dirty -> "Carnet pas encore envoyé à Joplin"
+                            else -> "Carnet personnel"
+                        },
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.weight(1f),
+                    )
+                    if (syncReady && folder.parentId.isBlank()) {
+                        TextButton(onClick = { viewModel.onOpenShare(folder) }) {
+                            Icon(Icons.Default.PersonAdd, contentDescription = null)
+                            Text("Partager", modifier = Modifier.padding(start = 6.dp))
+                        }
                     }
                 }
             }
@@ -174,6 +245,180 @@ fun NotesListScreen(
                 }
             }
         }
+    }
+    NotesDialogs(
+        viewModel = viewModel,
+        share = share,
+        invitations = invitations,
+        showNewFolder = showNewFolder,
+        onNewFolderDismiss = { showNewFolder = false },
+        onFolderCreated = { selectedFolder = it },
+        showInvitations = showInvitations,
+        onInvitationsDismiss = {
+            showInvitations = false
+            viewModel.refreshInvitations()
+        },
+    )
+}
+
+@Composable
+private fun NotesDialogs(
+    viewModel: NotesViewModel,
+    share: ShareUiState?,
+    invitations: List<com.lielu.todo.data.joplin.ShareInvitation>,
+    showNewFolder: Boolean,
+    onNewFolderDismiss: () -> Unit,
+    onFolderCreated: (String) -> Unit,
+    showInvitations: Boolean,
+    onInvitationsDismiss: () -> Unit,
+) {
+    if (showNewFolder) {
+        var title by remember { mutableStateOf("") }
+        AlertDialog(
+            onDismissRequest = onNewFolderDismiss,
+            title = { Text("Nouveau carnet") },
+            text = {
+                OutlinedTextField(
+                    value = title,
+                    onValueChange = { title = it },
+                    label = { Text("Nom du carnet") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    enabled = title.isNotBlank(),
+                    onClick = {
+                        viewModel.onCreateFolder(title, onFolderCreated)
+                        onNewFolderDismiss()
+                    },
+                ) { Text("Créer") }
+            },
+            dismissButton = { TextButton(onClick = onNewFolderDismiss) { Text("Annuler") } },
+        )
+    }
+    if (share != null) ShareDialog(viewModel, share)
+    if (showInvitations) {
+        AlertDialog(
+            onDismissRequest = onInvitationsDismiss,
+            title = { Text("Carnets partagés avec vous") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    if (invitations.isEmpty()) Text("Aucune invitation en attente.")
+                    invitations.forEach { invitation ->
+                        Column {
+                            Text(
+                                "${invitation.ownerName.ifBlank { invitation.ownerEmail }} vous partage un carnet",
+                                style = MaterialTheme.typography.bodyMedium,
+                            )
+                            if (invitation.ownerName.isNotBlank()) {
+                                Text(
+                                    invitation.ownerEmail,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                            Row {
+                                TextButton(onClick = { viewModel.onRespondToInvitation(invitation, accept = true) }) {
+                                    Text("Accepter")
+                                }
+                                TextButton(onClick = { viewModel.onRespondToInvitation(invitation, accept = false) }) {
+                                    Text("Refuser")
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = { TextButton(onClick = onInvitationsDismiss) { Text("Fermer") } },
+        )
+    }
+}
+
+/** Partage d'un carnet : participants (en attente / accepté), invitation par e-mail, arrêt du partage. */
+@Composable
+private fun ShareDialog(
+    viewModel: NotesViewModel,
+    share: ShareUiState,
+) {
+    var email by remember { mutableStateOf("") }
+    var confirmStop by remember { mutableStateOf(false) }
+    AlertDialog(
+        onDismissRequest = viewModel::onCloseShare,
+        title = { Text("Partager « ${share.folderTitle} »") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(
+                    "Invitez un compte du même serveur Joplin. Il accepte l'invitation dans Joplin ou LieluTodo, " +
+                        "puis lit et modifie les notes de ce carnet.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                OutlinedTextField(
+                    value = email,
+                    onValueChange = { email = it },
+                    label = { Text("E-mail du compte Joplin") },
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                TextButton(
+                    enabled = !share.loading && email.contains('@'),
+                    onClick = {
+                        viewModel.onInvite(email)
+                        email = ""
+                    },
+                ) { Text("Inviter") }
+                if (share.loading) LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                share.error?.let {
+                    Text(
+                        it,
+                        color = MaterialTheme.colorScheme.error,
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                }
+                share.recipients.forEach { recipient ->
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(recipient.email, style = MaterialTheme.typography.bodyMedium)
+                            Text(
+                                when (recipient.status) {
+                                    ShareStatus.ACCEPTED -> "A accepté"
+                                    ShareStatus.REJECTED -> "A refusé"
+                                    ShareStatus.PENDING -> "Invitation en attente"
+                                },
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                        IconButton(onClick = { viewModel.onRemoveRecipient(recipient) }, enabled = !share.loading) {
+                            Icon(Icons.Default.PersonRemove, contentDescription = "Retirer ${recipient.email}")
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = viewModel::onCloseShare) { Text("Fermer") } },
+        dismissButton = {
+            if (share.recipients.isNotEmpty() || !share.loading) {
+                TextButton(onClick = { confirmStop = true }, enabled = !share.loading) { Text("Arrêter le partage") }
+            }
+        },
+    )
+    if (confirmStop) {
+        AlertDialog(
+            onDismissRequest = { confirmStop = false },
+            title = { Text("Arrêter le partage ?") },
+            text = { Text("Les participants n'auront plus accès à ce carnet. Vos notes restent intactes.") },
+            confirmButton = {
+                TextButton(onClick = {
+                    confirmStop = false
+                    viewModel.onStopSharing()
+                }) { Text("Arrêter") }
+            },
+            dismissButton = { TextButton(onClick = { confirmStop = false }) { Text("Annuler") } },
+        )
     }
 }
 

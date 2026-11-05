@@ -26,9 +26,17 @@ data class Note(
     val serverUpdatedTime: Long = 0,
 )
 
-/** Un carnet Joplin (dossier, item `type_: 2`). */
+/**
+ * Un carnet Joplin (dossier, item `type_: 2`). [shareId] non vide = carnet partagé (Joplin Server) : chaque note
+ * qu'il contient est envoyée avec ce `share_id`, sinon les autres participants ne la verraient pas. [dirty] = créé ou
+ * modifié ici, pas encore envoyé ; [serverRaw] comme pour [Note].
+ */
 data class Folder(
     val id: String,
     val title: String,
     val parentId: String = "",
+    val shareId: String = "",
+    val dirty: Boolean = false,
+    val createdTime: Long = 0,
+    val serverRaw: String? = null,
 )

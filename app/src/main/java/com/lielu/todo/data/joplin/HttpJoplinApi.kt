@@ -61,6 +61,43 @@ class HttpJoplinApi(
         }
     }
 
+    override suspend fun createShare(folderId: String): String =
+        withContext(Dispatchers.IO) {
+            requestJson("POST", "/shares", JSONObject().put("folder_id", folderId)).getString("id")
+        }
+
+    override suspend fun addShareRecipient(
+        shareId: String,
+        email: String,
+    ) {
+        withContext(Dispatchers.IO) {
+            requestJson("POST", "/shares/$shareId/users", JSONObject().put("email", email.trim()))
+        }
+    }
+
+    override suspend fun shareRecipients(shareId: String): List<ShareRecipient> =
+        withContext(Dispatchers.IO) { JoplinJson.parseRecipients(requestJson("GET", "/shares/$shareId/users")) }
+
+    override suspend fun removeShareRecipient(shareUserId: String) {
+        withContext(Dispatchers.IO) { requestText("DELETE", "/share_users/$shareUserId") }
+    }
+
+    override suspend fun deleteShare(shareId: String) {
+        withContext(Dispatchers.IO) { requestText("DELETE", "/shares/$shareId") }
+    }
+
+    override suspend fun invitations(): List<ShareInvitation> =
+        withContext(Dispatchers.IO) { JoplinJson.parseInvitations(requestJson("GET", "/share_users")) }
+
+    override suspend fun respondToInvitation(
+        shareUserId: String,
+        accept: Boolean,
+    ) {
+        withContext(Dispatchers.IO) {
+            requestJson("PATCH", "/share_users/$shareUserId", JSONObject().put("status", if (accept) 1 else 2))
+        }
+    }
+
     /** Ouvre une session avec l'e-mail et le mot de passe ; lève [JoplinApiException] si refusé (403). */
     private fun login(): String {
         val credentials =

@@ -224,6 +224,9 @@ fun AppNavHost(
                                 initializer {
                                     NotesViewModel(
                                         container.notesRepository,
+                                        container.notesSync,
+                                        container.settingsRepository,
+                                        container.applicationScope,
                                     )
                                 }
                             },

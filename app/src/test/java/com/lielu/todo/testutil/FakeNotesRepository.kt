@@ -17,7 +17,23 @@ class FakeNotesRepository : NotesRepository {
     override suspend fun getFolders(): List<Folder> = folderStore.value
 
     override suspend fun upsertFolders(folders: List<Folder>) {
-        folderStore.value = (folderStore.value + folders).distinctBy { it.id }
+        val local = folderStore.value.associateBy { it.id }
+        val incoming = folders.filter { local[it.id]?.dirty != true }.associateBy { it.id }
+        folderStore.value = (local + incoming).values.toList()
+    }
+
+    override suspend fun createFolder(title: String): Folder {
+        val folder = Folder(id = "f".repeat(31) + (folderStore.value.size + 1), title = title, dirty = true)
+        folderStore.value = folderStore.value + folder
+        return folder
+    }
+
+    override suspend fun updateFolder(
+        id: String,
+        transform: (Folder?) -> Folder?,
+    ) {
+        val next = transform(folderStore.value.firstOrNull { it.id == id })
+        folderStore.value = folderStore.value.filter { it.id != id } + listOfNotNull(next)
     }
 
     override val notes: Flow<List<Note>> =

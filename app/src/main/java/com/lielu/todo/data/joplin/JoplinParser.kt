@@ -24,6 +24,8 @@ object JoplinParser {
         val todoDue: Long,
         /** Chiffrement de bout en bout Joplin : titre et corps sont alors illisibles ici. */
         val encrypted: Boolean = false,
+        /** Partage Joplin Server (carnet partagé et ses notes). */
+        val shareId: String = "",
     )
 
     private val isoFormat =
@@ -74,6 +76,7 @@ object JoplinParser {
             todoCompleted = props["todo_completed"]?.toLongOrNull() != 0L && props["todo_completed"] != null,
             todoDue = parseTime(props["todo_due"]),
             encrypted = props["encryption_applied"] == "1",
+            shareId = props["share_id"].orEmpty(),
         )
     }
 
@@ -85,6 +88,7 @@ object JoplinParser {
         body: String,
         updatedTimeMs: Long,
         createdTimeMs: Long = updatedTimeMs,
+        shareId: String = "",
     ): String {
         val created = formatTime(createdTimeMs)
         val updated = formatTime(updatedTimeMs)
@@ -110,6 +114,7 @@ object JoplinParser {
                 "encryption_applied: 0",
                 "markup_language: 1",
                 "is_shared: 0",
+                "share_id: $shareId",
                 "type_: 1",
             )
         return assemble(title, body, props.joinToString("\n"))
@@ -128,10 +133,12 @@ object JoplinParser {
         parentId: String,
         updatedTimeMs: Long,
         deletedTimeMs: Long? = null,
+        shareId: String? = null,
     ): String {
         val (_, props) = split(raw)
         val updated = formatTime(updatedTimeMs)
         props["parent_id"] = parentId
+        if (shareId != null) props["share_id"] = shareId
         props["updated_time"] = updated
         props["user_updated_time"] = updated
         if (deletedTimeMs != null) props["deleted_time"] = deletedTimeMs.toString()
@@ -141,11 +148,42 @@ object JoplinParser {
         return assemble(title, body, props.entries.joinToString("\n") { "${it.key}: ${it.value}" })
     }
 
+    /** Sérialise un NOUVEAU carnet (`type_: 2`). */
+    fun serializeFolder(
+        id: String,
+        title: String,
+        parentId: String,
+        updatedTimeMs: Long,
+        createdTimeMs: Long = updatedTimeMs,
+        shareId: String = "",
+    ): String {
+        val created = formatTime(createdTimeMs)
+        val updated = formatTime(updatedTimeMs)
+        val props =
+            listOf(
+                "id: $id",
+                "created_time: $created",
+                "updated_time: $updated",
+                "user_created_time: $created",
+                "user_updated_time: $updated",
+                "encryption_cipher_text: ",
+                "encryption_applied: 0",
+                "parent_id: $parentId",
+                "is_shared: 0",
+                "share_id: $shareId",
+                "type_: 2",
+            )
+        return assemble(title, "", props.joinToString("\n"))
+    }
+
     private fun assemble(
         title: String,
         body: String,
         props: String,
-    ): String = if (body.isEmpty()) "$title\n\n$props\n" else "$title\n\n$body\n\n$props\n"
+    ): String =
+        // PAS de retour à la ligne final : Joplin lit les propriétés depuis la dernière ligne et s'arrête à la
+        // première ligne vide ; un « \n » final lui ferait voir zéro propriété (« Missing required property »).
+        if (body.isEmpty()) "$title\n\n$props" else "$title\n\n$body\n\n$props"
 
     fun formatTime(epochMs: Long): String = isoFormat.format(Instant.ofEpochMilli(epochMs))
 

@@ -50,6 +50,15 @@ interface NotesRepository {
         transform: (Note?) -> Note?,
     )
 
+    /** Crée un carnet à la racine, en attente d'envoi (hors ligne aussi). */
+    suspend fun createFolder(title: String): Folder
+
+    /** Lit-modifie-écrit un carnet d'un seul tenant (`null` = supprimer), comme [update]. */
+    suspend fun updateFolder(
+        id: String,
+        transform: (Folder?) -> Folder?,
+    )
+
     /** Retire des carnets du cache (supprimés côté serveur). */
     suspend fun removeFolders(ids: Set<String>)
 

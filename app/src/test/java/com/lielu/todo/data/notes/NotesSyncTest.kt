@@ -26,6 +26,8 @@ class NotesSyncTest {
         val puts = mutableMapOf<String, String>()
         val deletes = mutableListOf<String>()
         val deltaCursors = mutableListOf<String?>()
+        val log = mutableListOf<String>()
+        var shareCounter = 0
 
         override suspend fun ping(): String = "JoplinServer"
 
@@ -47,8 +49,25 @@ class NotesSyncTest {
             content: String,
         ): JSONObject {
             puts[name] = content
+            log += "put $name"
             contents[name] = content
             return JSONObject().put("jop_updated_time", 100L)
+        }
+
+        override suspend fun createShare(folderId: String): String {
+            log += "share $folderId"
+            return "s${++shareCounter}"
+        }
+
+        override suspend fun addShareRecipient(
+            shareId: String,
+            email: String,
+        ) {
+            log += "invite $shareId $email"
+        }
+
+        override suspend fun deleteShare(shareId: String) {
+            log += "unshare $shareId"
         }
 
         override suspend fun deleteItem(name: String) {
@@ -351,7 +370,7 @@ class NotesSyncTest {
             api.contents["$folder.md"] = folderContent(folder)
             val sync = NotesSync(settings, notes, apiFactory = { api }, clock = { 90_000L })
             sync.syncNow()
-            assertEquals(listOf(Folder(folder, "Carnet")), notes.getFolders())
+            assertEquals(listOf(folder to "Carnet"), notes.getFolders().map { it.id to it.title })
             notes.delete(id)
             api.changes = emptyList()
 
@@ -360,5 +379,97 @@ class NotesSyncTest {
             assertTrue(api.deletes.isEmpty())
             assertTrue(api.puts.getValue("$id.md").contains("deleted_time: 90000"))
             assertNull(notes.getById(id))
+        }
+
+    @Test
+    fun unCarnetCreeIciEstEnvoyeAvantSesNotes() =
+        runTest {
+            val settings = configuredSettings()
+            val notes = FakeNotesRepository()
+            val api = FakeJoplinApi()
+            val folder = notes.createFolder("Projets")
+            val note = notes.create()
+            notes.save(note.id, "Idée", "texte")
+            notes.setParent(note.id, folder.id)
+            val sync = NotesSync(settings, notes, apiFactory = { api })
+
+            sync.syncNow()
+
+            assertEquals(listOf("put ${folder.id}.md", "put ${note.id}.md"), api.log)
+            assertTrue(api.puts.getValue("${folder.id}.md").contains("type_: 2"))
+            assertEquals(false, notes.getFolders().single().dirty)
+        }
+
+    @Test
+    fun partagerPoseLeShareIdSurLeCarnetEtSesNotesAvantDInviter() =
+        runTest {
+            val settings = configuredSettings()
+            val notes = FakeNotesRepository()
+            val api = FakeJoplinApi()
+            val folder = notes.createFolder("Famille")
+            val note = notes.create()
+            notes.save(note.id, "Courses", "pain")
+            notes.setParent(note.id, folder.id)
+            val sync = NotesSync(settings, notes, apiFactory = { api })
+            sync.syncNow()
+            api.log.clear()
+
+            val result = sync.shareFolder(folder.id, "bob@lielu.eu")
+
+            assertTrue(result.isSuccess)
+            assertEquals(
+                listOf("share ${folder.id}", "put ${folder.id}.md", "put ${note.id}.md", "invite s1 bob@lielu.eu"),
+                api.log,
+            )
+            assertTrue(api.puts.getValue("${note.id}.md").contains("share_id: s1"))
+            assertEquals("s1", notes.getFolders().single().shareId)
+        }
+
+    @Test
+    fun uneNouvelleNoteDUnCarnetPartageRecoitSonShareId() =
+        runTest {
+            val settings = configuredSettings()
+            val notes = FakeNotesRepository()
+            val api = FakeJoplinApi()
+            notes.upsertFolders(listOf(Folder("a".repeat(32), "Partagé", shareId = "s9")))
+            val note = notes.create()
+            notes.save(note.id, "Nouvelle", "")
+            notes.setParent(note.id, "a".repeat(32))
+            val sync = NotesSync(settings, notes, apiFactory = { api })
+
+            sync.syncNow()
+
+            assertTrue(api.puts.getValue("${note.id}.md").contains("share_id: s9"))
+        }
+
+    @Test
+    fun unSousCarnetNePeutPasEtrePartage() =
+        runTest {
+            val settings = configuredSettings()
+            val notes = FakeNotesRepository()
+            notes.upsertFolders(listOf(Folder("b".repeat(32), "Sous", parentId = "a".repeat(32))))
+            val sync = NotesSync(settings, notes, apiFactory = { FakeJoplinApi() })
+
+            val result = sync.shareFolder("b".repeat(32), "bob@lielu.eu")
+
+            assertTrue(result.exceptionOrNull()!!.message!!.contains("racine"))
+        }
+
+    @Test
+    fun laSessionEstReutiliseeDUneSynchroALAutre() =
+        runTest {
+            val settings = configuredSettings()
+            val notes = FakeNotesRepository()
+            var created = 0
+            val sync =
+                NotesSync(settings, notes, apiFactory = {
+                    created++
+                    FakeJoplinApi()
+                })
+
+            sync.syncNow()
+            sync.syncNow()
+
+            assertEquals(1, created)
         }
 }

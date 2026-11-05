@@ -65,7 +65,7 @@ class JoplinParserTest {
 
         assertTrue(texte.startsWith("Titre\n\nCorps\n\n"))
         assertTrue(texte.contains("id: ${"a".repeat(32)}\n"))
-        assertTrue(texte.contains("type_: 1\n"))
+        assertTrue(texte.endsWith("type_: 1"))
         assertTrue(texte.contains("updated_time: 2026-11-03T18:01:10.000Z\n"))
         // aller-retour : le sérialisé se reparse en la même note
         val reparsed = JoplinParser.parse(texte)
@@ -88,7 +88,7 @@ class JoplinParserTest {
         assertTrue(texte.contains("is_todo: 1\n"))
         assertTrue(texte.contains("todo_due: 1700000000000\n"))
         assertTrue(texte.contains("parent_id: p2\n"))
-        assertTrue(texte.endsWith("type_: 1\n"))
+        assertTrue(texte.endsWith("type_: 1"))
         val relu = JoplinParser.parse(texte)!!
         assertEquals("corps", relu.body)
         assertEquals(1793728870000L, relu.updatedTime)

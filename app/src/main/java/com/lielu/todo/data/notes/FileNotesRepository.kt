@@ -43,9 +43,37 @@ class FileNotesRepository(
 
     override suspend fun upsertFolders(folders: List<Folder>) =
         mutate {
-            val byId = folderStore.value.associateBy { it.id } + folders.associateBy { it.id }
+            // Un carnet modifié ici et pas encore envoyé garde sa version locale.
+            val local = folderStore.value.associateBy { it.id }
+            val incoming = folders.filter { local[it.id]?.dirty != true }.associateBy { it.id }
+            val byId = local + incoming
             folderStore.value = byId.values.sortedBy { it.title.lowercase() }
         }
+
+    override suspend fun createFolder(title: String): Folder {
+        val now = clock()
+        val folder =
+            Folder(
+                id = UUID.randomUUID().toString().replace("-", ""),
+                title = title.trim(),
+                dirty = true,
+                createdTime = now,
+            )
+        updateFolder(folder.id) { folder }
+        return folder
+    }
+
+    override suspend fun updateFolder(
+        id: String,
+        transform: (Folder?) -> Folder?,
+    ) = mutate {
+        val current = folderStore.value.firstOrNull { it.id == id }
+        val next = transform(current)
+        if (next != current) {
+            folderStore.value =
+                (folderStore.value.filter { it.id != id } + listOfNotNull(next)).sortedBy { it.title.lowercase() }
+        }
+    }
 
     override suspend fun removeFolders(ids: Set<String>) =
         mutate { folderStore.value = folderStore.value.filter { it.id !in ids } }
@@ -188,11 +216,19 @@ object NoteJson {
             .put("id", folder.id)
             .put("title", folder.title)
             .put("parentId", folder.parentId)
+            .put("shareId", folder.shareId)
+            .put("dirty", folder.dirty)
+            .put("createdTime", folder.createdTime)
+            .put("serverRaw", folder.serverRaw ?: JSONObject.NULL)
 
     fun folderFromJson(json: JSONObject): Folder =
         Folder(
             id = json.getString("id"),
             title = json.optString("title"),
             parentId = json.optString("parentId"),
+            shareId = json.optString("shareId"),
+            dirty = json.optBoolean("dirty", false),
+            createdTime = json.optLong("createdTime", 0L),
+            serverRaw = if (json.isNull("serverRaw")) null else json.optString("serverRaw"),
         )
 }

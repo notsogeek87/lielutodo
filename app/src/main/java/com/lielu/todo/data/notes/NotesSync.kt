@@ -4,6 +4,9 @@ import com.lielu.todo.data.joplin.JoplinApi
 import com.lielu.todo.data.joplin.JoplinApiException
 import com.lielu.todo.data.joplin.JoplinParser
 import com.lielu.todo.data.joplin.RemoteNote
+import com.lielu.todo.data.joplin.ShareInvitation
+import com.lielu.todo.data.joplin.ShareRecipient
+import com.lielu.todo.data.joplin.ShareStatus
 import com.lielu.todo.data.settings.JoplinSettings
 import com.lielu.todo.data.settings.SettingsRepository
 import kotlinx.coroutines.flow.first
@@ -46,6 +49,15 @@ class NotesSync(
 ) {
     private val running = Mutex()
 
+    /**
+     * Client réutilisé tant que les réglages ne changent pas : il garde sa session Joplin. Joplin Server limite les
+     * connexions (429 « Too many login attempts ») : rouvrir une session à chaque synchro finirait refusé.
+     */
+    private var cachedApi: Pair<JoplinSettings, JoplinApi>? = null
+
+    private fun api(config: JoplinSettings): JoplinApi =
+        cachedApi?.takeIf { it.first == config }?.second ?: apiFactory(config).also { cachedApi = config to it }
+
     suspend fun syncNow(): SyncResult = running.withLock { sync() }
 
     private suspend fun sync(): SyncResult {
@@ -53,7 +65,7 @@ class NotesSync(
         if (!config.syncEnabled || !config.isConfigured) {
             return fail("Synchronisation Joplin non configurée (voir Paramètres).")
         }
-        val api = apiFactory(config)
+        val api = api(config)
         return try {
             val ping = api.ping()
             if (!ping.contains("Joplin")) {
@@ -96,6 +108,33 @@ class NotesSync(
                     ).also { notes.upsert(it) }
                 }
 
+            // Carnets créés ou modifiés ici (partage compris) : envoyés avant les notes qu'ils contiennent.
+            for (folder in notes.getFolders().filter { it.dirty }) {
+                val now = clock()
+                val content =
+                    folder.serverRaw?.let {
+                        JoplinParser.patch(it, folder.title, "", folder.parentId, now, shareId = folder.shareId)
+                    } ?: JoplinParser.serializeFolder(
+                        folder.id,
+                        folder.title,
+                        folder.parentId,
+                        updatedTimeMs = now,
+                        createdTimeMs = folder.createdTime.takeIf { it > 0 } ?: now,
+                        shareId = folder.shareId,
+                    )
+                api.putContent("${folder.id}.md", content)
+                notes.updateFolder(folder.id) { current ->
+                    when {
+                        current == null -> null
+                        current.title != folder.title || current.shareId != folder.shareId ->
+                            current.copy(serverRaw = content)
+                        else -> current.copy(dirty = false, serverRaw = content)
+                    }
+                }
+                if (folderFallback.isEmpty()) folderFallback = folder.id
+            }
+            val shareIdByFolder = notes.getFolders().associate { it.id to it.shareId }
+
             var pushed = 0
             for (note in plan.toPush + conflictCopies) {
                 var parent = note.parentId.ifBlank { folderFallback }
@@ -104,17 +143,22 @@ class NotesSync(
                     parent = folderFallback
                 }
                 if (parent.isEmpty()) {
-                    val noteLabel = note.title.ifBlank { "Sans titre" }
-                    return fail(
-                        "Aucun carnet Joplin trouvé sur le serveur : la note « $noteLabel » " +
-                            "n'a pas été envoyée (Joplin exige un carnet).",
-                    )
+                    // Aucun carnet nulle part (compte Joplin neuf) : Joplin en exige un, on le crée.
+                    val created = notes.createFolder("Notes")
+                    val now = clock()
+                    val content = JoplinParser.serializeFolder(created.id, created.title, "", now, now)
+                    api.putContent("${created.id}.md", content)
+                    notes.updateFolder(created.id) { it?.copy(dirty = false, serverRaw = content) }
+                    folderFallback = created.id
+                    parent = created.id
                 }
+                // Une note d'un carnet partagé porte son share_id, sinon les autres participants ne la voient pas.
+                val shareId = shareIdByFolder[parent].orEmpty()
                 val now = clock()
                 val base = pulledById[note.id]?.raw ?: note.serverRaw
                 val content =
                     if (base != null) {
-                        JoplinParser.patch(base, note.title, note.body, parent, now)
+                        JoplinParser.patch(base, note.title, note.body, parent, now, shareId = shareId)
                     } else {
                         JoplinParser.serialize(
                             note.id,
@@ -123,6 +167,7 @@ class NotesSync(
                             note.body,
                             updatedTimeMs = now,
                             createdTimeMs = note.createdTime.takeIf { it > 0 } ?: note.userUpdatedTime,
+                            shareId = shareId,
                         )
                     }
                 api.putContent(pull.nameById[note.id] ?: "${note.id}.md", content)
@@ -309,7 +354,14 @@ class NotesSync(
                     if (parsed.deletedTime != 0L) {
                         deletedFolders += parsed.id
                     } else {
-                        folders += Folder(parsed.id, parsed.title, parsed.parentId)
+                        folders +=
+                            Folder(
+                                parsed.id,
+                                parsed.title,
+                                parsed.parentId,
+                                shareId = parsed.shareId,
+                                serverRaw = content,
+                            )
                         if (defaultFolder.isEmpty()) defaultFolder = parsed.id
                     }
                 1 ->
@@ -360,6 +412,128 @@ class NotesSync(
             .ofPattern("dd/MM HH:mm")
             .withZone(ZoneId.systemDefault())
             .format(Instant.ofEpochMilli(epochMs))
+
+    // ----- Partage de carnet (en ligne : le serveur doit valider) -----
+
+    /**
+     * Partage le carnet [folderId] avec le compte [email] du même Joplin Server. Ordre vérifié contre un vrai
+     * serveur : le carnet est d'abord synchronisé, le partage créé, le carnet et ses notes renvoyés avec leur
+     * `share_id`, et SEULEMENT ensuite l'invitation envoyée. L'invité l'accepte dans Joplin ou dans LieluTodo.
+     */
+    suspend fun shareFolder(
+        folderId: String,
+        email: String,
+    ): Result<Unit> =
+        sharing { api ->
+            val folder = notes.getFolders().firstOrNull { it.id == folderId } ?: error("Carnet introuvable.")
+            require(
+                folder.parentId.isBlank(),
+            ) { "Joplin ne partage que les carnets à la racine (pas les sous-carnets)." }
+            require(email.contains('@')) { "Adresse e-mail invalide." }
+            syncOrThrow()
+            var shareId =
+                notes
+                    .getFolders()
+                    .firstOrNull { it.id == folderId }
+                    ?.shareId
+                    .orEmpty()
+            if (shareId.isBlank()) {
+                shareId = api.createShare(folderId)
+                markShareId(folderId, shareId)
+                syncOrThrow()
+            }
+            api.addShareRecipient(shareId, email)
+        }
+
+    /** Participants du carnet partagé (vide s'il n'est pas partagé). */
+    suspend fun shareRecipients(folderId: String): Result<List<ShareRecipient>> =
+        sharing { api ->
+            val shareId =
+                notes
+                    .getFolders()
+                    .firstOrNull { it.id == folderId }
+                    ?.shareId
+                    .orEmpty()
+            if (shareId.isBlank()) emptyList() else api.shareRecipients(shareId)
+        }
+
+    suspend fun removeShareRecipient(shareUserId: String): Result<Unit> =
+        sharing { api -> api.removeShareRecipient(shareUserId) }
+
+    /** Arrête le partage : les participants perdent l'accès, le carnet et ses notes restent ici et sur le serveur. */
+    suspend fun stopSharing(folderId: String): Result<Unit> =
+        sharing { api ->
+            val shareId =
+                notes
+                    .getFolders()
+                    .firstOrNull { it.id == folderId }
+                    ?.shareId
+                    .orEmpty()
+            if (shareId.isNotBlank()) {
+                api.deleteShare(shareId)
+                markShareId(folderId, "")
+                syncOrThrow()
+            }
+        }
+
+    /** Carnets que d'autres m'ont partagés et que je n'ai pas encore acceptés ni refusés. */
+    suspend fun pendingInvitations(): Result<List<ShareInvitation>> =
+        sharing { api -> api.invitations().filter { it.status == ShareStatus.PENDING } }
+
+    /** Accepter (le carnet arrive à la synchro qui suit aussitôt) ou refuser une invitation. */
+    suspend fun respondToInvitation(
+        shareUserId: String,
+        accept: Boolean,
+    ): Result<Unit> =
+        sharing { api ->
+            api.respondToInvitation(shareUserId, accept)
+            if (accept) syncOrThrow()
+        }
+
+    /** Le carnet et toutes ses notes prennent [shareId] et repartent au serveur à la prochaine synchro. */
+    private suspend fun markShareId(
+        folderId: String,
+        shareId: String,
+    ) {
+        notes.updateFolder(folderId) { it?.copy(shareId = shareId, dirty = true) }
+        notes
+            .getAllIncludingDeleted()
+            .filter { it.parentId == folderId && !it.deleted }
+            .forEach { note -> notes.update(note.id) { it?.copy(dirty = true) } }
+    }
+
+    private suspend fun syncOrThrow() {
+        val result = sync()
+        if (result is SyncResult.Failure) throw IllegalStateException(result.message)
+    }
+
+    private suspend fun <T> sharing(block: suspend (JoplinApi) -> T): Result<T> =
+        running.withLock {
+            val config = settings.joplin.first()
+            if (!config.syncEnabled || !config.isConfigured) {
+                return@withLock Result.failure(
+                    IllegalStateException("Synchronisation Joplin non configurée (voir Paramètres)."),
+                )
+            }
+            try {
+                Result.success(block(api(config)))
+            } catch (e: JoplinApiException) {
+                Result.failure(IllegalStateException(shareErrorMessage(e), e))
+            } catch (e: Exception) {
+                Result.failure(e)
+            }
+        }
+
+    private fun shareErrorMessage(e: JoplinApiException): String {
+        val text = e.message.orEmpty()
+        return when {
+            text.contains("User not found") -> "Aucun compte avec cette adresse sur ce serveur Joplin."
+            text.contains("already", ignoreCase = true) -> "Ce carnet est déjà partagé avec cette personne."
+            e.statusCode == 403 -> "Le serveur Joplin refuse le partage pour ce compte."
+            e.statusCode == null -> "Serveur Joplin injoignable : le partage demande d'être en ligne."
+            else -> "Partage refusé par le serveur Joplin (${e.statusCode})."
+        }
+    }
 
     private suspend fun fail(message: String): SyncResult {
         settings.recordSyncFailure(message)
