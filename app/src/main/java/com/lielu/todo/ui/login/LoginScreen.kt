@@ -5,7 +5,6 @@ import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.imePadding
@@ -17,7 +16,6 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
-import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
@@ -73,11 +71,9 @@ fun LoginScreen(
     var joplinServer by remember { mutableStateOf("") }
     var joplinEmail by remember { mutableStateOf("") }
     var joplinPassword by remember { mutableStateOf("") }
-    var joplinSyncEnabled by remember { mutableStateOf(false) }
     LaunchedEffect(savedJoplin) {
         if (joplinServer.isBlank()) joplinServer = savedJoplin.serverUrl
         if (joplinEmail.isBlank()) joplinEmail = savedJoplin.email
-        if (!joplinSyncEnabled) joplinSyncEnabled = savedJoplin.syncEnabled
     }
 
     fun finish(
@@ -95,7 +91,7 @@ fun LoginScreen(
                 settings.setJoplinEmail(joplinEmail.trim())
                 if (joplinPassword.isNotBlank()) settings.setJoplinPassword(joplinPassword)
                 val joplinReady = joplinEmail.isNotBlank() && joplinPassword.isNotBlank()
-                settings.setJoplinSyncEnabled(joplinSyncEnabled && joplinReady)
+                settings.setJoplinSyncEnabled(joplinReady)
             }
         }
     }
@@ -232,7 +228,7 @@ fun LoginScreen(
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.outline,
         )
-        if (showAdvanced || savedJoplin.isConfigured) {
+        if (showAdvanced) {
             OutlinedTextField(
                 value = joplinServer,
                 onValueChange = { joplinServer = it },
@@ -251,7 +247,7 @@ fun LoginScreen(
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
             modifier = Modifier.fillMaxWidth(),
         )
-        if (showAdvanced || savedJoplin.isConfigured) {
+        if (showAdvanced) {
             OutlinedTextField(
                 value = joplinPassword,
                 onValueChange = { joplinPassword = it },
@@ -261,16 +257,6 @@ fun LoginScreen(
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
                 modifier = Modifier.fillMaxWidth(),
             )
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.fillMaxWidth(),
-            ) {
-                Checkbox(
-                    checked = joplinSyncEnabled,
-                    onCheckedChange = { joplinSyncEnabled = it },
-                )
-                Text("Activer la synchronisation des notes")
-            }
         }
 
         error?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyMedium) }
