@@ -12,7 +12,7 @@ class FakeNotesRepository : NotesRepository {
     private val store = MutableStateFlow<List<Note>>(emptyList())
     private val folderStore = MutableStateFlow<List<Folder>>(emptyList())
 
-    override val folders: Flow<List<Folder>> = folderStore
+    override val folders: Flow<List<Folder>> = folderStore.map { list -> list.filter { !it.deleted } }
 
     override suspend fun getFolders(): List<Folder> = folderStore.value
 

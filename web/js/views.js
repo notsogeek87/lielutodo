@@ -157,6 +157,7 @@ export function taskRow(t, state, o = {}) {
     subs.length ? `<span class="chip">${icon('subtask', 12)}${subDone}/${subs.length}</span>` : '',
     t.commentCount ? `<span class="chip">${icon('comment', 12)}${t.commentCount}</span>` : '',
     t.reminders.length ? `<span class="chip">${icon('bell', 12)}</span>` : '',
+    t.assignees?.length ? `<span class="chip" title="Assignée à">${icon('users', 12)}${esc(t.assignees.map((u) => u.name || u.username || 'Utilisateur').join(', '))}</span>` : '',
     labels,
   ].filter(Boolean).join('');
   const where = o.showProject && project

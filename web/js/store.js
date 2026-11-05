@@ -7,6 +7,7 @@ import { nextOccurrence } from './dates.js';
 import { textToHtml } from './richtext.js';
 import {
   commentFromJson, isRecurring, labelFromJson, labelToJson, mergeEdits, projectFromJson, taskFromJson, taskToRequest,
+  userFromJson,
 } from './model.js';
 
 const STATE_KEY = 'lielutodo.state';
@@ -20,10 +21,12 @@ const MAX_SERVER_ERRORS = 3;
 // Panne passagère : réessayer plus tard sans compter d'échec. 408 délai, 429 trop de requêtes, 502-504 proxy.
 const TRANSIENT_CODES = new Set([408, 429, 502, 503, 504]);
 // Écritures qui changent les champs de la tâche : sa version locale prime sur celle du serveur au rafraîchissement.
-const TASK_FIELD_KINDS = new Set(['create', 'update', 'delete', 'position', 'relate']);
+const TASK_FIELD_KINDS = new Set(['create', 'update', 'delete', 'position', 'relate', 'assign']);
 
 const emptyState = () => ({
   projects: [], labels: [], tasks: [], filters: [], filterResults: {}, comments: {}, ops: [],
+  // Utilisateurs ayant accès à chaque projet (assignation), gardés pour le hors ligne : { [projectId]: [user] }.
+  projectUsers: {},
   // Écritures refusées par le serveur : { op, code, message, at }, jusqu'à ce que l'utilisateur décide.
   failed: [],
   defaultProjectId: 0, lastSync: 0, user: null,
@@ -60,6 +63,7 @@ export function describeWrite(op, s) {
     case 'comment': return `Commentaire sur ${task} : « ${op.text} »`;
     case 'relate': return `Sous-tâche ${task}`;
     case 'position': return `Ordre de ${task}`;
+    case 'assign': return `${op.flag ? 'Assignation' : 'Désassignation'} de ${task}`;
     default: return op.kind;
   }
 }
@@ -179,6 +183,11 @@ export function createStore(api) {
       return ops.map((o) => (o === existing ? { ...o, flag: o.flag || op.flag, done: op.done !== undefined ? op.done : o.done } : o));
     }
     if (op.kind === 'position') return ops.some(same) ? ops : [...ops, op];
+    if (op.kind === 'assign') {
+      // Assigner puis retirer la même personne avant l'envoi ne laisse rien à envoyer.
+      const opposite = ops.find((o) => same(o) && o.otherId === op.otherId && o.flag !== op.flag);
+      return opposite ? ops.filter((o) => o !== opposite) : [...ops, op];
+    }
     return [...ops, op];
   }
 
@@ -189,15 +198,17 @@ export function createStore(api) {
 
   // ---------- Actions ----------
   const actions = {
-    addTask({ title, projectId, due = null, priority = 0, labels = [], description = '', parentId = 0, repeatAfter = 0, repeatMode = 0 }) {
+    addTask({ title, projectId, due = null, priority = 0, labels = [], description = '', parentId = 0, repeatAfter = 0, repeatMode = 0, assignees = [] }) {
       const id = nextTempId--;
       const task = {
         id, projectId, title, description, done: false, due, priority, labels, isFavorite: false,
         position: lastPosition(projectId) + POSITION_STEP, commentCount: 0, raw: { id, project_id: projectId },
-        reminders: [], repeatAfter, repeatMode, parentId, assignees: [],
+        reminders: [], repeatAfter, repeatMode, parentId, assignees,
       };
       let ops = enqueue(state.ops, { kind: 'create', taskId: id });
       if (parentId) ops = enqueue(ops, { kind: 'relate', taskId: id, otherId: parentId });
+      // Vikunja n'assigne pas à la création : une écriture par personne, après le CREATE (id remappé).
+      assignees.forEach((u) => { ops = enqueue(ops, { kind: 'assign', taskId: id, otherId: u.id, flag: true }); });
       set({ tasks: [...state.tasks, task], ops });
       flushSoon();
       return id;
@@ -276,6 +287,28 @@ export function createStore(api) {
         ops: enqueue(state.ops, { kind: 'comment', taskId, text }),
       });
       flushSoon();
+    },
+
+    /** Assigne (`add`) ou retire `user` de la tâche, hors ligne aussi (comme TodoRepository.assign). */
+    assign(taskId, user, add) {
+      const t = taskById(taskId);
+      if (!t) return;
+      const others = (t.assignees || []).filter((u) => u.id !== user.id);
+      set({
+        tasks: state.tasks.map((x) => (x.id === taskId ? { ...x, assignees: add ? [...others, user] : others } : x)),
+        ops: enqueue(state.ops, { kind: 'assign', taskId, otherId: user.id, flag: add }),
+      });
+      flushSoon();
+    },
+
+    /** Utilisateurs ayant accès au projet (pour l'assignation) ; hors ligne, la dernière liste connue reste. */
+    async loadProjectUsers(projectId) {
+      if (!(projectId > 0)) return state.projectUsers?.[projectId] || [];
+      try {
+        const users = (await api('GET', `/projects/${projectId}/projectusers`)).json().map(userFromJson);
+        set({ projectUsers: { ...(state.projectUsers || {}), [projectId]: users } });
+      } catch { /* hors ligne : liste en cache */ }
+      return state.projectUsers?.[projectId] || [];
     },
 
     duplicateTask(id) {
@@ -581,6 +614,22 @@ export function createStore(api) {
           state = { ...state, comments: { ...state.comments, [op.taskId]: list } };
         } catch {
           state = { ...state, comments: { ...state.comments, [op.taskId]: (state.comments[op.taskId] || []).filter((c) => c.id > 0) } };
+        }
+        break;
+      case 'assign':
+        if (op.flag) {
+          try {
+            await api('PUT', `/tasks/${op.taskId}/assignees`, { body: { user_id: op.otherId } });
+          } catch (e) {
+            // Déjà assignée (renvoyée par une modification de la tâche partie avant) : rien à faire.
+            if (!(e instanceof ApiError && (e.code === 400 || e.code === 409))) throw e;
+          }
+        } else {
+          try {
+            await api('DELETE', `/tasks/${op.taskId}/assignees/${op.otherId}`);
+          } catch (e) {
+            if (!(e instanceof ApiError && e.code === 404)) throw e;
+          }
         }
         break;
       case 'relate':

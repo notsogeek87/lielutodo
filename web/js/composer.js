@@ -4,7 +4,7 @@ import { dueOf, parseQuickAdd } from './parser.js';
 import { dueKind, dueText, repeatLabel } from './dates.js';
 import { colorOf, vikunjaPriority, todoistLevel } from './model.js';
 import { icon } from './icons.js';
-import { $, esc, menu, pickDate, pickLabels, PRIORITY_ITEMS } from './ui.js';
+import { $, esc, menu, pickAssignees, pickDate, pickLabels, PRIORITY_ITEMS, userName } from './ui.js';
 
 const flagSvg = (lvl) =>
   `<svg class="ic" width="14" height="14" viewBox="0 0 24 24" fill="${lvl === 4 ? 'none' : 'currentColor'}" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:var(--p${lvl})"><path d="M4 22V4M4 4h13l-2 4 2 4H4"/></svg>`;
@@ -53,7 +53,13 @@ export function mountComposer(root, ctx, opts = {}) {
     const repeatMode = 'repeatMode' in manual ? manual.repeatMode : p.repeatMode;
     const level = manual.level ?? (p.priority != null ? todoistLevel(p.priority) : 4);
     const pid = projectChosen ? projectId : p.projectId ?? projectId;
-    return { p, labels, due, repeatAfter, repeatMode, level, pid };
+    // Par défaut la tâche est affectée à l'utilisateur connecté, comme dans l'APK (QuickAddSheet).
+    const me = store.state.user?.id
+      ? (store.state.projectUsers?.[pid] || []).find((u) => u.id === store.state.user.id)
+        || { id: store.state.user.id, username: store.state.user.username || '', name: store.state.user.name || '' }
+      : null;
+    const assignees = manual.assignees ?? (me ? [me] : []);
+    return { p, labels, due, repeatAfter, repeatMode, level, pid, assignees };
   }
 
   function draw() {
@@ -64,6 +70,8 @@ export function mountComposer(root, ctx, opts = {}) {
     parts.push(`<button type="button" class="pill ${e.due != null ? `set due-${dueKind(e.due)}` : ''}" data-chip="date">${icon('calendar', 14)} ${e.due != null ? esc(dueText(e.due)) : 'Date'}</button>`);
     if (e.repeatAfter > 0 || e.repeatMode) parts.push(`<span class="pill set">${icon('repeat', 14)} ${esc(repeatLabel(e.repeatAfter, e.repeatMode))}</span>`);
     parts.push(`<button type="button" class="pill ${e.level < 4 ? 'set' : ''}" data-chip="priority">${flagSvg(e.level)} ${e.level < 4 ? `P${e.level}` : 'Priorité'}</button>`);
+    const meOnly = e.assignees.length === 1 && e.assignees[0].id === store.state.user?.id;
+    parts.push(`<button type="button" class="pill ${e.assignees.length ? 'set' : ''}" data-chip="assignees">${icon('users', 14)} ${!e.assignees.length ? 'Assigner' : meOnly ? 'Moi' : esc(e.assignees.map(userName).join(', '))}</button>`);
     parts.push(`<button type="button" class="pill ${e.labels.length ? 'set' : ''}" data-chip="labels">${icon('tag', 14)} ${e.labels.length ? esc(e.labels.map((l) => l.title).join(', ')) : 'Étiquettes'}</button>`);
     chips.innerHTML = parts.join('');
     submit.disabled = !e.p.title;
@@ -87,6 +95,15 @@ export function mountComposer(root, ctx, opts = {}) {
         onCreate: (t) => store.createLabel(t),
       });
       return;
+    } else if (kind === 'assignees') {
+      pickAssignees(anchor, {
+        users: store.state.projectUsers?.[e.pid] || [],
+        selected: e.assignees,
+        meId: store.state.user?.id || 0,
+        load: () => store.loadProjectUsers(e.pid),
+        onChange: (sel) => { manual.assignees = sel; draw(); },
+      });
+      return;
     }
     draw();
     title.focus();
@@ -98,7 +115,8 @@ export function mountComposer(root, ctx, opts = {}) {
       iconHtml: `<span class="dot" style="background:${colorOf(p.hex)};margin:0 3px"></span>`, icon: 'x',
     }));
     const id = await menu(projectBtn, items);
-    if (id != null) { projectId = id; projectChosen = true; draw(); title.focus(); }
+    // Autre projet : les personnes choisies n'y ont peut-être pas accès, on repart de « moi ».
+    if (id != null) { projectId = id; projectChosen = true; delete manual.assignees; draw(); title.focus(); }
   });
 
   function submitNow() {
@@ -107,13 +125,14 @@ export function mountComposer(root, ctx, opts = {}) {
     const id = store.addTask({
       title: e.p.title, projectId: e.pid, due: e.due, priority: vikunjaPriority(e.level), labels: e.labels,
       description: desc.value.trim(), parentId: opts.parentId || 0, repeatAfter: e.repeatAfter, repeatMode: e.repeatMode,
+      assignees: e.assignees,
     });
     opts.onSubmit?.(id, e.pid);
     if (!opts.modal) {
       // Saisie en rafale : on garde le formulaire ouvert, vide, avec la même date/priorité de départ.
       title.value = '';
       desc.value = '';
-      for (const k of ['labels', 'level', 'repeatAfter', 'repeatMode']) delete manual[k];
+      for (const k of ['labels', 'level', 'repeatAfter', 'repeatMode', 'assignees']) delete manual[k];
       if (opts.due == null) delete manual.due; else manual.due = opts.due;
       draw();
       title.focus();

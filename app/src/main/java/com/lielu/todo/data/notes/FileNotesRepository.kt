@@ -31,7 +31,7 @@ class FileNotesRepository(
     override val notes: Flow<List<Note>> =
         store.map { list -> list.filter { !it.deleted }.sortedByDescending { it.userUpdatedTime } }
 
-    override val folders: Flow<List<Folder>> = folderStore
+    override val folders: Flow<List<Folder>> = folderStore.map { list -> list.filter { !it.deleted } }
 
     init {
         val loaded = load()
@@ -220,6 +220,7 @@ object NoteJson {
             .put("dirty", folder.dirty)
             .put("createdTime", folder.createdTime)
             .put("serverRaw", folder.serverRaw ?: JSONObject.NULL)
+            .put("deleted", folder.deleted)
 
     fun folderFromJson(json: JSONObject): Folder =
         Folder(
@@ -230,5 +231,6 @@ object NoteJson {
             dirty = json.optBoolean("dirty", false),
             createdTime = json.optLong("createdTime", 0L),
             serverRaw = if (json.isNull("serverRaw")) null else json.optString("serverRaw"),
+            deleted = json.optBoolean("deleted", false),
         )
 }

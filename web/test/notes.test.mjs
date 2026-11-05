@@ -123,7 +123,7 @@ function fakeJoplin() {
         return { items: page, hasMore: false, cursor: String(cursor) };
       },
       rootChildren: async () => ({ items: [], hasMore: false, cursor: null }),
-      itemContent: async (name) => items.get(name),
+      itemContent: async (name) => { if (!items.has(name)) throw Object.assign(new Error('introuvable'), { status: 404 }); return items.get(name); },
       putContent: async (name, content) => { items.set(name, content); log.push(`put ${name}`); return {}; },
       deleteItem: async (name) => { items.delete(name); log.push(`delete ${name}`); },
       createShare: async (folderId) => { log.push(`share ${folderId}`); return `s${++shares}`; },
@@ -147,6 +147,28 @@ test('store : carnet créé ici envoyé avant sa note, puis note propre', async 
   assert.deepEqual(fake.log, [`put ${f.id}.md`, `put ${n.id}.md`]);
   assert.equal(store.note(n.id).dirty, false);
   assert.ok(fake.items.get(`${f.id}.md`).endsWith('type_: 2'));
+});
+
+test('store : supprimer un carnet le met à la corbeille avec ses notes et sous-carnets', async () => {
+  const fake = fakeJoplin();
+  const store = newStore(fake);
+  await store.connect('u', 'e', 'p');
+  const f = store.createFolder('Vieux');
+  const n = store.create(f.id);
+  store.save(n.id, 'Dedans', 'texte');
+  await store.sync();
+  const brouillon = store.createFolder('Jamais envoyé');
+  store.removeFolder(f.id);
+  store.removeFolder(brouillon.id);
+  assert.deepEqual(store.state.folders, []);
+  assert.equal(store.state.notes.filter((x) => !x.deleted).length, 0);
+  fake.log.length = 0;
+  await store.sync();
+  assert.match(fake.items.get(`${f.id}.md`), /deleted_time: \d+/);
+  assert.match(fake.items.get(`${n.id}.md`), /deleted_time: \d+/);
+  assert.ok(!fake.log.includes(`put ${brouillon.id}.md`));
+  assert.deepEqual(store.state.deletedFolders, []);
+  assert.deepEqual(store.state.notes, []);
 });
 
 test('store : un conflit garde les deux versions', async () => {

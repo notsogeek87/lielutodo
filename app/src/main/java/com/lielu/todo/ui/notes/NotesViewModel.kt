@@ -182,6 +182,16 @@ class NotesViewModel(
         }
     }
 
+    /** Supprime le carnet, ses sous-carnets et leurs notes (corbeille Joplin à la synchro, hors ligne aussi). */
+    fun onDeleteFolder(folder: Folder) {
+        viewModelScope.launch {
+            notesRepository.deleteFolder(folder.id)
+            if (_selectedFolder.value == folder.id) onSelectFolder(null)
+            _message.value = "« ${folder.title} » supprimé (corbeille Joplin)."
+            syncInBackground()
+        }
+    }
+
     fun onOpenShare(folder: Folder) {
         _share.value = ShareUiState(folder.id, folder.title)
         loadRecipients(folder.id)

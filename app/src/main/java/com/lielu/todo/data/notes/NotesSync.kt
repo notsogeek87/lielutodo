@@ -131,11 +131,17 @@ class NotesSync(
 
             val plan = SyncPlanner.plan(notes.getAllIncludingDeleted(), pull.pulled, pull.remoteDeleted)
             val pulledById = pull.pulled.associateBy { it.id }
+            val deletedFolderIds =
+                notes
+                    .getFolders()
+                    .filter { it.deleted }
+                    .map { it.id }
+                    .toSet()
             var folderFallback =
-                pull.defaultFolder.ifEmpty {
+                pull.defaultFolder.takeIf { it !in deletedFolderIds }.orEmpty().ifEmpty {
                     notes
                         .getFolders()
-                        .firstOrNull()
+                        .firstOrNull { !it.deleted }
                         ?.id
                         .orEmpty()
                 }
@@ -158,6 +164,24 @@ class NotesSync(
             // Carnets créés ou modifiés ici (partage compris) : envoyés avant les notes qu'ils contiennent.
             for (folder in notes.getFolders().filter { it.dirty }) {
                 val now = clock()
+                if (folder.deleted) {
+                    // Corbeille Joplin (récupérable depuis Joplin) ; jamais envoyé (404) = rien à faire côté serveur.
+                    val base =
+                        folder.serverRaw ?: try {
+                            api.itemContent("${folder.id}.md")
+                        } catch (e: JoplinApiException) {
+                            if (e.statusCode != 404) throw e
+                            null
+                        }
+                    base?.let { raw ->
+                        api.putContent(
+                            "${folder.id}.md",
+                            JoplinParser.patch(raw, folder.title, "", folder.parentId, now, deletedTimeMs = now),
+                        )
+                    }
+                    notes.removeFolders(setOf(folder.id))
+                    continue
+                }
                 val content =
                     folder.serverRaw?.let {
                         JoplinParser.patch(it, folder.title, "", folder.parentId, now, shareId = folder.shareId)

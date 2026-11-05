@@ -198,6 +198,10 @@ via son protocole de synchro (`POST /api/sessions` → `X-API-AUTH`, delta `item
   notes renvoyés avec `share_id` → `POST /api/shares/{id}/users {email}`. Toute note d'un carnet partagé part avec son
   `share_id` (sinon les autres ne la voient pas). Invitations : `GET /api/share_users`, `PATCH … {status: 1|2}`. Seuls
   les carnets à la racine se partagent.
+- Suppression d'un carnet (APK et web, hors ligne aussi) : le carnet, ses sous-carnets et leurs notes vont à la
+  corbeille Joplin (`deleted_time`) à la synchro suivante. APK : `Folder.deleted` (+ `dirty`), `NotesRepository.
+  deleteFolder`, `folders` (Flow) les masque, `getFolders()` les rend ; web : `state.deletedFolders`. Carnet jamais
+  envoyé (404) = simplement retiré.
 - Format d'item : JAMAIS de retour à la ligne final (Joplin lit les propriétés depuis la dernière ligne : un `\n` final =
   « Missing required property: type_ », écriture refusée). Session réutilisée entre synchros : le serveur répond 429
   après quelques connexions rapprochées.
@@ -234,7 +238,9 @@ l'un se répercute sur l'autre), `js/model.js` = `Models.kt`. Déployée sur Ver
 `/vk/*` -> `task.lielu.eu`, simple repli : le site appelle le serveur en direct dès que `VIKUNJA_CORS_ORIGINS` l'autorise).
 Tests : `node --test web/test/*.test.mjs` ; faux serveur : `web/dev/fake-server.mjs`. Les deux parseurs d'ajout rapide
 jouent les mêmes cas (`web/test/fixtures/quickadd.json`, `QuickAddSharedCasesTest`) : tout changement de l'un y ajoute un cas.
-Un nouveau type d'écriture se branche dans `store.js` (action + `apply`) ET dans le faux serveur. Même politique d'erreurs que l'APK (`failed`, `mergeTasks`, `mergeCreated`). Les écritures non envoyées et les objets qu'elles visent sont rangés à part (`lielutodo.pending`) et écrits avant le cache : un quota dépassé sacrifie le cache, jamais elles. Tests du store : `web/test/store.test.mjs` (faux serveur en mémoire).
+Un nouveau type d'écriture se branche dans `store.js` (action + `apply`) ET dans le faux serveur. Assignation web =
+écriture `assign` (comme `PendingOp.Kind.ASSIGN`), utilisateurs du projet en cache (`state.projectUsers`) ; l'ajout
+rapide assigne « moi » par défaut, comme l'APK. Même politique d'erreurs que l'APK (`failed`, `mergeTasks`, `mergeCreated`). Les écritures non envoyées et les objets qu'elles visent sont rangés à part (`lielutodo.pending`) et écrits avant le cache : un quota dépassé sacrifie le cache, jamais elles. Tests du store : `web/test/store.test.mjs` (faux serveur en mémoire).
 
 ## Règle : l'heure est obligatoire avec une date
 

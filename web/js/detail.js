@@ -3,7 +3,7 @@ import { colorOf, isRecurring, todoistLevel, vikunjaPriority } from './model.js'
 import { dueKind, dueText, repeatLabel, timeText } from './dates.js';
 import { icon } from './icons.js';
 import {
-  $, $$, confirmDialog, esc, menu, modal, pickDate, pickLabels, PRIORITY_ITEMS, toast,
+  $, $$, confirmDialog, esc, menu, modal, pickAssignees, pickDate, pickLabels, PRIORITY_ITEMS, toast, userName,
 } from './ui.js';
 
 const REMINDERS = [
@@ -90,6 +90,7 @@ export function openDetail(ctx, taskId) {
         ${isRecurring(t) ? `<div class="c-meta" style="margin-top:4px;font-size:12px;color:var(--muted)">${icon('repeat', 13)} ${esc(repeatLabel(t.repeatAfter, t.repeatMode))}</div>` : ''}</div>
       <div><label>Priorité</label><button class="btn ghost field" style="text-align:left;justify-content:flex-start" data-act="priority"><svg class="ic" width="16" height="16" viewBox="0 0 24 24" fill="${lvl === 4 ? 'none' : 'currentColor'}" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="color:var(--p${lvl})"><path d="M4 22V4M4 4h13l-2 4 2 4H4"/></svg> Priorité ${lvl}</button></div>
       <div><label>Étiquettes</label><button class="btn ghost field" style="text-align:left;justify-content:flex-start;height:auto;flex-wrap:wrap" data-act="labels">${t.labels.length ? t.labels.map((l) => `<span class="lbl-chip">${esc(l.title)}</span>`).join(' ') : `${icon('tag', 16)} Ajouter`}</button></div>
+      <div><label>Assignée à</label><button class="btn ghost field" style="text-align:left;justify-content:flex-start;height:auto;flex-wrap:wrap" data-act="assignees">${(t.assignees || []).length ? t.assignees.map((u) => `<span class="lbl-chip">${icon('users', 12)} ${esc(userName(u))}</span>`).join(' ') : `${icon('userPlus', 16)} Assigner`}</button></div>
       <div><label>Rappels</label>${t.reminders.map((r, i) => `<div class="lbl-chip" style="display:flex;margin-bottom:4px">${icon('bell', 13)} <span style="flex:1">${esc(reminderText(r))}</span><button data-act="rm-reminder" data-i="${i}" aria-label="Supprimer le rappel">${icon('close', 12)}</button></div>`).join('')}
         <button class="btn ghost field" style="text-align:left;justify-content:flex-start" data-act="reminder">${icon('plus', 16)} Ajouter</button></div>`;
   }
@@ -190,6 +191,21 @@ export function openDetail(ctx, taskId) {
         labels: store.state.labels, selected: t.labels,
         onChange: (sel) => patch({ labels: sel }, true),
         onCreate: (title) => store.createLabel(title),
+      });
+    } else if (act === 'assignees') {
+      pickAssignees(el, {
+        users: store.state.projectUsers?.[t.projectId] || [],
+        selected: t.assignees || [],
+        meId: store.state.user?.id || 0,
+        load: () => store.loadProjectUsers(t.projectId),
+        onChange: (sel) => {
+          const cur = live();
+          if (!cur) return;
+          const before = new Set((cur.assignees || []).map((u) => u.id));
+          const after = new Set(sel.map((u) => u.id));
+          sel.filter((u) => !before.has(u.id)).forEach((u) => store.assign(cur.id, u, true));
+          (cur.assignees || []).filter((u) => !after.has(u.id)).forEach((u) => store.assign(cur.id, u, false));
+        },
       });
     } else if (act === 'reminder') {
       const hasDue = t.due != null;

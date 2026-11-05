@@ -10,7 +10,8 @@ import {
 const STATE_KEY = 'lielutodo.notes';
 const CONN_KEY = 'lielutodo.joplin';
 
-const emptyState = () => ({ notes: [], folders: [], cursor: null, lastSync: null });
+// deletedFolders : carnets supprimés ici, en attente de corbeille Joplin (hors de `folders` : l'écran ne les voit plus).
+const emptyState = () => ({ notes: [], folders: [], deletedFolders: [], cursor: null, lastSync: null });
 
 /** Plan d'une synchro, sans effet de bord (mêmes règles que SyncPlanner.kt). */
 export function planSync(local, pulled, remoteDeleted) {
@@ -42,6 +43,7 @@ const conflictLabel = (ms) => new Intl.DateTimeFormat('fr-FR', { day: '2-digit',
 export function createNotesStore({ storage = globalThis.localStorage, apiFactory = createJoplinApi, login = joplinLogin, now = () => Date.now() } = {}) {
   const read = (k) => { try { return JSON.parse(storage.getItem(k)); } catch { return null; } };
   let state = { ...emptyState(), ...(read(STATE_KEY) || {}) };
+  state.deletedFolders ||= [];
   // Brouillon vide jamais envoyé (onglet fermé sur une nouvelle note) : rien à garder.
   state.notes = state.notes.filter((n) => n.serverRaw != null || n.deleted || n.title.trim() || n.body.trim());
   let conn = read(CONN_KEY);
@@ -95,6 +97,29 @@ export function createNotesStore({ storage = globalThis.localStorage, apiFactory
     const f = { id: newId(), title: title.trim(), parentId: '', shareId: '', dirty: true, createdTime: t, serverRaw: null };
     updateFolder(f.id, () => f);
     return f;
+  }
+
+  /**
+   * Supprime un carnet, ses sous-carnets et leurs notes (hors ligne aussi) : corbeille Joplin à la prochaine synchro
+   * (récupérables depuis Joplin). Jamais envoyé = simplement retiré.
+   */
+  function removeFolder(id) {
+    const ids = new Set([id]);
+    let added = true;
+    while (added) {
+      added = false;
+      state.folders.forEach((f) => { if (ids.has(f.parentId) && !ids.has(f.id)) { ids.add(f.id); added = true; } });
+    }
+    const gone = state.folders.filter((f) => ids.has(f.id));
+    state = {
+      ...state,
+      deletedFolders: [
+        ...state.deletedFolders.filter((f) => !ids.has(f.id)),
+        ...gone.map((f) => ({ id: f.id, title: f.title, parentId: f.parentId, serverRaw: f.serverRaw ?? null, sent: f.serverRaw != null || !f.dirty })),
+      ],
+    };
+    setFolders((list) => list.filter((f) => !ids.has(f.id)));
+    state.notes.filter((n) => ids.has(n.parentId) && !n.deleted).forEach((n) => remove(n.id));
   }
 
   // ---------- Connexion ----------
@@ -191,7 +216,8 @@ export function createNotesStore({ storage = globalThis.localStorage, apiFactory
     if (p.folders.length) {
       setFolders((list) => {
         const local = new Map(list.map((f) => [f.id, f]));
-        p.folders.forEach((f) => { if (!local.get(f.id)?.dirty) local.set(f.id, f); });
+        const gone = new Set(state.deletedFolders.map((f) => f.id));
+        p.folders.forEach((f) => { if (!local.get(f.id)?.dirty && !gone.has(f.id)) local.set(f.id, f); });
         return [...local.values()];
       });
     }
@@ -205,6 +231,19 @@ export function createNotesStore({ storage = globalThis.localStorage, apiFactory
       updateNote(c.id, () => c);
       return c;
     });
+
+    for (const f of [...state.deletedFolders]) {
+      let base = f.serverRaw;
+      if (!base && f.sent) {
+        try { base = await api.itemContent(`${f.id}.md`); } catch (e) { if (e.status !== 404) throw e; }
+      }
+      if (base) {
+        const t = now();
+        await api.putContent(`${f.id}.md`, patchItem(base, { title: f.title, body: '', parentId: f.parentId, updatedTime: t, deletedTime: t }));
+      }
+      state = { ...state, deletedFolders: state.deletedFolders.filter((x) => x.id !== f.id) };
+      persist();
+    }
 
     for (const f of state.folders.filter((x) => x.dirty)) {
       const t = now();
@@ -384,7 +423,7 @@ export function createNotesStore({ storage = globalThis.localStorage, apiFactory
     get connection() { return conn; },
     get connected() { return !!api; },
     subscribe(fn) { listeners.add(fn); return () => listeners.delete(fn); },
-    note, folder, create, save, setParent, remove, createFolder,
+    note, folder, create, save, setParent, remove, createFolder, removeFolder,
     connect, disconnect, sync, resourceUrl,
     shareFolder, shareRecipients, removeShareRecipient, stopSharing, refreshInvitations, respondToInvitation,
     clearError() { meta.error = null; },

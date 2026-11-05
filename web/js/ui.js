@@ -270,6 +270,36 @@ export function pickLabels(anchor, { labels, selected, onChange, onCreate }) {
   });
 }
 
+/** Nom affiché d'un utilisateur Vikunja (comme User.display de l'APK). */
+export const userName = (u) => u?.name || u?.username || 'Utilisateur';
+
+/**
+ * Assignation : cases à cocher des utilisateurs du projet. `users` = liste connue (cache), `load()` la redemande au
+ * serveur ; `onChange(sel)` à chaque case.
+ */
+export function pickAssignees(anchor, { users, selected, onChange, load, meId = 0 }) {
+  let sel = [...selected];
+  let list = users;
+  let loading = !!load;
+  const draw = (root) => {
+    const all = [...list, ...sel.filter((s) => !list.some((u) => u.id === s.id))];
+    root.querySelector('.rows').innerHTML =
+      all.map((u) => `<label class="menu-item"><input type="checkbox" data-id="${u.id}" ${sel.some((s) => s.id === u.id) ? 'checked' : ''}>${icon('users', 16)}<span>${esc(userName(u))}${u.id === meId ? ' (moi)' : ''}</span></label>`).join('')
+      + (!all.length ? `<div class="menu-sub">${loading ? 'Chargement…' : 'Aucun utilisateur connu pour ce projet (hors ligne, ou projet non partagé).'}</div>` : '');
+  };
+  popover(anchor, '<div class="menu-sub" style="font-weight:600">Assigner à</div><div class="rows"></div>', (root) => {
+    draw(root);
+    load?.().then((fresh) => { loading = false; if (fresh?.length) list = fresh; if (root.isConnected) draw(root); });
+    root.addEventListener('change', (e) => {
+      const id = Number(e.target.dataset.id);
+      const user = [...list, ...sel].find((u) => u.id === id);
+      if (!user) return;
+      sel = e.target.checked ? [...sel, user] : sel.filter((s) => s.id !== id);
+      onChange(sel);
+    });
+  });
+}
+
 export const PRIORITY_ITEMS = (current) => [1, 2, 3, 4].map((lvl) => ({
   value: lvl, label: `Priorité ${lvl}`, icon: 'flag', sel: lvl === current,
   iconHtml: `<svg class="ic" width="18" height="18" viewBox="0 0 24 24" fill="${lvl === 4 ? 'none' : 'currentColor'}" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="color:var(--p${lvl})"><path d="M4 22V4M4 4h13l-2 4 2 4H4"/></svg>`,

@@ -27,9 +27,10 @@ interface NotesRepository {
         parentId: String,
     )
 
-    /** Carnets Joplin connus (issus de la synchro). */
+    /** Carnets Joplin connus (issus de la synchro), sans ceux supprimés ici en attente d'envoi. */
     val folders: Flow<List<Folder>>
 
+    /** Tous les carnets du cache, y compris ceux supprimés ici et pas encore envoyés ([Folder.deleted]). */
     suspend fun getFolders(): List<Folder>
 
     suspend fun upsertFolders(folders: List<Folder>)
@@ -58,6 +59,23 @@ interface NotesRepository {
         id: String,
         transform: (Folder?) -> Folder?,
     )
+
+    /**
+     * Supprime un carnet, ses sous-carnets et toutes leurs notes (hors ligne aussi) : ils passent à la corbeille
+     * Joplin à la prochaine synchro (récupérables depuis Joplin), comme une suppression faite dans Joplin.
+     */
+    suspend fun deleteFolder(id: String) {
+        val all = getFolders()
+        val ids = mutableSetOf(id)
+        var added = true
+        while (added) {
+            added = all.any { it.parentId in ids && ids.add(it.id) }
+        }
+        ids.forEach { folderId -> updateFolder(folderId) { it?.copy(deleted = true, dirty = true) } }
+        getAllIncludingDeleted()
+            .filter { it.parentId in ids && !it.deleted }
+            .forEach { delete(it.id) }
+    }
 
     /** Retire des carnets du cache (supprimés côté serveur). */
     suspend fun removeFolders(ids: Set<String>)

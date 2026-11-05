@@ -34,6 +34,7 @@ db.tasks.push(
   task({ title: 'Idée de cadeau', project_id: 1, position: 2 }),
 );
 
+const USERS = [{ id: 1, username: 'demo', name: 'Démo' }, { id: 2, username: 'marie', name: 'Marie' }];
 const json = (res, code, body, headers = {}) => { res.writeHead(code, { 'Content-Type': 'application/json', ...headers }); res.end(JSON.stringify(body)); };
 const readBody = (req) => new Promise((r) => { let s = ''; req.on('data', (c) => { s += c; }); req.on('end', () => r(s ? JSON.parse(s) : {})); });
 
@@ -87,6 +88,15 @@ async function api(req, res, url) {
   }
   if ((r = path.match(/^\/tasks\/(\d+)\/relations$/)) && m === 'PUT') {
     const t = db.tasks.find((x) => x.id === +r[1]); t.related_tasks = { parenttask: [{ id: body.other_task_id }] }; return json(res, 201, {});
+  }
+  if ((r = path.match(/^\/projects\/(\d+)\/projectusers$/))) return json(res, 200, USERS);
+  if ((r = path.match(/^\/tasks\/(\d+)\/assignees$/)) && m === 'PUT') {
+    const t = db.tasks.find((x) => x.id === +r[1]);
+    if ((t.assignees ||= []).some((u) => u.id === body.user_id)) return json(res, 400, { message: 'Déjà assignée' });
+    t.assignees.push(USERS.find((u) => u.id === body.user_id)); return json(res, 201, {});
+  }
+  if ((r = path.match(/^\/tasks\/(\d+)\/assignees\/(\d+)$/)) && m === 'DELETE') {
+    const t = db.tasks.find((x) => x.id === +r[1]); t.assignees = (t.assignees || []).filter((u) => u.id !== +r[2]); return json(res, 200, {});
   }
   if ((r = path.match(/^\/tasks\/(\d+)\/position$/))) { db.tasks.find((x) => x.id === +r[1]).position = body.position; return json(res, 200, {}); }
   return json(res, 404, { message: `Route inconnue ${m} ${path}` });

@@ -19,6 +19,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.CloudOff
 import androidx.compose.material.icons.filled.CreateNewFolder
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.People
 import androidx.compose.material.icons.filled.PersonAdd
 import androidx.compose.material.icons.filled.PersonRemove
@@ -151,6 +152,7 @@ fun NotesListScreen(
     val selectedFolder = savedFolder?.takeIf { id -> folders.isEmpty() || folders.any { it.id == id } }
     var searchQuery by remember { mutableStateOf("") }
     var showNewFolder by remember { mutableStateOf(false) }
+    var folderToDelete by remember { mutableStateOf<Folder?>(null) }
     val showInvitations by viewModel.showInvitations.collectAsState()
     val snackbar = remember { SnackbarHostState() }
     LaunchedEffect(message) {
@@ -260,6 +262,9 @@ fun NotesListScreen(
                                 Text("Partager", modifier = Modifier.padding(start = 6.dp))
                             }
                         }
+                        IconButton(onClick = { folderToDelete = folder }) {
+                            Icon(Icons.Default.Delete, contentDescription = "Supprimer le carnet")
+                        }
                     }
                 }
                 val query = searchQuery.trim().lowercase()
@@ -331,6 +336,26 @@ fun NotesListScreen(
                 }
             }
         }
+    }
+    folderToDelete?.let { folder ->
+        val count = notes.count { it.parentId == folder.id }
+        AlertDialog(
+            onDismissRequest = { folderToDelete = null },
+            title = { Text("Supprimer « ${folder.title} » ?") },
+            text = {
+                val notesPart = if (count > 0) "Ses $count note(s) et ses sous-carnets seront supprimés aussi. " else ""
+                val sharedPart =
+                    if (folder.shareId.isNotBlank()) " Carnet partagé : il disparaît aussi pour les autres." else ""
+                Text(notesPart + "Tout va dans la corbeille Joplin, d'où on peut encore le récupérer." + sharedPart)
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    viewModel.onDeleteFolder(folder)
+                    folderToDelete = null
+                }) { Text("Supprimer") }
+            },
+            dismissButton = { TextButton(onClick = { folderToDelete = null }) { Text("Annuler") } },
+        )
     }
     NotesDialogs(
         viewModel = viewModel,

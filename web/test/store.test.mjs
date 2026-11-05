@@ -69,6 +69,13 @@ function fakeServer() {
       srv.assigned.push(`${m[1]}>${body.user_id}`);
       return res({});
     }
+    if ((m = key.match(/^DELETE \/tasks\/(\d+)\/assignees\/(\d+)$/))) {
+      srv.assigned.push(`${m[1]}<${m[2]}`);
+      return res({});
+    }
+    if ((m = key.match(/^GET \/projects\/(\d+)\/projectusers$/))) {
+      return res([{ id: 1, username: 'moi' }, { id: 7, username: 'bob', name: 'Bob' }]);
+    }
     if (key.endsWith('/labels/bulk')) { srv.labelCalls++; return res({}); }
     if (key === 'PUT /projects') return res({ id: 50, title: body.title });
     if (key === 'PUT /labels') return res({ id: 60, title: body.title });
@@ -257,4 +264,31 @@ test('une modification faite pendant l’envoi part aussi', async () => {
   await store.syncPending();
   assert.equal(srv.tasks.get(5).title, 'Premier');
   assert.equal(srv.tasks.get(5).description, '<p>ajoutée pendant l’envoi</p>');
+});
+
+test('assigner hors ligne : écritures gardées puis envoyées après la création, aller-retour annulé', async () => {
+  const { srv, store } = fresh();
+  await store.refresh();
+  const users = await store.loadProjectUsers(2);
+  assert.equal(users.length, 2);
+  srv.online = false;
+  await store.loadProjectUsers(2);
+  assert.equal(store.state.projectUsers[2].length, 2, 'liste gardée hors ligne');
+  const bob = users[1];
+  const id = store.addTask({ title: 'Pour Bob', projectId: 2, assignees: [users[0]] });
+  store.assign(id, bob, true);
+  store.assign(id, users[0], false);
+  store.assign(id, users[0], true);
+  assert.deepEqual(store.task(id).assignees.map((u) => u.id).sort(), [1, 7]);
+  await store.syncPending();
+  // create + bob + moi : retirer puis remettre « moi » ne laisse qu'une écriture.
+  assert.deepEqual(store.state.ops.map((o) => o.kind), ['create', 'assign', 'assign']);
+  srv.online = true;
+  await store.syncPending();
+  const real = store.state.tasks.find((t) => t.title === 'Pour Bob').id;
+  assert.ok(real > 0);
+  assert.deepEqual(srv.assigned.sort(), [`${real}>1`, `${real}>7`].sort());
+  store.assign(real, bob, false);
+  await store.syncPending();
+  assert.ok(srv.assigned.includes(`${real}<7`));
 });

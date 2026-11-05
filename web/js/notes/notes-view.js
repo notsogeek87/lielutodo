@@ -83,6 +83,7 @@ export function createNotesView(store, go) {
     $('#notes-actions', head).innerHTML = `
       ${connected ? `<button class="btn${invitations.length ? ' primary' : ''}" data-nact="invitations" title="Carnets partagés et invitations">${icon('users', 16)} Partages${invitations.length ? ` · ${invitations.length}` : ''}</button>` : ''}
       ${folder && connected && !folder.parentId ? `<button class="btn" data-nact="share">${icon('userPlus', 16)} Partager</button>` : ''}
+      ${folder ? `<button class="icon-btn" data-nact="delete-folder" title="Supprimer le carnet" aria-label="Supprimer le carnet">${icon('trash', 20)}</button>` : ''}
       <button class="icon-btn" data-nact="new-folder" title="Nouveau carnet" aria-label="Nouveau carnet">${icon('folderPlus', 20)}</button>
       <button class="btn primary" data-nact="new-note">${icon('plus', 16)} Nouvelle note</button>`;
     $('#notes-chips', head).innerHTML = s.folders.length ? `
@@ -157,6 +158,20 @@ export function createNotesView(store, go) {
           break;
         }
         case 'share': openShare(folderId); break;
+        case 'delete-folder': {
+          const f = store.folder(folderId);
+          if (!f) break;
+          const count = store.state.notes.filter((n) => !n.deleted && n.parentId === folderId).length;
+          const msg = `Supprimer le carnet « ${f.title} »${count ? ` et ses ${count} note${count > 1 ? 's' : ''}` : ''} ? `
+            + 'Ses sous-carnets aussi. Tout va dans la corbeille Joplin, d’où on peut encore le récupérer.'
+            + (f.shareId ? ' Carnet partagé : il disparaît aussi pour les autres.' : '');
+          if (!(await confirmDialog(msg))) break;
+          store.removeFolder(folderId);
+          toast(`« ${f.title} » supprimé`);
+          go('#/notes');
+          store.sync();
+          break;
+        }
         case 'invitations': openInvitations(); break;
         default: break;
       }

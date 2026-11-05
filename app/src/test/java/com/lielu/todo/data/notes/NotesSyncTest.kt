@@ -42,7 +42,8 @@ class NotesSyncTest {
 
         override suspend fun rootChildren(page: Int): DeltaPage = DeltaPage(emptyList(), hasMore = false, cursor = null)
 
-        override suspend fun itemContent(name: String): String = contents.getValue(name)
+        override suspend fun itemContent(name: String): String =
+            contents[name] ?: throw JoplinApiException("introuvable", statusCode = 404)
 
         override suspend fun putContent(
             name: String,
@@ -398,6 +399,52 @@ class NotesSyncTest {
             assertEquals(listOf("put ${folder.id}.md", "put ${note.id}.md"), api.log)
             assertTrue(api.puts.getValue("${folder.id}.md").contains("type_: 2"))
             assertEquals(false, notes.getFolders().single().dirty)
+        }
+
+    @Test
+    fun supprimerUnCarnetLeMetALaCorbeilleAvecSesNotesEtSousCarnets() =
+        runTest {
+            val settings = configuredSettings()
+            val notes = FakeNotesRepository()
+            val api = FakeJoplinApi()
+            val folder = notes.createFolder("Vieux")
+            val note = notes.create()
+            notes.save(note.id, "Dedans", "texte")
+            notes.setParent(note.id, folder.id)
+            val sync = NotesSync(settings, notes, apiFactory = { api }, clock = { 90_000L })
+            sync.syncNow()
+            val sub = Folder("c".repeat(32), "Sous", parentId = folder.id)
+            notes.upsertFolders(listOf(sub))
+            api.log.clear()
+
+            notes.deleteFolder(folder.id)
+            assertTrue(notes.folders.first().isEmpty())
+            assertTrue(notes.notes.first().isEmpty())
+            val result = sync.syncNow()
+
+            assertTrue(result is SyncResult.Success)
+            assertTrue(api.puts.getValue("${folder.id}.md").contains("deleted_time: 90000"))
+            assertTrue(api.puts.getValue("${note.id}.md").contains("deleted_time: 90000"))
+            // Sous-carnet sans contenu serveur connu (404) : retiré ici, rien à envoyer.
+            assertTrue(notes.getFolders().isEmpty())
+            assertNull(notes.getById(note.id))
+        }
+
+    @Test
+    fun supprimerUnCarnetJamaisEnvoyeNeContactePasLeServeur() =
+        runTest {
+            val settings = configuredSettings()
+            val notes = FakeNotesRepository()
+            val api = FakeJoplinApi()
+            val folder = notes.createFolder("Brouillon")
+            notes.deleteFolder(folder.id)
+            val sync = NotesSync(settings, notes, apiFactory = { api })
+
+            val result = sync.syncNow()
+
+            assertTrue(result is SyncResult.Success)
+            assertTrue(api.log.isEmpty())
+            assertTrue(notes.getFolders().isEmpty())
         }
 
     @Test
