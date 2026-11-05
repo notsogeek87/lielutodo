@@ -7,12 +7,16 @@ import com.lielu.githubupdater.UpdateManager
 import com.lielu.todo.backup.AutoBackupRunner
 import com.lielu.todo.backup.BackupManager
 import com.lielu.todo.backup.BackupSection
+import com.lielu.todo.backup.NoteBackupSection
 import com.lielu.todo.backup.SafBackupFolder
 import com.lielu.todo.backup.SettingsBackupSection
 import com.lielu.todo.backup.TodoBackupSection
 import com.lielu.todo.calendar.CalendarSync
 import com.lielu.todo.data.api.SessionStore
 import com.lielu.todo.data.api.VikunjaClient
+import com.lielu.todo.data.joplin.HttpJoplinApi
+import com.lielu.todo.data.notes.FileNotesRepository
+import com.lielu.todo.data.notes.NotesSync
 import com.lielu.todo.data.settings.AppPrefs
 import com.lielu.todo.data.settings.SettingsRepository
 import com.lielu.todo.data.settings.SettingsRepositoryImpl
@@ -26,6 +30,7 @@ import com.lielu.todo.reminder.planReminders
 import com.lielu.todo.widget.refreshWidgets
 import com.lielu.todo.work.AutoBackupScheduler
 import com.lielu.todo.work.AutoBackupWorker
+import com.lielu.todo.work.NotesSyncWorker
 import com.lielu.todo.work.SyncWorker
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -62,6 +67,19 @@ class AppContainer(
 
     val vikunjaClient = VikunjaClient(session)
 
+    /** Notes (Joplin) : cache fichier local, synchronisable en lecture/écriture. */
+    val notesRepository = FileNotesRepository(File(appContext.filesDir, "notes-cache.json"))
+
+    /** Synchronisation lecture/écriture des notes avec le serveur Joplin réglé dans Paramètres. */
+    val notesSync =
+        NotesSync(
+            settings = settingsRepository,
+            notes = notesRepository,
+            apiFactory = { config ->
+                HttpJoplinApi(serverUrl = config.serverUrl, email = config.email, password = config.password)
+            },
+        )
+
     /** Tâches, projets et étiquettes : copie locale + file d'écritures, resynchronisée avec le serveur. */
     val todoRepository =
         TodoRepository(
@@ -84,7 +102,7 @@ class AppContainer(
         listOf(
             SettingsBackupSection(settingsRepository),
             TodoBackupSection(todoRepository),
-            // Ex. : InventoryBackupSection(database), voir CLAUDE.md « Brancher les données de l'app ».
+            NoteBackupSection(notesRepository),
         )
 
     val backupManager = BackupManager(backupSections, appId = appContext.packageName)
@@ -106,11 +124,12 @@ class AppContainer(
 
     private val collaborationNotifier = CollaborationNotifier(appContext)
 
-    // WorkManager n'accepte qu'une fabrique : on les enchaîne (sauvegarde automatique, synchronisation).
+    // WorkManager n'accepte qu'une fabrique : on les enchaîne (sauvegarde auto, synchro tâches, synchro notes).
     val workerFactory =
         DelegatingWorkerFactory().apply {
             addFactory(AutoBackupWorker.Factory(autoBackupRunner))
             addFactory(SyncWorker.Factory(todoRepository, session))
+            addFactory(NotesSyncWorker.Factory(notesSync))
         }
 
     /** Utilisé par « Sauvegarder maintenant » et « Restaurer la dernière sauvegarde » (voir SettingsViewModel). */
@@ -155,6 +174,7 @@ class AppContainer(
     @OptIn(FlowPreview::class)
     fun start() {
         SyncWorker.schedule(appContext)
+        NotesSyncWorker.schedule(appContext)
         reminderScheduler.scheduleDaily()
         applicationScope.launch {
             todoRepository.state

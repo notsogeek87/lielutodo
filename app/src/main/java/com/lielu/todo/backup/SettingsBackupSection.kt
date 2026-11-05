@@ -6,9 +6,9 @@ import kotlinx.coroutines.flow.first
 import org.json.JSONObject
 
 /**
- * Réglages qui suivent l'utilisateur d'un appareil à l'autre. Le dossier de sauvegarde automatique n'en fait
- * volontairement pas partie : c'est une autorisation propre à l'appareil, restaurée ailleurs elle ne
- * servirait à rien.
+ * Réglages qui suivent l'utilisateur d'un appareil à l'autre. Le dossier de sauvegarde automatique et les
+ * identifiants Joplin (e-mail, mot de passe) n'en font volontairement pas partie : ce sont des secrets ou
+ * autorisations propres à l'appareil, restaurés ailleurs ils ne serviraient à rien.
  */
 class SettingsBackupSection(
     private val settings: SettingsRepository,

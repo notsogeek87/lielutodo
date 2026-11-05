@@ -16,6 +16,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.Note
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.FilterList
@@ -118,6 +119,7 @@ fun HomeScreen(
     prefs: AppPrefs,
     onOpenNotifications: () -> Unit,
     onOpenActivity: () -> Unit,
+    onOpenNotes: () -> Unit,
     onSettings: () -> Unit,
     onLogout: () -> Unit,
 ) {
@@ -151,6 +153,7 @@ fun HomeScreen(
     val filterable = HomeTab.entries[tab] == HomeTab.TODAY || HomeTab.entries[tab] == HomeTab.UPCOMING
     val titleActions: @Composable () -> Unit = {
         IconButton(onClick = onSearch) { Icon(Icons.Filled.Search, contentDescription = "Rechercher") }
+        IconButton(onClick = onOpenNotes) { Icon(Icons.AutoMirrored.Outlined.Note, contentDescription = "Notes") }
         when (HomeTab.entries[tab]) {
             HomeTab.INBOX -> {
                 IconButton(

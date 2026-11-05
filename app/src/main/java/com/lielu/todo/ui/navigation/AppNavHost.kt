@@ -27,6 +27,10 @@ import com.lielu.todo.ui.home.NotificationsScreen
 import com.lielu.todo.ui.home.SearchScreen
 import com.lielu.todo.ui.home.TaskListScreen
 import com.lielu.todo.ui.login.LoginScreen
+import com.lielu.todo.ui.notes.NoteEditScreen
+import com.lielu.todo.ui.notes.NoteEditViewModel
+import com.lielu.todo.ui.notes.NotesListScreen
+import com.lielu.todo.ui.notes.NotesViewModel
 import com.lielu.todo.ui.settings.SettingsScreen
 import com.lielu.todo.ui.settings.SettingsViewModel
 import com.lielu.todo.ui.task.TaskDetailScreen
@@ -43,6 +47,10 @@ object AppDestinations {
     const val ACTIVITY = "activity"
     const val SEARCH = "search"
     const val TASK = "task/{id}"
+    const val NOTES = "notes"
+    const val NOTE_EDIT = "note_edit/{noteId}"
+
+    fun noteEdit(noteId: String) = "note_edit/$noteId"
 
     fun project(id: Long) = "project/$id"
 
@@ -71,7 +79,7 @@ fun AppNavHost(
 ) {
     val loggedIn by container.session.loggedIn.collectAsStateWithLifecycle()
     if (!loggedIn) {
-        LoginScreen(container.session, container.vikunjaClient, container.todoRepository)
+        LoginScreen(container.session, container.vikunjaClient, container.todoRepository, container.settingsRepository)
         return
     }
 
@@ -99,6 +107,7 @@ fun AppNavHost(
                 onOpenFavorites = { navController.navigate(AppDestinations.FAVORITES) },
                 onOpenCompleted = { navController.navigate(AppDestinations.COMPLETED) },
                 onSearch = { navController.navigate(AppDestinations.SEARCH) },
+                onOpenNotes = { navController.navigate(AppDestinations.NOTES) },
                 reminderScheduler = container.reminderScheduler,
                 calendarSync = container.calendarSync,
                 prefs = container.prefs,
@@ -205,6 +214,57 @@ fun AppNavHost(
             }
         }
 
+        composable(AppDestinations.NOTES) { entry ->
+            Centered {
+                val viewModel: NotesViewModel =
+                    viewModel(
+                        entry,
+                        factory =
+                            viewModelFactory {
+                                initializer {
+                                    NotesViewModel(
+                                        container.notesRepository,
+                                    )
+                                }
+                            },
+                    )
+                NotesListScreen(
+                    viewModel = viewModel,
+                    onNoteClick = { navController.navigate(AppDestinations.noteEdit(it)) },
+                    onBackClick = { navController.popBackStack() },
+                )
+            }
+        }
+
+        composable(
+            AppDestinations.NOTE_EDIT,
+            arguments = listOf(navArgument("noteId") { type = NavType.StringType }),
+        ) { entry ->
+            val noteId = entry.arguments?.getString("noteId") ?: return@composable
+            Centered {
+                val viewModel: NoteEditViewModel =
+                    viewModel(
+                        entry,
+                        factory =
+                            viewModelFactory {
+                                initializer {
+                                    NoteEditViewModel(
+                                        noteId,
+                                        container.notesRepository,
+                                        container.notesSync,
+                                        container.settingsRepository,
+                                    )
+                                }
+                            },
+                    )
+                NoteEditScreen(
+                    viewModel = viewModel,
+                    onBackClick = { navController.popBackStack() },
+                    onDismiss = { viewModel.onScreenDismissed() },
+                )
+            }
+        }
+
         composable(AppDestinations.SETTINGS) { entry ->
             Centered {
                 val viewModel: SettingsViewModel =
@@ -220,6 +280,7 @@ fun AppNavHost(
                                         container.autoBackupScheduler,
                                         container.updateManager,
                                         container.updatesEnabled,
+                                        container.notesSync,
                                     )
                                 }
                             },

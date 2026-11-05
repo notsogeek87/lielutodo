@@ -78,6 +78,64 @@ class SettingsRepositoryImpl(
         dataStore.edit { it[Keys.WELCOME_SHOWN] = true }
     }
 
+    override val joplin: Flow<JoplinSettings> =
+        dataStore.data.map { prefs ->
+            JoplinSettings(
+                serverUrl = prefs[Keys.JOPLIN_SERVER_URL] ?: "",
+                email = prefs[Keys.JOPLIN_EMAIL] ?: "",
+                password = prefs[Keys.JOPLIN_PASSWORD] ?: "",
+                syncEnabled = prefs[Keys.JOPLIN_SYNC_ENABLED] ?: false,
+            )
+        }
+
+    override suspend fun setJoplinServerUrl(url: String) {
+        dataStore.edit { it[Keys.JOPLIN_SERVER_URL] = url.trim() }
+    }
+
+    override suspend fun setJoplinEmail(email: String) {
+        dataStore.edit { it[Keys.JOPLIN_EMAIL] = email.trim() }
+    }
+
+    override suspend fun setJoplinPassword(password: String) {
+        dataStore.edit { it[Keys.JOPLIN_PASSWORD] = password }
+    }
+
+    override suspend fun setJoplinSyncEnabled(enabled: Boolean) {
+        dataStore.edit { it[Keys.JOPLIN_SYNC_ENABLED] = enabled }
+    }
+
+    override val syncStatus: Flow<SyncStatus> =
+        dataStore.data.map { prefs ->
+            SyncStatus(
+                lastSuccessAt = prefs[Keys.LAST_SYNC_AT],
+                lastError = prefs[Keys.LAST_SYNC_ERROR],
+            )
+        }
+
+    override suspend fun recordSyncSuccess(timestamp: Long) {
+        dataStore.edit {
+            it[Keys.LAST_SYNC_AT] = timestamp
+            it.remove(Keys.LAST_SYNC_ERROR)
+        }
+    }
+
+    override suspend fun recordSyncFailure(message: String) {
+        dataStore.edit { it[Keys.LAST_SYNC_ERROR] = message }
+    }
+
+    override val joplinCursor: Flow<String?> =
+        dataStore.data.map { prefs -> prefs[Keys.JOPLIN_CURSOR] }
+
+    override suspend fun setJoplinCursor(cursor: String?) {
+        dataStore.edit {
+            if (cursor == null) {
+                it.remove(Keys.JOPLIN_CURSOR)
+            } else {
+                it[Keys.JOPLIN_CURSOR] = cursor
+            }
+        }
+    }
+
     private object Keys {
         val THEME_MODE = stringPreferencesKey("theme_mode")
         val AUTO_BACKUP_ENABLED = booleanPreferencesKey("auto_backup_enabled")
@@ -86,5 +144,12 @@ class SettingsRepositoryImpl(
         val LAST_BACKUP_AT = longPreferencesKey("last_backup_at")
         val LAST_BACKUP_ERROR = stringPreferencesKey("last_backup_error")
         val WELCOME_SHOWN = booleanPreferencesKey("welcome_shown")
+        val JOPLIN_SERVER_URL = stringPreferencesKey("joplin_server_url")
+        val JOPLIN_EMAIL = stringPreferencesKey("joplin_email")
+        val JOPLIN_PASSWORD = stringPreferencesKey("joplin_password")
+        val JOPLIN_SYNC_ENABLED = booleanPreferencesKey("joplin_sync_enabled")
+        val LAST_SYNC_AT = longPreferencesKey("last_sync_at")
+        val LAST_SYNC_ERROR = stringPreferencesKey("last_sync_error")
+        val JOPLIN_CURSOR = stringPreferencesKey("joplin_cursor")
     }
 }
