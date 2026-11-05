@@ -171,9 +171,11 @@ class VikunjaClient(
                 connection.readTimeout = TIMEOUT_MS
                 connection.setRequestProperty("Accept", "application/json")
                 if (token != null) connection.setRequestProperty("Authorization", "Bearer $token")
+                // Toujours déclaré, même sans corps : sinon Android ajoute de lui-même
+                // « application/x-www-form-urlencoded » (DELETE d'une affectation…), que Vikunja refuse (HTTP 415).
+                if (method != "GET") connection.setRequestProperty("Content-Type", "application/json")
                 if (body != null) {
                     connection.doOutput = true
-                    connection.setRequestProperty("Content-Type", "application/json")
                     connection.outputStream.use { it.write(body.toString().toByteArray(Charsets.UTF_8)) }
                 }
                 val code = connection.responseCode
