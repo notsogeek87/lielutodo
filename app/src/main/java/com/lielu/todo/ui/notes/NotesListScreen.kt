@@ -13,12 +13,12 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.CloudOff
 import androidx.compose.material.icons.filled.CreateNewFolder
-import androidx.compose.material.icons.filled.Mail
 import androidx.compose.material.icons.filled.People
 import androidx.compose.material.icons.filled.PersonAdd
 import androidx.compose.material.icons.filled.PersonRemove
@@ -104,11 +104,10 @@ fun NotesListScreen(
                     }
                 },
                 actions = {
-                    if (invitations.isNotEmpty()) {
-                        IconButton(onClick = viewModel::onOpenInvitations) {
-                            BadgedBox(badge = { Badge { Text("${invitations.size}") } }) {
-                                Icon(Icons.Default.Mail, contentDescription = "Carnets partagés avec vous")
-                            }
+                    // Toujours visible : on y retrouve les invitations même sans notification.
+                    IconButton(onClick = viewModel::onOpenInvitations) {
+                        BadgedBox(badge = { if (invitations.isNotEmpty()) Badge { Text("${invitations.size}") } }) {
+                            Icon(Icons.Default.People, contentDescription = "Carnets partagés")
                         }
                     }
                     IconButton(onClick = { showNewFolder = true }) {
@@ -306,40 +305,127 @@ private fun NotesDialogs(
         )
     }
     if (share != null) ShareDialog(viewModel, share)
-    if (showInvitations) {
-        AlertDialog(
-            onDismissRequest = onInvitationsDismiss,
-            title = { Text("Carnets partagés avec vous") },
-            text = {
-                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    if (invitations.isEmpty()) Text("Aucune invitation en attente.")
-                    invitations.forEach { invitation ->
-                        Column {
+    if (showInvitations) SharedFoldersDialog(viewModel, onInvitationsDismiss)
+}
+
+/**
+ * « Carnets partagés » : l'endroit permanent où retrouver ses invitations, même si la notification a été balayée ou
+ * l'invitation refusée par erreur (Joplin la garde : on peut encore l'accepter), les carnets que d'autres partagent
+ * avec vous (et par qui), et ceux que vous partagez (avec accès à la gestion des membres).
+ */
+@Composable
+private fun SharedFoldersDialog(
+    viewModel: NotesViewModel,
+    onDismiss: () -> Unit,
+) {
+    val all by viewModel.allInvitations.collectAsState()
+    val loading by viewModel.invitationsLoading.collectAsState()
+    val folders by viewModel.folders.collectAsState()
+    val syncReady by viewModel.syncReady.collectAsState()
+    val pending = all.filter { it.status == ShareStatus.PENDING }
+    val accepted = all.filter { it.status == ShareStatus.ACCEPTED }
+    val refused = all.filter { it.status == ShareStatus.REJECTED }
+    val receivedFolderIds = accepted.map { it.folderId }.toSet()
+    val mine = folders.filter { it.shareId.isNotBlank() && it.id !in receivedFolderIds }
+    val titleOf = { id: String -> folders.firstOrNull { it.id == id }?.title }
+    val owner = { inv: com.lielu.todo.data.joplin.ShareInvitation -> inv.ownerName.ifBlank { inv.ownerEmail } }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Carnets partagés") },
+        text = {
+            Column(
+                modifier = Modifier.verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                if (!syncReady) {
+                    Text("Connectez vos notes Joplin (Paramètres) pour voir les partages.")
+                    return@Column
+                }
+                if (loading && all.isEmpty()) LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                SharedSection("Invitations en attente")
+                if (pending.isEmpty()) {
+                    SharedHint("Aucune. Une invitation reçue apparaît ici, même si vous avez balayé la notification.")
+                }
+                pending.forEach { inv ->
+                    SharedRow(
+                        "${owner(inv)} vous partage un carnet",
+                        inv.ownerEmail.takeIf { inv.ownerName.isNotBlank() },
+                    )
+                    Row {
+                        TextButton(
+                            onClick = { viewModel.onRespondToInvitation(inv, accept = true) },
+                        ) { Text("Accepter") }
+                        TextButton(
+                            onClick = { viewModel.onRespondToInvitation(inv, accept = false) },
+                        ) { Text("Refuser") }
+                    }
+                }
+                SharedSection("Partagés avec vous")
+                if (accepted.isEmpty()) SharedHint("Aucun carnet.")
+                accepted.forEach { inv ->
+                    SharedRow(titleOf(inv.folderId) ?: "Carnet partagé", "par ${owner(inv)}")
+                }
+                SharedSection("Vous partagez")
+                if (mine.isEmpty()) SharedHint("Aucun carnet. Choisissez un carnet puis « Partager ».")
+                mine.forEach { folder ->
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(folder.title, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
+                        TextButton(onClick = {
+                            onDismiss()
+                            viewModel.onOpenShare(folder)
+                        }) { Text("Membres") }
+                    }
+                }
+                if (refused.isNotEmpty()) {
+                    SharedSection("Refusées")
+                    refused.forEach { inv ->
+                        Row(verticalAlignment = Alignment.CenterVertically) {
                             Text(
-                                "${invitation.ownerName.ifBlank { invitation.ownerEmail }} vous partage un carnet",
+                                "Carnet de ${owner(inv)}",
                                 style = MaterialTheme.typography.bodyMedium,
+                                modifier = Modifier.weight(1f),
                             )
-                            if (invitation.ownerName.isNotBlank()) {
-                                Text(
-                                    invitation.ownerEmail,
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                )
-                            }
-                            Row {
-                                TextButton(onClick = { viewModel.onRespondToInvitation(invitation, accept = true) }) {
-                                    Text("Accepter")
-                                }
-                                TextButton(onClick = { viewModel.onRespondToInvitation(invitation, accept = false) }) {
-                                    Text("Refuser")
-                                }
+                            TextButton(onClick = { viewModel.onRespondToInvitation(inv, accept = true) }) {
+                                Text("Accepter")
                             }
                         }
                     }
                 }
-            },
-            confirmButton = { TextButton(onClick = onInvitationsDismiss) { Text("Fermer") } },
-        )
+            }
+        },
+        confirmButton = { TextButton(onClick = onDismiss) { Text("Fermer") } },
+    )
+}
+
+@Composable
+private fun SharedSection(title: String) {
+    Text(
+        title,
+        style = MaterialTheme.typography.titleSmall,
+        color = MaterialTheme.colorScheme.primary,
+        modifier = Modifier.padding(top = 8.dp),
+    )
+}
+
+@Composable
+private fun SharedHint(text: String) {
+    Text(text, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+}
+
+@Composable
+private fun SharedRow(
+    title: String,
+    subtitle: String?,
+) {
+    Column {
+        Text(title, style = MaterialTheme.typography.bodyMedium)
+        if (subtitle != null) {
+            Text(
+                subtitle,
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
     }
 }
 

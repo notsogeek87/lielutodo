@@ -45,7 +45,7 @@ export function createNotesStore({ storage = globalThis.localStorage, apiFactory
   // Brouillon vide jamais envoyé (onglet fermé sur une nouvelle note) : rien à garder.
   state.notes = state.notes.filter((n) => n.serverRaw != null || n.deleted || n.title.trim() || n.body.trim());
   let conn = read(CONN_KEY);
-  const meta = { syncing: false, error: null, needsLogin: false, offline: false, invitations: [] };
+  const meta = { syncing: false, error: null, needsLogin: false, offline: false, invitations: [], allInvitations: [] };
   const listeners = new Set();
   let api = conn?.sessionId ? apiFactory(conn) : null;
   let chain = Promise.resolve();
@@ -313,14 +313,17 @@ export function createNotesStore({ storage = globalThis.localStorage, apiFactory
     markShareId(folderId, '');
     await runSync();
   });
+  /** Toutes les invitations (une refusée reste chez Joplin et peut encore être acceptée) ; `invitations` = en attente. */
   const refreshInvitations = () => shareOp(async () => {
-    meta.invitations = (await api.invitations()).filter((i) => i.status === 'pending');
+    meta.allInvitations = await api.invitations();
+    meta.invitations = meta.allInvitations.filter((i) => i.status === 'pending');
     emit();
     return meta.invitations;
   }).catch(() => meta.invitations);
   const respondToInvitation = (inv, accept) => shareOp(async () => {
     await api.respondToInvitation(inv.shareUserId, accept);
-    meta.invitations = meta.invitations.filter((i) => i.shareUserId !== inv.shareUserId);
+    meta.allInvitations = meta.allInvitations.map((i) => (i.shareUserId === inv.shareUserId ? { ...i, status: accept ? 'accepted' : 'rejected' } : i));
+    meta.invitations = meta.allInvitations.filter((i) => i.status === 'pending');
     if (accept) await runSync();
     emit();
   });

@@ -79,7 +79,7 @@ export function createNotesView(store, go) {
     $('#notes-title', head).textContent = folder ? folder.title : 'Notes';
     document.title = `${folder ? folder.title : 'Notes'} – LieluTodo`;
     $('#notes-actions', head).innerHTML = `
-      ${invitations.length ? `<button class="btn" data-nact="invitations">${icon('mail', 16)} ${invitations.length} invitation${invitations.length > 1 ? 's' : ''}</button>` : ''}
+      ${connected ? `<button class="btn${invitations.length ? ' primary' : ''}" data-nact="invitations" title="Carnets partagés et invitations">${icon('users', 16)} Partages${invitations.length ? ` · ${invitations.length}` : ''}</button>` : ''}
       ${folder && connected && !folder.parentId ? `<button class="btn" data-nact="share">${icon('userPlus', 16)} Partager</button>` : ''}
       <button class="icon-btn" data-nact="new-folder" title="Nouveau carnet" aria-label="Nouveau carnet">${icon('folderPlus', 20)}</button>
       <button class="btn primary" data-nact="new-note">${icon('plus', 16)} Nouvelle note</button>`;
@@ -194,29 +194,50 @@ export function createNotesView(store, go) {
     });
   }
 
+  /**
+   * « Carnets partagés » : endroit permanent pour retrouver ses invitations (même sans notification, même refusées :
+   * Joplin les garde et on peut encore les accepter), les carnets partagés avec soi et ceux qu'on partage.
+   */
   function openInvitations() {
     const m = modal(`
-      <div class="modal-head"><span class="grow">Carnets partagés avec vous</span><button class="icon-btn" data-close aria-label="Fermer">${icon('close')}</button></div>
-      <div class="modal-body" data-list></div>`, { sheet: true });
+      <div class="modal-head"><span class="grow">Carnets partagés</span><button class="icon-btn" data-close aria-label="Fermer">${icon('close')}</button></div>
+      <div class="modal-body" data-list><div class="view-sub">Chargement…</div></div>`, { sheet: true, onClose: () => unsubscribe() });
+    const owner = (inv) => inv.ownerName || inv.ownerEmail;
+    const section = (title) => `<div class="menu-sub" style="padding:10px 0 2px">${esc(title)}</div>`;
+    const hint = (text) => `<p class="view-sub" style="margin:2px 0 6px">${esc(text)}</p>`;
     const draw = () => {
-      const list = store.meta.invitations;
-      $('[data-list]', m.root).innerHTML = list.length ? list.map((inv, i) => `
-        <div class="share-row"><div class="grow"><div>${esc(inv.ownerName || inv.ownerEmail)} vous partage un carnet</div><div class="view-sub" style="margin:0">${esc(inv.ownerEmail)}</div></div>
-        <button class="btn" data-refuse="${i}">Refuser</button><button class="btn primary" data-accept="${i}">Accepter</button></div>`).join('')
-        : '<p class="view-sub">Aucune invitation en attente.</p>';
+      const all = store.meta.allInvitations;
+      const idx = (inv) => all.indexOf(inv);
+      const pending = all.filter((i) => i.status === 'pending');
+      const accepted = all.filter((i) => i.status === 'accepted');
+      const refused = all.filter((i) => i.status === 'rejected');
+      const received = new Set(accepted.map((i) => i.folderId));
+      const mine = store.state.folders.filter((f) => f.shareId && !received.has(f.id));
+      $('[data-list]', m.root).innerHTML = section('Invitations en attente')
+        + (pending.length ? pending.map((inv) => `
+          <div class="share-row"><div class="grow"><div>${esc(owner(inv))} vous partage un carnet</div><div class="view-sub" style="margin:0">${esc(inv.ownerEmail)}</div></div>
+          <button class="btn" data-refuse="${idx(inv)}">Refuser</button><button class="btn primary" data-accept="${idx(inv)}">Accepter</button></div>`).join('')
+          : hint('Aucune. Une invitation reçue apparaît ici, même sans notification.'))
+        + section('Partagés avec vous')
+        + (accepted.length ? accepted.map((inv) => `<div class="share-row"><div class="grow"><div>${esc(store.folder(inv.folderId)?.title || 'Carnet partagé')}</div><div class="view-sub" style="margin:0">par ${esc(owner(inv))}</div></div></div>`).join('') : hint('Aucun carnet.'))
+        + section('Vous partagez')
+        + (mine.length ? mine.map((f) => `<div class="share-row"><div class="grow">${esc(f.title)}</div><button class="btn" data-manage="${esc(f.id)}">${icon('users', 16)} Membres</button></div>`).join('') : hint('Aucun carnet. Choisissez un carnet puis « Partager ».'))
+        + (refused.length ? section('Refusées') + refused.map((inv) => `<div class="share-row"><div class="grow">Carnet de ${esc(owner(inv))}</div><button class="btn" data-accept="${idx(inv)}">Accepter</button></div>`).join('') : '');
     };
-    draw();
+    const unsubscribe = store.subscribe(draw);
+    store.refreshInvitations().then(draw);
     m.root.addEventListener('click', async (e) => {
       if (e.target.closest('[data-close]')) { m.close(); return; }
+      const manage = e.target.closest('[data-manage]');
+      if (manage) { m.close(); openShare(manage.dataset.manage); return; }
       const a = e.target.closest('[data-accept]');
       const r = e.target.closest('[data-refuse]');
-      const inv = store.meta.invitations[Number((a || r)?.dataset.accept ?? (a || r)?.dataset.refuse)];
+      const inv = store.meta.allInvitations[Number((a || r)?.dataset.accept ?? (a || r)?.dataset.refuse)];
       if (!inv) return;
       try {
         await store.respondToInvitation(inv, !!a);
         toast(a ? 'Carnet partagé ajouté' : 'Invitation refusée');
         draw();
-        if (!store.meta.invitations.length) m.close();
       } catch (ex) { toast(ex.message, { error: true }); }
     });
   }

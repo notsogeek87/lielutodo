@@ -476,6 +476,9 @@ class NotesSync(
             }
         }
 
+    /** Toutes mes invitations (en attente, acceptées, refusées) : une refusée peut encore être acceptée. */
+    suspend fun allInvitations(): Result<List<ShareInvitation>> = sharing { api -> api.invitations() }
+
     /** Carnets que d'autres m'ont partagés et que je n'ai pas encore acceptés ni refusés. */
     suspend fun pendingInvitations(): Result<List<ShareInvitation>> =
         sharing { api -> api.invitations().filter { it.status == ShareStatus.PENDING } }

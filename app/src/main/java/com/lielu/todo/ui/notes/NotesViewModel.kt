@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.lielu.todo.data.joplin.ShareInvitation
 import com.lielu.todo.data.joplin.ShareRecipient
+import com.lielu.todo.data.joplin.ShareStatus
 import com.lielu.todo.data.notes.Folder
 import com.lielu.todo.data.notes.Note
 import com.lielu.todo.data.notes.NotesRepository
@@ -47,6 +48,12 @@ class NotesViewModel(
     /** Fenêtre des invitations reçues (ouverte aussi depuis la notification). */
     private val _showInvitations = MutableStateFlow(false)
     val showInvitations: StateFlow<Boolean> = _showInvitations
+
+    /** Toutes les invitations (en attente, acceptées, refusées), pour l'écran « Carnets partagés ». */
+    private val _allInvitations = MutableStateFlow<List<ShareInvitation>>(emptyList())
+    val allInvitations: StateFlow<List<ShareInvitation>> = _allInvitations
+    private val _invitationsLoading = MutableStateFlow(false)
+    val invitationsLoading: StateFlow<Boolean> = _invitationsLoading
 
     fun onOpenInvitations() {
         _showInvitations.value = true
@@ -169,8 +176,8 @@ class NotesViewModel(
             notesSync
                 .respondToInvitation(invitation.shareUserId, accept)
                 .onSuccess {
-                    _invitations.value = _invitations.value - invitation
                     _message.value = if (accept) "Carnet partagé ajouté." else "Invitation refusée."
+                    refreshInvitations()
                 }.onFailure { e -> _message.value = e.message }
         }
     }
@@ -178,7 +185,12 @@ class NotesViewModel(
     fun refreshInvitations() {
         viewModelScope.launch {
             if (!settingsRepository.joplin.first().let { it.syncEnabled && it.isConfigured }) return@launch
-            notesSync.pendingInvitations().onSuccess { _invitations.value = it }
+            _invitationsLoading.value = true
+            notesSync.allInvitations().onSuccess { all ->
+                _allInvitations.value = all
+                _invitations.value = all.filter { it.status == ShareStatus.PENDING }
+            }
+            _invitationsLoading.value = false
         }
     }
 
