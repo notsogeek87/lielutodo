@@ -46,9 +46,8 @@ import com.lielu.todo.data.api.VikunjaClient
 import com.lielu.todo.data.settings.JoplinSettings
 import com.lielu.todo.data.settings.SettingsRepository
 import com.lielu.todo.data.todo.TodoRepository
-import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.launch
 import java.io.IOException
+import kotlinx.coroutines.launch
 
 @Composable
 fun LoginScreen(
@@ -95,7 +94,8 @@ fun LoginScreen(
                 settings.setJoplinServerUrl(joplinServer.trim())
                 settings.setJoplinEmail(joplinEmail.trim())
                 if (joplinPassword.isNotBlank()) settings.setJoplinPassword(joplinPassword)
-                settings.setJoplinSyncEnabled(joplinSyncEnabled && joplinEmail.isNotBlank() && joplinPassword.isNotBlank())
+                val joplinReady = joplinEmail.isNotBlank() && joplinPassword.isNotBlank()
+                settings.setJoplinSyncEnabled(joplinSyncEnabled && joplinReady)
             }
         }
     }
