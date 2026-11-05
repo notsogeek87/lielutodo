@@ -1,5 +1,7 @@
 package com.lielu.todo.ui.notes
 
+import androidx.compose.ui.text.TextRange
+import androidx.compose.ui.text.input.TextFieldValue
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.lielu.todo.data.notes.Folder
@@ -29,8 +31,8 @@ class NoteEditViewModel(
     private val _title = MutableStateFlow("")
     val title: StateFlow<String> = _title
 
-    private val _body = MutableStateFlow("")
-    val body: StateFlow<String> = _body
+    private val _body = MutableStateFlow(TextFieldValue(""))
+    val body: StateFlow<TextFieldValue> = _body
 
     /** Faux si la note a disparu entre-temps (suppression synchronisée) : l'écran referme alors la page. */
     private val _exists = MutableStateFlow(true)
@@ -54,14 +56,14 @@ class NoteEditViewModel(
                 return@launch
             }
             _title.value = note.title
-            _body.value = note.body
+            _body.value = TextFieldValue(note.body, TextRange(note.body.length))
             _parentId.value = note.parentId
             initial = note.title to note.body
         }
-        combine(_title, _body) { title, body -> title to body }
+        combine(_title, _body) { title, body -> title to body.text }
             .debounce(400)
-            .onEach { (title, body) ->
-                if (initial != null && (title to body) != initial) save(title, body)
+            .onEach { (title, bodyText) ->
+                if (initial != null && (title to bodyText) != initial) save(title, bodyText)
             }.launchIn(viewModelScope)
     }
 
@@ -69,8 +71,42 @@ class NoteEditViewModel(
         _title.value = value
     }
 
-    fun onBodyChanged(value: String) {
+    fun onBodyChanged(value: TextFieldValue) {
         _body.value = value
+    }
+
+    /** Entoure la sélection courante (ou insère les marqueurs à la position du curseur) avec [prefix]/[suffix]. */
+    fun wrapSelection(
+        prefix: String,
+        suffix: String,
+    ) {
+        val current = _body.value
+        val selection = current.selection
+        val text = current.text
+        val newText: String
+        val newCursor: Int
+        if (!selection.collapsed) {
+            val selected = text.substring(selection.min, selection.max)
+            newText = text.replaceRange(selection.min, selection.max, "$prefix$selected$suffix")
+            newCursor = selection.min + prefix.length + selected.length + suffix.length
+        } else {
+            newText = text.replaceRange(selection.min, selection.max, "$prefix$suffix")
+            newCursor = selection.min + prefix.length
+        }
+        _body.value = TextFieldValue(newText, TextRange(newCursor))
+    }
+
+    /** Insère un modèle Markdown [snippet] à la position du curseur (sur une nouvelle ligne si en milieu de ligne). */
+    fun insertSnippet(snippet: String) {
+        val current = _body.value
+        val pos = current.selection.min
+        val text = current.text
+        val lineStart = text.lastIndexOf('\n', pos - 1) + 1
+        val atLineStart = text.substring(lineStart, pos).isBlank()
+        val insertion = if (atLineStart) snippet else "\n$snippet"
+        val newText = text.replaceRange(pos, pos, insertion)
+        val newCursor = pos + insertion.length
+        _body.value = TextFieldValue(newText, TextRange(newCursor))
     }
 
     fun onFolderSelected(folderId: String) {

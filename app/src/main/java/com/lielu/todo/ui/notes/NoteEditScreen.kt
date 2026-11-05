@@ -39,6 +39,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import io.noties.markwon.Markwon
@@ -104,9 +105,9 @@ fun NoteEditScreen(
                 Text(title, style = MaterialTheme.typography.headlineSmall)
                 AndroidView(
                     factory = { context ->
-                        TextView(context).apply { Markwon.create(context).setMarkdown(this, body) }
+                        TextView(context).apply { Markwon.create(context).setMarkdown(this, body.text) }
                     },
-                    update = { view -> Markwon.create(view.context).setMarkdown(view, body) },
+                    update = { view -> Markwon.create(view.context).setMarkdown(view, body.text) },
                     modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
                 )
             }
@@ -163,15 +164,15 @@ fun NoteEditScreen(
                             .padding(top = 12.dp),
                     horizontalArrangement = Arrangement.spacedBy(4.dp),
                 ) {
-                    MarkdownButton("B") { viewModel.onBodyChanged(wrapLastLine(body, "**", "**")) }
-                    MarkdownButton("I") { viewModel.onBodyChanged(wrapLastLine(body, "*", "*")) }
-                    MarkdownButton("S") { viewModel.onBodyChanged(wrapLastLine(body, "~~", "~~")) }
-                    MarkdownButton("H") { viewModel.onBodyChanged(appendBlock(body, "## Titre")) }
-                    MarkdownButton("•") { viewModel.onBodyChanged(appendBlock(body, "- élément")) }
-                    MarkdownButton("☐") { viewModel.onBodyChanged(appendBlock(body, "- [ ] tâche")) }
-                    MarkdownButton("</>") { viewModel.onBodyChanged(appendBlock(body, "`code`")) }
-                    MarkdownButton("🔗") { viewModel.onBodyChanged(appendBlock(body, "[texte](https://…)")) }
-                    MarkdownButton("❝") { viewModel.onBodyChanged(appendBlock(body, "> citation")) }
+                    MarkdownButton("B") { viewModel.wrapSelection("**", "**") }
+                    MarkdownButton("I") { viewModel.wrapSelection("*", "*") }
+                    MarkdownButton("S") { viewModel.wrapSelection("~~", "~~") }
+                    MarkdownButton("H") { viewModel.insertSnippet("## Titre") }
+                    MarkdownButton("•") { viewModel.insertSnippet("- élément") }
+                    MarkdownButton("☐") { viewModel.insertSnippet("- [ ] tâche") }
+                    MarkdownButton("</>") { viewModel.insertSnippet("`code`") }
+                    MarkdownButton("🔗") { viewModel.insertSnippet("[texte](https://…)") }
+                    MarkdownButton("❝") { viewModel.insertSnippet("> citation") }
                 }
                 OutlinedTextField(
                     value = body,
@@ -181,7 +182,7 @@ fun NoteEditScreen(
                     modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
                 )
                 Text(
-                    "${body.split(Regex("\\s+")).filter { it.isNotBlank() }.size} mot(s)",
+                    "${body.text.split(Regex("\\s+")).filter { it.isNotBlank() }.size} mot(s)",
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
@@ -223,22 +224,3 @@ private fun MarkdownButton(
         Text(label, fontWeight = FontWeight.Bold)
     }
 }
-
-/** Entoure la dernière ligne non vide de [body] avec [prefix]/[suffix] (gras, italique, barré…). */
-private fun wrapLastLine(
-    body: String,
-    prefix: String,
-    suffix: String,
-): String {
-    val lines = body.split('\n').toMutableList()
-    val last = lines.indexOfLast { it.isNotBlank() }
-    if (last < 0) return prefix + suffix // rien à entourer : on pose juste les marqueurs
-    lines[last] = "$prefix${lines[last]}$suffix"
-    return lines.joinToString("\n")
-}
-
-/** Ajoute un modèle Markdown [snippet] en fin de note (sur une nouvelle ligne si besoin). */
-private fun appendBlock(
-    body: String,
-    snippet: String,
-): String = if (body.isEmpty() || body.endsWith("\n")) body + snippet else "$body\n$snippet"
