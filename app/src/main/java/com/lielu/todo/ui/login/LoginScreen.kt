@@ -72,7 +72,7 @@ fun LoginScreen(
     var joplinEmail by remember { mutableStateOf("") }
     var joplinPassword by remember { mutableStateOf("") }
     LaunchedEffect(savedJoplin) {
-        if (joplinServer.isBlank()) joplinServer = savedJoplin.serverUrl
+        if (joplinServer.isBlank()) joplinServer = savedJoplin.serverUrl.ifBlank { DEFAULT_JOPLIN_SERVER }
         if (joplinEmail.isBlank()) joplinEmail = savedJoplin.email
     }
 
@@ -86,8 +86,9 @@ fun LoginScreen(
         session.save(url, token, user, password.takeIf { totp.isBlank() })
         scope.launch {
             repository.refresh()
-            if (joplinServer.isNotBlank()) {
-                settings.setJoplinServerUrl(joplinServer.trim())
+            // Notes facultatives : rien n'est enregistré tant que l'e-mail Joplin n'est pas rempli.
+            if (joplinEmail.isNotBlank()) {
+                settings.setJoplinServerUrl(joplinServer.trim().ifBlank { DEFAULT_JOPLIN_SERVER })
                 settings.setJoplinEmail(joplinEmail.trim())
                 if (joplinPassword.isNotBlank()) settings.setJoplinPassword(joplinPassword)
                 // Mot de passe non retapé (champ masqué) : celui déjà enregistré reste valable.
@@ -249,17 +250,22 @@ fun LoginScreen(
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
             modifier = Modifier.fillMaxWidth(),
         )
-        if (showAdvanced) {
-            OutlinedTextField(
-                value = joplinPassword,
-                onValueChange = { joplinPassword = it },
-                label = { Text("Mot de passe Joplin") },
-                singleLine = true,
-                visualTransformation = PasswordVisualTransformation(),
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
-                modifier = Modifier.fillMaxWidth(),
-            )
-        }
+        // Le mot de passe reste toujours visible (seule l'adresse du serveur est cachée, comme pour Vikunja).
+        OutlinedTextField(
+            value = joplinPassword,
+            onValueChange = { joplinPassword = it },
+            label = { Text("Mot de passe Joplin") },
+            supportingText =
+                if (savedJoplin.password.isNotBlank() && joplinPassword.isEmpty()) {
+                    { Text("Déjà enregistré : laissez vide pour le garder") }
+                } else {
+                    null
+                },
+            singleLine = true,
+            visualTransformation = PasswordVisualTransformation(),
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+            modifier = Modifier.fillMaxWidth(),
+        )
 
         error?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyMedium) }
         Button(
@@ -273,3 +279,6 @@ fun LoginScreen(
 }
 
 private const val HTTP_PRECONDITION_FAILED = 412
+
+/** Serveur Joplin par défaut (adresse cachée sur cette page, modifiable par double appui sur le logo). */
+private const val DEFAULT_JOPLIN_SERVER = "https://notes.lielu.eu"
