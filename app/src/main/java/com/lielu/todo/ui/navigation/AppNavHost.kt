@@ -79,7 +79,7 @@ fun AppNavHost(
 ) {
     val loggedIn by container.session.loggedIn.collectAsStateWithLifecycle()
     if (!loggedIn) {
-        LoginScreen(container.session, container.vikunjaClient, container.todoRepository)
+        LoginScreen(container.session, container.vikunjaClient, container.todoRepository, container.settingsRepository)
         return
     }
 
