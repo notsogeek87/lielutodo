@@ -8,6 +8,7 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.util.TypedValue
+import android.view.View
 import android.widget.RemoteViews
 import android.widget.RemoteViewsService
 import com.lielu.todo.LieluApplication
@@ -123,12 +124,21 @@ private class TodayWidgetFactory(
     @Volatile
     private var items = emptyList<com.lielu.todo.data.model.Task>()
 
+    // Projets et boîte de réception lus avec la liste : le nom du projet s'affiche sous chaque tâche.
+    @Volatile
+    private var projects = emptyList<com.lielu.todo.data.model.Project>()
+
+    @Volatile
+    private var inboxId = 0L
+
     private fun load() {
         // En cas d'erreur on garde la liste précédente plutôt que d'afficher un widget vide.
         runCatching {
             val state =
                 (context.applicationContext as LieluApplication)
                     .container.todoRepository.state.value
+            projects = state.projects
+            inboxId = state.inboxId
             items =
                 widgetTasks(
                     state.tasks,
@@ -158,7 +168,13 @@ private class TodayWidgetFactory(
         views.setTextViewText(R.id.item_title, task.title)
         views.setTextViewTextSize(R.id.item_title, TypedValue.COMPLEX_UNIT_SP, scaled(ITEM_SP, config))
         views.setTextViewTextSize(R.id.item_due, TypedValue.COMPLEX_UNIT_SP, scaled(DUE_SP, config))
-        views.setTextViewText(R.id.item_due, task.plannedAt?.let { dueLabel(it, LocalDate.now()) }.orEmpty())
+        val subtitle =
+            widgetSubtitle(
+                task.plannedAt?.let { dueLabel(it, LocalDate.now()) },
+                widgetProjectLabel(task, projects, inboxId),
+            )
+        views.setTextViewText(R.id.item_due, subtitle)
+        views.setViewVisibility(R.id.item_due, if (subtitle.isEmpty()) View.GONE else View.VISIBLE)
         views.setOnClickFillInIntent(
             R.id.item_check,
             Intent()

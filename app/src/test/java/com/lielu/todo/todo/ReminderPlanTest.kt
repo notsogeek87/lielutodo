@@ -1,5 +1,6 @@
 package com.lielu.todo.todo
 
+import com.lielu.todo.data.model.Project
 import com.lielu.todo.data.model.Reminder
 import com.lielu.todo.data.model.User
 import com.lielu.todo.data.model.taskFromJson
@@ -7,6 +8,8 @@ import com.lielu.todo.reminder.planReminders
 import com.lielu.todo.widget.PERSONAL_PROJECT
 import com.lielu.todo.widget.WidgetConfig
 import com.lielu.todo.widget.WidgetPeriod
+import com.lielu.todo.widget.widgetProjectLabel
+import com.lielu.todo.widget.widgetSubtitle
 import com.lielu.todo.widget.widgetTasks
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
@@ -118,5 +121,25 @@ class ReminderPlanTest {
             )
         val config = WidgetConfig(WidgetPeriod.ALL, projectId = PERSONAL_PROJECT)
         assertEquals(listOf(1L, 2L), widgetTasks(tasks, today, config, inboxId = 1, userId = 5).map { it.id })
+    }
+
+    @Test
+    fun leWidgetAfficheLeProjetSaufPourUneTachePersonnelle() {
+        val projects =
+            listOf(
+                Project(1, "Boîte de réception", 0, "", false, false, 1.0),
+                Project(2, "Travail", 0, "", false, false, 2.0),
+            )
+        val perso = task(1, null)
+        val travail = task(2, null).copy(projectId = 2)
+        val inconnu = task(3, null).copy(projectId = 99)
+
+        assertEquals(null, widgetProjectLabel(perso, projects, inboxId = 1))
+        assertEquals("Travail", widgetProjectLabel(travail, projects, inboxId = 1))
+        assertEquals(null, widgetProjectLabel(inconnu, projects, inboxId = 1))
+        assertEquals("Aujourd'hui · Travail", widgetSubtitle("Aujourd'hui", "Travail"))
+        assertEquals("Travail", widgetSubtitle(null, "Travail"))
+        assertEquals("Aujourd'hui", widgetSubtitle("Aujourd'hui", null))
+        assertEquals("", widgetSubtitle(null, null))
     }
 }

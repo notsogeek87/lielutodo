@@ -63,6 +63,25 @@ fun widgetTasks(
         )
 }
 
+/**
+ * Projet affiché sous une tâche du widget : son nom, sauf pour une tâche personnelle (boîte de réception) ou un projet
+ * inconnu du cache, où on n'affiche rien.
+ */
+fun widgetProjectLabel(
+    task: Task,
+    projects: List<Project>,
+    inboxId: Long,
+): String? {
+    if (task.projectId == inboxId) return null
+    return projects.firstOrNull { it.id == task.projectId }?.title?.takeIf { it.isNotBlank() }
+}
+
+/** 2e ligne d'une tâche du widget : « échéance · projet », sans séparateur orphelin. */
+fun widgetSubtitle(
+    due: String?,
+    project: String?,
+): String = listOfNotNull(due?.takeIf { it.isNotBlank() }, project).joinToString(" · ")
+
 private fun matchesPeriod(
     task: Task,
     today: LocalDate,
