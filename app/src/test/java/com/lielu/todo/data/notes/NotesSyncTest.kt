@@ -97,7 +97,14 @@ class NotesSyncTest {
             val api = FakeJoplinApi()
             val id = "b".repeat(32)
             notes.upsert(
-                Note(id = id, title = "Locale", body = "corps", parentId = "folder-1", userUpdatedTime = 10L, dirty = true),
+                Note(
+                    id = id,
+                    title = "Locale",
+                    body = "corps",
+                    parentId = "folder-1",
+                    userUpdatedTime = 10L,
+                    dirty = true,
+                ),
             )
             val sync = NotesSync(settings, notes, apiFactory = { api })
 
