@@ -14,6 +14,8 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.CloudOff
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material3.ElevatedCard
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -24,6 +26,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
@@ -55,6 +58,7 @@ fun NotesListScreen(
     val notes by viewModel.notes.collectAsState()
     val folders by viewModel.folders.collectAsState()
     var selectedFolder by remember { mutableStateOf<String?>(null) }
+    var searchQuery by remember { mutableStateOf("") }
     val syncEnabled by viewModel.syncEnabled.collectAsState()
     val message by viewModel.message.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
@@ -90,6 +94,14 @@ fun NotesListScreen(
         snackbarHost = { SnackbarHost(snackbarHostState) },
     ) { paddingValues ->
         Column(modifier = Modifier.fillMaxSize().padding(paddingValues)) {
+            OutlinedTextField(
+                value = searchQuery,
+                onValueChange = { searchQuery = it },
+                leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
+                placeholder = { Text("Rechercher dans les notes") },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+            )
             if (folders.isNotEmpty()) {
                 Row(
                     modifier =
@@ -113,9 +125,17 @@ fun NotesListScreen(
                     }
                 }
             }
-            val visible = if (selectedFolder == null) notes else notes.filter { it.parentId == selectedFolder }
+            val query = searchQuery.trim().lowercase()
+            val visible =
+                notes
+                    .filter { selectedFolder == null || it.parentId == selectedFolder }
+                    .filter { note ->
+                        query.isEmpty() ||
+                            note.title.lowercase().contains(query) ||
+                            note.body.lowercase().contains(query)
+                    }
             val folderTitle = folders.firstOrNull { it.id == selectedFolder }?.title
-            if (visible.isEmpty()) {
+            if (notes.isEmpty()) {
                 Column(
                     modifier = Modifier.fillMaxSize().padding(24.dp),
                     verticalArrangement = Arrangement.Center,
@@ -128,6 +148,18 @@ fun NotesListScreen(
                             "Aucune note. Touchez + pour en créer une, ou synchronisez votre serveur Joplin " +
                                 "depuis les paramètres."
                         },
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            } else if (visible.isEmpty()) {
+                Column(
+                    modifier = Modifier.fillMaxSize().padding(24.dp),
+                    verticalArrangement = Arrangement.Center,
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                ) {
+                    Text(
+                        "Aucun résultat pour « $searchQuery ».",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -188,12 +220,35 @@ private fun NoteCard(
                     modifier = Modifier.padding(top = 4.dp),
                 )
             }
-            Text(
-                formatDateTime(note.userUpdatedTime),
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(top = 4.dp),
-            )
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    formatDateTime(note.userUpdatedTime),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                if (note.dirty) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp),
+                    ) {
+                        Icon(
+                            Icons.Default.CloudOff,
+                            contentDescription = "Non synchronisée",
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.padding(0.dp),
+                        )
+                        Text(
+                            "Non synchronisée",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.primary,
+                        )
+                    }
+                }
+            }
         }
     }
 }

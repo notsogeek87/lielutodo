@@ -262,6 +262,7 @@ fun AppNavHost(
                 NoteEditScreen(
                     viewModel = viewModel,
                     onBackClick = { navController.popBackStack() },
+                    onDismiss = { viewModel.onCleared() },
                 )
             }
         }

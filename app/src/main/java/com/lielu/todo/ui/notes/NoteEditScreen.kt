@@ -29,6 +29,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -47,6 +48,7 @@ import io.noties.markwon.Markwon
 fun NoteEditScreen(
     viewModel: NoteEditViewModel,
     onBackClick: () -> Unit,
+    onDismiss: () -> Unit = {},
 ) {
     val title by viewModel.title.collectAsState()
     val body by viewModel.body.collectAsState()
@@ -60,6 +62,10 @@ fun NoteEditScreen(
 
     if (!exists) {
         LaunchedEffect(Unit) { onBackClick() }
+    }
+
+    DisposableEffect(Unit) {
+        onDispose { onDismiss() }
     }
 
     Scaffold(
@@ -173,6 +179,12 @@ fun NoteEditScreen(
                     label = { Text("Note (Markdown)") },
                     minLines = 12,
                     modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+                )
+                Text(
+                    "${body.split(Regex("\\s+")).filter { it.isNotBlank() }.size} mot(s)",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
                 )
             }
         }
