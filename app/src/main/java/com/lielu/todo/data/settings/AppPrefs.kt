@@ -56,6 +56,16 @@ class AppPrefs(
         get() = prefs.getBoolean(KEY_INBOX_DONE, false)
         set(value) = prefs.edit().putBoolean(KEY_INBOX_DONE, value).apply()
 
+    /** Carnet choisi dans les notes (vide = tous), retrouvé en revenant sur l'onglet ou au lancement suivant. */
+    var notesFolder: String
+        get() = prefs.getString(KEY_NOTES_FOLDER, "").orEmpty()
+        set(value) = prefs.edit().putString(KEY_NOTES_FOLDER, value).apply()
+
+    /** Invitations de partage Joplin déjà signalées par une notification (pour ne pas les répéter). */
+    var notifiedInvitations: Set<String>
+        get() = prefs.getStringSet(KEY_NOTIFIED_INVITATIONS, emptySet()).orEmpty().toSet()
+        set(value) = prefs.edit().putStringSet(KEY_NOTIFIED_INVITATIONS, value).apply()
+
     var upcoming: UpcomingSettings
         get() =
             UpcomingSettings(
@@ -129,6 +139,8 @@ class AppPrefs(
         const val KEY_UP_LAYOUT = "upcoming_layout"
         const val KEY_UP_DONE = "upcoming_done"
         const val KEY_INBOX_DONE = "inbox_done"
+        const val KEY_NOTES_FOLDER = "notes_folder"
+        const val KEY_NOTIFIED_INVITATIONS = "notified_invitations"
         const val KEY_UP_FUTURE = "upcoming_future"
         const val KEY_UP_COLORING = "upcoming_coloring"
         const val KEY_UP_SORT = "upcoming_sort"

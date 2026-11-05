@@ -25,6 +25,7 @@ import com.lielu.todo.data.todo.DiskAttachmentFiles
 import com.lielu.todo.data.todo.FileLocalCache
 import com.lielu.todo.data.todo.TodoRepository
 import com.lielu.todo.reminder.CollaborationNotifier
+import com.lielu.todo.reminder.InvitationNotifier
 import com.lielu.todo.reminder.ReminderScheduler
 import com.lielu.todo.reminder.planReminders
 import com.lielu.todo.widget.refreshWidgets
@@ -125,12 +126,15 @@ class AppContainer(
 
     private val collaborationNotifier = CollaborationNotifier(appContext)
 
+    /** Notification « on vous partage un carnet » (synchro des notes en arrière-plan et à l'ouverture). */
+    val invitationNotifier = InvitationNotifier(appContext, prefs)
+
     // WorkManager n'accepte qu'une fabrique : on les enchaîne (sauvegarde auto, synchro tâches, synchro notes).
     val workerFactory =
         DelegatingWorkerFactory().apply {
             addFactory(AutoBackupWorker.Factory(autoBackupRunner))
             addFactory(SyncWorker.Factory(todoRepository, session))
-            addFactory(NotesSyncWorker.Factory(notesSync))
+            addFactory(NotesSyncWorker.Factory(notesSync, invitationNotifier))
         }
 
     /** Utilisé par « Sauvegarder maintenant » et « Restaurer la dernière sauvegarde » (voir SettingsViewModel). */

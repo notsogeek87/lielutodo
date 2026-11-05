@@ -11,6 +11,7 @@ import androidx.work.WorkManager
 import androidx.work.WorkerFactory
 import androidx.work.WorkerParameters
 import com.lielu.todo.data.notes.NotesSync
+import com.lielu.todo.reminder.InvitationNotifier
 import java.util.concurrent.TimeUnit
 
 /**
@@ -22,15 +23,19 @@ class NotesSyncWorker(
     context: Context,
     params: WorkerParameters,
     private val notesSync: NotesSync,
+    private val invitationNotifier: InvitationNotifier,
 ) : CoroutineWorker(context, params) {
     override suspend fun doWork(): Result {
         runCatching { notesSync.syncNow() }
+        // Carnet partagé par quelqu'un : notification (une seule par invitation).
+        runCatching { notesSync.pendingInvitations().onSuccess { invitationNotifier.onInvitations(it) } }
         // Serveur injoignable : pas un échec à rejouer en boucle, le prochain passage réessaiera.
         return Result.success()
     }
 
     class Factory(
         private val notesSync: NotesSync,
+        private val invitationNotifier: InvitationNotifier,
     ) : WorkerFactory() {
         override fun createWorker(
             appContext: Context,
@@ -38,7 +43,7 @@ class NotesSyncWorker(
             workerParameters: WorkerParameters,
         ): ListenableWorker? =
             if (workerClassName == NotesSyncWorker::class.java.name) {
-                NotesSyncWorker(appContext, workerParameters, notesSync)
+                NotesSyncWorker(appContext, workerParameters, notesSync, invitationNotifier)
             } else {
                 null
             }

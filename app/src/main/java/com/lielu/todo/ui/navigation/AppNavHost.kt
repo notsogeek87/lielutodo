@@ -76,6 +76,9 @@ fun AppNavHost(
     container: AppContainer,
     openTaskId: Long? = null,
     onTaskOpened: () -> Unit = {},
+    /** Notification « carnet partagé » touchée : onglet Notes + liste des invitations. */
+    openNoteInvitations: Boolean = false,
+    onNoteInvitationsOpened: () -> Unit = {},
 ) {
     val loggedIn by container.session.loggedIn.collectAsStateWithLifecycle()
     if (!loggedIn) {
@@ -95,8 +98,39 @@ fun AppNavHost(
     }
 
     NavHost(navController = navController, startDestination = AppDestinations.HOME) {
-        composable(AppDestinations.HOME) {
+        composable(AppDestinations.HOME) { entry ->
+            // Notes en onglet de l'accueil : leur ViewModel vit avec l'accueil (carnet choisi gardé en naviguant).
+            val notesViewModel: NotesViewModel =
+                viewModel(
+                    entry,
+                    factory =
+                        viewModelFactory {
+                            initializer {
+                                NotesViewModel(
+                                    container.notesRepository,
+                                    container.notesSync,
+                                    container.settingsRepository,
+                                    container.applicationScope,
+                                    container.prefs,
+                                )
+                            }
+                        },
+                )
+            val noteInvitations by notesViewModel.invitations.collectAsStateWithLifecycle()
+            LaunchedEffect(openNoteInvitations) {
+                if (openNoteInvitations) notesViewModel.onOpenInvitations()
+            }
             HomeScreen(
+                notesContent = {
+                    NotesListScreen(
+                        viewModel = notesViewModel,
+                        onNoteClick = { navController.navigate(AppDestinations.noteEdit(it)) },
+                        embedded = true,
+                    )
+                },
+                notesBadge = noteInvitations.size,
+                openNotesTab = openNoteInvitations,
+                onNotesTabOpened = onNoteInvitationsOpened,
                 repository = repository,
                 userName = container.session.username,
                 serverLabel = container.session.baseUrl,
@@ -107,7 +141,6 @@ fun AppNavHost(
                 onOpenFavorites = { navController.navigate(AppDestinations.FAVORITES) },
                 onOpenCompleted = { navController.navigate(AppDestinations.COMPLETED) },
                 onSearch = { navController.navigate(AppDestinations.SEARCH) },
-                onOpenNotes = { navController.navigate(AppDestinations.NOTES) },
                 reminderScheduler = container.reminderScheduler,
                 calendarSync = container.calendarSync,
                 prefs = container.prefs,
@@ -227,6 +260,7 @@ fun AppNavHost(
                                         container.notesSync,
                                         container.settingsRepository,
                                         container.applicationScope,
+                                        container.prefs,
                                     )
                                 }
                             },

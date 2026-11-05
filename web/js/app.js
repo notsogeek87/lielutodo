@@ -8,7 +8,7 @@ import { mountComposer } from './composer.js';
 import { openDetail } from './detail.js';
 import { buildView, inboxProject, openTasks, sectionHtml, weekStrip } from './views.js';
 import { createNotesStore } from './notes/notes-store.js';
-import { createNotesView } from './notes/notes-view.js';
+import { createNotesView, lastNotesHash } from './notes/notes-view.js';
 import {
   $, $$, closePopover, closeTopModal, confirmDialog, esc, menu, modal, promptDialog, toast, PROJECT_COLORS,
 } from './ui.js';
@@ -237,7 +237,7 @@ function renderSidebar() {
       ${navItem('#/upcoming', `<span class="nav-ic-upcoming">${icon('upcoming', 18)}</span>`, 'À venir', 0, isRoute('upcoming'))}
       ${navItem('#/filters', `<span class="nav-ic-filters">${icon('filters', 18)}</span>`, 'Filtres et étiquettes', 0, isRoute('filters') || isRoute('label') || isRoute('filter'))}
       ${navItem('#/completed', icon('checkCircle', 18), 'Terminées', 0, isRoute('completed'))}
-      ${navItem('#/notes', icon('note', 18), 'Notes', notes.meta.invitations.length, route.name === 'notes' || route.name === 'note')}
+      ${navItem(lastNotesHash(), icon('note', 18), 'Notes', notes.meta.invitations.length, route.name === 'notes' || route.name === 'note')}
       ${s.failed.length ? `<button class="nav-item nav-warn" data-act="failed-ops">${icon('offline', 18)}<span class="label">Modifications non envoyées</span><span class="count">${s.failed.length}</span></button>` : ''}
       ${favorites.length ? section('favorites', 'Favoris', favorites.map((p) => `<a class="nav-item" href="#/project/${p.id}"><i class="dot" style="background:${colorOf(p.hex)}"></i><span class="label">${esc(p.title)}</span></a>`).join('')) : ''}
       ${section('projects', 'Mes projets', roots.map((p) => projectRow(p, 0)).join('') || '<div class="menu-sub">Aucun projet</div>', 'add-project')}
@@ -676,7 +676,7 @@ function onKey(e) {
   if (typing || e.ctrlKey || e.metaKey || e.altKey || document.querySelector('.backdrop')) return;
   if (gPending) {
     gPending = false;
-    const dest = { i: '#/inbox', t: '#/today', u: '#/upcoming', f: '#/filters', n: '#/notes' }[e.key];
+    const dest = { i: '#/inbox', t: '#/today', u: '#/upcoming', f: '#/filters', n: lastNotesHash() }[e.key];
     if (dest) { e.preventDefault(); go(dest); }
     return;
   }

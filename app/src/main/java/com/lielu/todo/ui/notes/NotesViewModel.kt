@@ -8,6 +8,7 @@ import com.lielu.todo.data.notes.Folder
 import com.lielu.todo.data.notes.Note
 import com.lielu.todo.data.notes.NotesRepository
 import com.lielu.todo.data.notes.NotesSync
+import com.lielu.todo.data.settings.AppPrefs
 import com.lielu.todo.data.settings.SettingsRepository
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -32,7 +33,31 @@ class NotesViewModel(
     private val notesSync: NotesSync,
     private val settingsRepository: SettingsRepository,
     private val appScope: CoroutineScope,
+    private val prefs: AppPrefs,
 ) : ViewModel() {
+    /** Carnet choisi (null = tous) : gardé en naviguant et d'un lancement à l'autre. */
+    private val _selectedFolder = MutableStateFlow(prefs.notesFolder.ifBlank { null })
+    val selectedFolder: StateFlow<String?> = _selectedFolder
+
+    fun onSelectFolder(folderId: String?) {
+        _selectedFolder.value = folderId
+        prefs.notesFolder = folderId.orEmpty()
+    }
+
+    /** Fenêtre des invitations reçues (ouverte aussi depuis la notification). */
+    private val _showInvitations = MutableStateFlow(false)
+    val showInvitations: StateFlow<Boolean> = _showInvitations
+
+    fun onOpenInvitations() {
+        _showInvitations.value = true
+        refreshInvitations()
+    }
+
+    fun onCloseInvitations() {
+        _showInvitations.value = false
+        refreshInvitations()
+    }
+
     val notes: StateFlow<List<Note>> =
         notesRepository.notes.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 

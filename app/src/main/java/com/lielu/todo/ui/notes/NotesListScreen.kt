@@ -5,6 +5,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -35,6 +36,7 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.ScaffoldDefaults
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
@@ -65,7 +67,9 @@ import com.lielu.todo.ui.formatDateTime
 fun NotesListScreen(
     viewModel: NotesViewModel,
     onNoteClick: (String) -> Unit,
-    onBackClick: () -> Unit,
+    onBackClick: (() -> Unit)? = null,
+    /** Affiché comme onglet de l'accueil : pas de flèche retour, les marges système sont déjà prises. */
+    embedded: Boolean = false,
 ) {
     val notes by viewModel.notes.collectAsState()
     val folders by viewModel.folders.collectAsState()
@@ -73,10 +77,12 @@ fun NotesListScreen(
     val invitations by viewModel.invitations.collectAsState()
     val share by viewModel.share.collectAsState()
     val message by viewModel.message.collectAsState()
-    var selectedFolder by remember { mutableStateOf<String?>(null) }
+    val savedFolder by viewModel.selectedFolder.collectAsState()
+    // Carnet mémorisé mais supprimé entre-temps : retour à « Tous ».
+    val selectedFolder = savedFolder?.takeIf { id -> folders.isEmpty() || folders.any { it.id == id } }
     var searchQuery by remember { mutableStateOf("") }
     var showNewFolder by remember { mutableStateOf(false) }
-    var showInvitations by remember { mutableStateOf(false) }
+    val showInvitations by viewModel.showInvitations.collectAsState()
     val snackbar = remember { SnackbarHostState() }
     LaunchedEffect(message) {
         val text = message ?: return@LaunchedEffect
@@ -85,17 +91,21 @@ fun NotesListScreen(
     }
 
     Scaffold(
+        contentWindowInsets = if (embedded) WindowInsets(0) else ScaffoldDefaults.contentWindowInsets,
         topBar = {
             TopAppBar(
                 title = { Text("Notes") },
+                windowInsets = if (embedded) WindowInsets(0) else TopAppBarDefaults.windowInsets,
                 navigationIcon = {
-                    IconButton(onClick = onBackClick) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Retour")
+                    if (onBackClick != null) {
+                        IconButton(onClick = onBackClick) {
+                            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Retour")
+                        }
                     }
                 },
                 actions = {
                     if (invitations.isNotEmpty()) {
-                        IconButton(onClick = { showInvitations = true }) {
+                        IconButton(onClick = viewModel::onOpenInvitations) {
                             BadgedBox(badge = { Badge { Text("${invitations.size}") } }) {
                                 Icon(Icons.Default.Mail, contentDescription = "Carnets partagés avec vous")
                             }
@@ -135,13 +145,13 @@ fun NotesListScreen(
                 ) {
                     FilterChip(
                         selected = selectedFolder == null,
-                        onClick = { selectedFolder = null },
+                        onClick = { viewModel.onSelectFolder(null) },
                         label = { Text("Tous") },
                     )
                     folders.forEach { folder ->
                         FilterChip(
                             selected = selectedFolder == folder.id,
-                            onClick = { selectedFolder = folder.id },
+                            onClick = { viewModel.onSelectFolder(folder.id) },
                             label = { Text(folder.title) },
                             leadingIcon =
                                 if (folder.shareId.isNotBlank()) {
@@ -252,12 +262,9 @@ fun NotesListScreen(
         invitations = invitations,
         showNewFolder = showNewFolder,
         onNewFolderDismiss = { showNewFolder = false },
-        onFolderCreated = { selectedFolder = it },
+        onFolderCreated = viewModel::onSelectFolder,
         showInvitations = showInvitations,
-        onInvitationsDismiss = {
-            showInvitations = false
-            viewModel.refreshInvitations()
-        },
+        onInvitationsDismiss = viewModel::onCloseInvitations,
     )
 }
 

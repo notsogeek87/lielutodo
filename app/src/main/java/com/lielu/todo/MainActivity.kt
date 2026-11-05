@@ -16,6 +16,7 @@ import androidx.compose.ui.Modifier
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
+import com.lielu.todo.reminder.InvitationNotifier
 import com.lielu.todo.reminder.ReminderReceiver
 import com.lielu.todo.ui.LockScreen
 import com.lielu.todo.ui.navigation.AppNavHost
@@ -27,6 +28,9 @@ class MainActivity : ComponentActivity() {
     /** Tâche à ouvrir (clic sur une notification de rappel ou sur une ligne du widget), consommée par la navigation. */
     private var openTaskId by mutableStateOf<Long?>(null)
 
+    /** Notification « carnet partagé » touchée : ouvrir l'onglet Notes sur les invitations. */
+    private var openNoteInvitations by mutableStateOf(false)
+
     /** Verrouillage de l'app (code, schéma ou empreinte de l'appareil) : actif au lancement puis après une absence. */
     private var locked by mutableStateOf(false)
     private var stoppedAt = 0L
@@ -35,6 +39,7 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         openTaskId = taskIdFrom(intent)
+        openNoteInvitations = intent?.getBooleanExtra(InvitationNotifier.EXTRA_OPEN_INVITATIONS, false) == true
 
         val container = (application as LieluApplication).container
         locked = container.prefs.lockEnabled
@@ -51,7 +56,13 @@ class MainActivity : ComponentActivity() {
                     modifier = Modifier.fillMaxSize(),
                     color = MaterialTheme.colorScheme.background,
                 ) {
-                    AppNavHost(container = container, openTaskId = openTaskId, onTaskOpened = { openTaskId = null })
+                    AppNavHost(
+                        container = container,
+                        openTaskId = openTaskId,
+                        onTaskOpened = { openTaskId = null },
+                        openNoteInvitations = openNoteInvitations,
+                        onNoteInvitationsOpened = { openNoteInvitations = false },
+                    )
                     val updateViewModel: AppUpdateViewModel =
                         viewModel(
                             factory =
@@ -71,6 +82,7 @@ class MainActivity : ComponentActivity() {
         super.onNewIntent(intent)
         setIntent(intent)
         openTaskId = taskIdFrom(intent)
+        if (intent.getBooleanExtra(InvitationNotifier.EXTRA_OPEN_INVITATIONS, false)) openNoteInvitations = true
     }
 
     override fun onStart() {

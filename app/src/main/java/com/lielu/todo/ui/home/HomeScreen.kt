@@ -26,6 +26,8 @@ import androidx.compose.material.icons.outlined.CalendarMonth
 import androidx.compose.material.icons.outlined.CheckCircle
 import androidx.compose.material.icons.outlined.Inbox
 import androidx.compose.material.icons.outlined.Today
+import androidx.compose.material3.Badge
+import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -91,6 +93,19 @@ private const val RAIL_MIN_WIDTH_DP = 600
 private const val TWO_PANE_MIN_WIDTH_DP = 840
 private const val LIST_PANE_WEIGHT = 0.8f
 
+/** Icône d'onglet, avec un badge (ex. invitations de partage en attente sur Notes). */
+@Composable
+private fun TabIcon(
+    item: HomeTab,
+    badge: Int,
+) {
+    if (badge > 0) {
+        BadgedBox(badge = { Badge { Text("$badge") } }) { Icon(item.icon, contentDescription = null) }
+    } else {
+        Icon(item.icon, contentDescription = null)
+    }
+}
+
 private enum class HomeTab(
     val label: String,
     val icon: ImageVector,
@@ -98,6 +113,7 @@ private enum class HomeTab(
     INBOX("Tâches", Icons.Outlined.Inbox),
     TODAY("Auj", Icons.Outlined.Today),
     UPCOMING("Prochainement", Icons.Outlined.CalendarMonth),
+    NOTES("Notes", Icons.AutoMirrored.Outlined.Note),
     BROWSE("Parcourir", Icons.Filled.Menu),
 }
 
@@ -119,14 +135,27 @@ fun HomeScreen(
     prefs: AppPrefs,
     onOpenNotifications: () -> Unit,
     onOpenActivity: () -> Unit,
-    onOpenNotes: () -> Unit,
     onSettings: () -> Unit,
     onLogout: () -> Unit,
+    /** Onglet Notes (liste des notes Joplin), fourni par la navigation. */
+    notesContent: @Composable () -> Unit = {},
+    /** Invitations de partage en attente : badge sur l'onglet Notes. */
+    notesBadge: Int = 0,
+    /** Ouvrir l'onglet Notes (notification d'invitation touchée). */
+    openNotesTab: Boolean = false,
+    onNotesTabOpened: () -> Unit = {},
 ) {
     val state by repository.state.collectAsStateWithLifecycle()
     val scope = rememberCoroutineScope()
     val snackbar = remember { SnackbarHostState() }
     var tab by rememberSaveable { mutableIntStateOf(HomeTab.INBOX.ordinal) }
+    LaunchedEffect(openNotesTab) {
+        if (openNotesTab) {
+            tab = HomeTab.NOTES.ordinal
+            onNotesTabOpened()
+        }
+    }
+    val onNotesTab = HomeTab.entries[tab] == HomeTab.NOTES
     var showAdd by remember { mutableStateOf(false) }
     var upcomingSettings by remember { mutableStateOf(prefs.upcoming) }
     var inboxShowDone by remember { mutableStateOf(prefs.inboxShowDone) }
@@ -139,7 +168,7 @@ fun HomeScreen(
     // et tâche ouverte dans un volet à droite (au lieu d'une liste étirée sur toute la largeur).
     val widthDp = LocalConfiguration.current.screenWidthDp
     val useRail = widthDp >= RAIL_MIN_WIDTH_DP
-    val showPane = widthDp >= TWO_PANE_MIN_WIDTH_DP && HomeTab.entries[tab] != HomeTab.BROWSE
+    val showPane = widthDp >= TWO_PANE_MIN_WIDTH_DP && HomeTab.entries[tab] != HomeTab.BROWSE && !onNotesTab
     var selectedTaskId by rememberSaveable { mutableLongStateOf(0L) }
     BackHandler(enabled = showPane && selectedTaskId != 0L) { selectedTaskId = 0L }
     val openTask: (Long) -> Unit = if (showPane) ({ selectedTaskId = it }) else onOpenTask
@@ -153,7 +182,6 @@ fun HomeScreen(
     val filterable = HomeTab.entries[tab] == HomeTab.TODAY || HomeTab.entries[tab] == HomeTab.UPCOMING
     val titleActions: @Composable () -> Unit = {
         IconButton(onClick = onSearch) { Icon(Icons.Filled.Search, contentDescription = "Rechercher") }
-        IconButton(onClick = onOpenNotes) { Icon(Icons.AutoMirrored.Outlined.Note, contentDescription = "Notes") }
         when (HomeTab.entries[tab]) {
             HomeTab.INBOX -> {
                 IconButton(
@@ -197,7 +225,7 @@ fun HomeScreen(
                     default = 0L,
                     onPick = { projectFilter = it },
                 )
-            HomeTab.BROWSE -> Unit
+            HomeTab.NOTES, HomeTab.BROWSE -> Unit
         }
     }
 
@@ -228,17 +256,7 @@ fun HomeScreen(
                         NavigationBarItem(
                             selected = tab == index,
                             onClick = { tab = index },
-                            icon = {
-                                Icon(
-                                    when (item) {
-                                        HomeTab.INBOX -> Icons.Outlined.Inbox
-                                        HomeTab.TODAY -> Icons.Outlined.Today
-                                        HomeTab.UPCOMING -> Icons.Outlined.CalendarMonth
-                                        HomeTab.BROWSE -> Icons.Filled.Menu
-                                    },
-                                    contentDescription = null,
-                                )
-                            },
+                            icon = { TabIcon(item, if (item == HomeTab.NOTES) notesBadge else 0) },
                             label = { Text(item.label, maxLines = 1) },
                             colors =
                                 NavigationBarItemDefaults.colors(
@@ -253,7 +271,8 @@ fun HomeScreen(
                 }
             }
         },
-        floatingActionButton = { if (!showPane) AddFab(onClick = { showAdd = true }) },
+        // L'onglet Notes a son propre bouton « Nouvelle note ».
+        floatingActionButton = { if (!showPane && !onNotesTab) AddFab(onClick = { showAdd = true }) },
         snackbarHost = { SnackbarHost(snackbar) },
     ) { padding ->
         Row(modifier = Modifier.padding(padding).fillMaxSize()) {
@@ -264,7 +283,7 @@ fun HomeScreen(
                         NavigationRailItem(
                             selected = tab == index,
                             onClick = { tab = index },
-                            icon = { Icon(item.icon, contentDescription = null) },
+                            icon = { TabIcon(item, if (item == HomeTab.NOTES) notesBadge else 0) },
                             label = { Text(item.label, maxLines = 1) },
                             colors =
                                 NavigationRailItemDefaults.colors(
@@ -280,62 +299,72 @@ fun HomeScreen(
                 }
             }
             Box(modifier = Modifier.weight(if (showPane) LIST_PANE_WEIGHT else 1f).fillMaxHeight()) {
-                PullToRefreshBox(
-                    isRefreshing = state.syncing,
-                    onRefresh = { scope.launch { repository.refresh() } },
-                    modifier = Modifier.fillMaxSize(),
-                ) {
-                    val onToggle = { task: Task, done: Boolean -> scope.toggleDone(repository, snackbar, task, done) }
-                    when (HomeTab.entries[tab]) {
-                        HomeTab.INBOX ->
-                            InboxTab(
-                                state,
-                                today,
-                                activeInbox,
-                                inboxShowDone,
-                                onToggle,
-                                openTask,
-                                titleActions,
-                            )
-                        HomeTab.TODAY ->
-                            TodayTab(visible, today, onToggle, openTask, titleActions, filterTitle, onReschedule = {
-                                val moved = repository.rescheduleOverdue(today)
-                                scope.launch { snackbar.showSnackbar("$moved tâche(s) reportée(s) à aujourd'hui") }
-                            })
-                        HomeTab.UPCOMING ->
-                            UpcomingTab(
-                                visible,
-                                today,
-                                upcomingSettings,
-                                {
-                                    upcomingSettings = it
-                                    prefs.upcoming = it
-                                },
-                                onToggle,
-                                openTask,
-                                titleActions,
-                                filterTitle,
-                            )
-                        HomeTab.BROWSE ->
-                            BrowseTab(
-                                repository = repository,
-                                state = state,
-                                userName = userName,
-                                serverLabel = serverLabel,
-                                snackbar = snackbar,
-                                onOpenProject = onOpenProject,
-                                onOpenLabel = onOpenLabel,
-                                onOpenFilter = onOpenFilter,
-                                onOpenFavorites = onOpenFavorites,
-                                onOpenCompleted = onOpenCompleted,
-                                reminderScheduler = reminderScheduler,
-                                calendarSync = calendarSync,
-                                prefs = prefs,
-                                onOpenNotifications = onOpenNotifications,
-                                onOpenActivity = onOpenActivity,
-                                onSettings = onSettings,
-                                onLogout = onLogout,
-                            )
+                if (onNotesTab) {
+                    notesContent()
+                } else {
+                    PullToRefreshBox(
+                        isRefreshing = state.syncing,
+                        onRefresh = { scope.launch { repository.refresh() } },
+                        modifier = Modifier.fillMaxSize(),
+                    ) {
+                        val onToggle = {
+                                task: Task,
+                                done: Boolean,
+                            ->
+                            scope.toggleDone(repository, snackbar, task, done)
+                        }
+                        when (HomeTab.entries[tab]) {
+                            HomeTab.INBOX ->
+                                InboxTab(
+                                    state,
+                                    today,
+                                    activeInbox,
+                                    inboxShowDone,
+                                    onToggle,
+                                    openTask,
+                                    titleActions,
+                                )
+                            HomeTab.TODAY ->
+                                TodayTab(visible, today, onToggle, openTask, titleActions, filterTitle, onReschedule = {
+                                    val moved = repository.rescheduleOverdue(today)
+                                    scope.launch { snackbar.showSnackbar("$moved tâche(s) reportée(s) à aujourd'hui") }
+                                })
+                            HomeTab.UPCOMING ->
+                                UpcomingTab(
+                                    visible,
+                                    today,
+                                    upcomingSettings,
+                                    {
+                                        upcomingSettings = it
+                                        prefs.upcoming = it
+                                    },
+                                    onToggle,
+                                    openTask,
+                                    titleActions,
+                                    filterTitle,
+                                )
+                            HomeTab.NOTES -> Unit
+                            HomeTab.BROWSE ->
+                                BrowseTab(
+                                    repository = repository,
+                                    state = state,
+                                    userName = userName,
+                                    serverLabel = serverLabel,
+                                    snackbar = snackbar,
+                                    onOpenProject = onOpenProject,
+                                    onOpenLabel = onOpenLabel,
+                                    onOpenFilter = onOpenFilter,
+                                    onOpenFavorites = onOpenFavorites,
+                                    onOpenCompleted = onOpenCompleted,
+                                    reminderScheduler = reminderScheduler,
+                                    calendarSync = calendarSync,
+                                    prefs = prefs,
+                                    onOpenNotifications = onOpenNotifications,
+                                    onOpenActivity = onOpenActivity,
+                                    onSettings = onSettings,
+                                    onLogout = onLogout,
+                                )
+                        }
                     }
                 }
                 if (showPane) {

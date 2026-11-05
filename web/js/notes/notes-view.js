@@ -9,6 +9,12 @@ const fmt = new Intl.DateTimeFormat('fr-FR', { dateStyle: 'medium', timeStyle: '
 const HISTORY_PAUSE_MS = 1000;
 const SAVE_DELAY_MS = 400;
 
+const FOLDER_KEY = 'lielutodo.notesFolder';
+/** Dernière liste de notes affichée (carnet choisi), retrouvée en revenant aux notes, même après rechargement. */
+export function lastNotesHash() {
+  try { const id = localStorage.getItem(FOLDER_KEY); return id ? `#/notes/${id}` : '#/notes'; } catch { return '#/notes'; }
+}
+
 export function createNotesView(store, go) {
   let query = '';
   let editor = null; // { id, initial, history, redo, lastEditAt, timer, last, preview }
@@ -49,6 +55,9 @@ export function createNotesView(store, go) {
 
   // ---------- Liste ----------
   function renderList(content, folderId) {
+    // Carnet mémorisé mais supprimé : retour à « Toutes ».
+    if (folderId && store.state.folders.length && !store.folder(folderId)) { go('#/notes'); return; }
+    try { localStorage.setItem(FOLDER_KEY, folderId || ''); } catch { /* confort */ }
     const key = `notes:${folderId || ''}`;
     if (content.dataset.view !== key) {
       content.dataset.view = key;
@@ -229,7 +238,7 @@ export function createNotesView(store, go) {
     content.innerHTML = `
       <div class="note-editor">
         <div class="note-bar">
-          <a class="icon-btn" href="${n.parentId ? `#/notes/${n.parentId}` : '#/notes'}" aria-label="Retour aux notes">${icon('chevronLeft', 20)}</a>
+          <a class="icon-btn" href="${lastNotesHash()}" aria-label="Retour aux notes">${icon('chevronLeft', 20)}</a>
           <select class="field note-folder" aria-label="Carnet"></select>
           <span class="grow"></span>
           <button class="icon-btn" data-md="undo" title="Annuler (Ctrl+Z)" aria-label="Annuler">${icon('undo')}</button>
@@ -291,10 +300,9 @@ export function createNotesView(store, go) {
       else if (k === 'delete') {
         if (!(await confirmDialog('Supprimer cette note ? Elle sera placée dans la corbeille de Joplin à la prochaine synchronisation.', 'Supprimer'))) return;
         clearTimeout(editor.timer);
-        const parent = store.note(id)?.parentId;
         editor = null;
         store.remove(id);
-        go(parent ? `#/notes/${parent}` : '#/notes');
+        go(lastNotesHash());
         store.sync();
       } else tool(content, k);
     });
