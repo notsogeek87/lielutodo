@@ -3,28 +3,53 @@ package com.lielu.todo.ui.notes
 import android.widget.TextView
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.ime
+import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.union
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.automirrored.filled.FormatListBulleted
+import androidx.compose.material.icons.automirrored.filled.Redo
+import androidx.compose.material.icons.automirrored.filled.Undo
+import androidx.compose.material.icons.filled.CheckBox
+import androidx.compose.material.icons.filled.Code
 import androidx.compose.material.icons.filled.Edit
-import androidx.compose.material.icons.filled.Save
+import androidx.compose.material.icons.filled.Folder
+import androidx.compose.material.icons.filled.FormatBold
+import androidx.compose.material.icons.filled.FormatItalic
+import androidx.compose.material.icons.filled.FormatListNumbered
+import androidx.compose.material.icons.filled.FormatQuote
+import androidx.compose.material.icons.filled.Link
+import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.StrikethroughS
+import androidx.compose.material.icons.filled.Title
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.AssistChip
+import androidx.compose.material3.AssistChipDefaults
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -35,15 +60,24 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import io.noties.markwon.Markwon
+import io.noties.markwon.ext.strikethrough.StrikethroughPlugin
+import io.noties.markwon.ext.tasklist.TaskListPlugin
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -54,147 +88,144 @@ fun NoteEditScreen(
     val title by viewModel.title.collectAsState()
     val body by viewModel.body.collectAsState()
     val exists by viewModel.exists.collectAsState()
+    val startsEmpty by viewModel.startsEmpty.collectAsState()
     val folders by viewModel.folders.collectAsState()
     val parentId by viewModel.parentId.collectAsState()
-    val hasUnsavedChanges by viewModel.hasUnsavedChanges.collectAsState()
+    val saveState by viewModel.saveState.collectAsState()
+    val canUndo by viewModel.canUndo.collectAsState()
+    val canRedo by viewModel.canRedo.collectAsState()
     var showDeleteConfirm by remember { mutableStateOf(false) }
-    var preview by remember { mutableStateOf(false) }
-    var folderMenuOpen by remember { mutableStateOf(false) }
-    val currentFolderTitle = folders.firstOrNull { it.id == parentId }?.title ?: "Sans carnet"
+    var preview by rememberSaveable { mutableStateOf(false) }
+    var menuOpen by remember { mutableStateOf(false) }
+    val titleFocus = remember { FocusRequester() }
+    val bodyFocus = remember { FocusRequester() }
+    val keyboard = LocalSoftwareKeyboardController.current
 
     if (!exists) {
         LaunchedEffect(Unit) { onBackClick() }
+    }
+    // Nouvelle note : on peut écrire tout de suite, curseur dans le titre et clavier ouvert.
+    LaunchedEffect(startsEmpty) {
+        if (startsEmpty == true) {
+            titleFocus.requestFocus()
+            keyboard?.show()
+        }
     }
 
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Note") },
+                title = { },
                 navigationIcon = {
                     IconButton(onClick = onBackClick) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Retour")
                     }
                 },
                 actions = {
-                    IconButton(onClick = viewModel::onSaveClicked, enabled = hasUnsavedChanges) {
-                        Icon(Icons.Default.Save, contentDescription = "Enregistrer")
+                    if (!preview) {
+                        IconButton(onClick = viewModel::undo, enabled = canUndo) {
+                            Icon(Icons.AutoMirrored.Filled.Undo, contentDescription = "Annuler")
+                        }
+                        IconButton(onClick = viewModel::redo, enabled = canRedo) {
+                            Icon(Icons.AutoMirrored.Filled.Redo, contentDescription = "Rétablir")
+                        }
                     }
                     IconButton(onClick = { preview = !preview }) {
                         Icon(
                             if (preview) Icons.Default.Edit else Icons.Default.Visibility,
-                            contentDescription = if (preview) "Éditer le Markdown" else "Aperçu rendu",
+                            contentDescription = if (preview) "Modifier" else "Aperçu",
                         )
                     }
-                    IconButton(onClick = { showDeleteConfirm = true }) {
-                        Icon(Icons.Default.Delete, contentDescription = "Supprimer la note")
+                    Box {
+                        IconButton(onClick = { menuOpen = true }) {
+                            Icon(Icons.Default.MoreVert, contentDescription = "Plus d'options")
+                        }
+                        DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+                            DropdownMenuItem(
+                                text = { Text("Enregistrer maintenant") },
+                                enabled = saveState == SaveState.PENDING,
+                                onClick = {
+                                    menuOpen = false
+                                    viewModel.onSaveClicked()
+                                },
+                            )
+                            DropdownMenuItem(
+                                text = { Text("Supprimer la note") },
+                                onClick = {
+                                    menuOpen = false
+                                    showDeleteConfirm = true
+                                },
+                            )
+                        }
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Transparent),
             )
         },
-    ) { paddingValues ->
-        if (preview) {
-            Column(
-                modifier =
-                    Modifier
-                        .fillMaxSize()
-                        .padding(paddingValues)
-                        .padding(16.dp)
-                        .verticalScroll(rememberScrollState()),
-            ) {
-                Text(title, style = MaterialTheme.typography.headlineSmall)
-                // Couleur du thème de l'app (et non du thème Android, faux si le mode sombre est forcé dans l'app).
-                val textColor = MaterialTheme.colorScheme.onSurface.toArgb()
-                val linkColor = MaterialTheme.colorScheme.primary.toArgb()
-                val context = LocalContext.current
-                val markwon = remember(context) { Markwon.create(context) }
-                AndroidView(
-                    factory = { TextView(it) },
-                    update = { view ->
-                        view.setTextColor(textColor)
-                        view.setLinkTextColor(linkColor)
-                        markwon.setMarkdown(view, body.text)
-                    },
-                    modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
-                )
+        bottomBar = {
+            if (!preview) {
+                MarkdownToolbar(viewModel)
             }
-        } else {
-            Column(
-                modifier =
-                    Modifier
-                        .fillMaxSize()
-                        .padding(paddingValues)
-                        .padding(16.dp)
-                        .verticalScroll(rememberScrollState()),
-            ) {
-                OutlinedTextField(
+        },
+    ) { paddingValues ->
+        Column(
+            modifier =
+                Modifier
+                    .fillMaxSize()
+                    .padding(paddingValues)
+                    .padding(horizontal = 16.dp),
+        ) {
+            if (preview) {
+                NotePreview(title = title, body = body.text, modifier = Modifier.weight(1f))
+            } else {
+                BasicTextField(
                     value = title,
                     onValueChange = viewModel::onTitleChanged,
-                    label = { Text("Titre") },
                     singleLine = true,
-                    modifier = Modifier.fillMaxWidth(),
+                    textStyle =
+                        MaterialTheme.typography.headlineSmall.copy(
+                            color = MaterialTheme.colorScheme.onSurface,
+                        ),
+                    cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
+                    keyboardOptions =
+                        KeyboardOptions(capitalization = KeyboardCapitalization.Sentences, imeAction = ImeAction.Next),
+                    keyboardActions = KeyboardActions(onNext = { bodyFocus.requestFocus() }),
+                    modifier = Modifier.fillMaxWidth().focusRequester(titleFocus),
+                    decorationBox = { inner ->
+                        if (title.isEmpty()) Placeholder("Titre", MaterialTheme.typography.headlineSmall)
+                        inner()
+                    },
                 )
-                if (folders.isNotEmpty()) {
-                    TextButton(
-                        onClick = { folderMenuOpen = true },
-                        modifier = Modifier.padding(top = 4.dp),
-                    ) {
-                        Text("Carnet : $currentFolderTitle ▾")
-                    }
-                    DropdownMenu(
-                        expanded = folderMenuOpen,
-                        onDismissRequest = { folderMenuOpen = false },
-                    ) {
-                        DropdownMenuItem(
-                            text = { Text("Sans carnet") },
-                            onClick = {
-                                folderMenuOpen = false
-                                viewModel.onFolderSelected("")
-                            },
-                        )
-                        folders.forEach { folder ->
-                            DropdownMenuItem(
-                                text = { Text(folder.title) },
-                                onClick = {
-                                    folderMenuOpen = false
-                                    viewModel.onFolderSelected(folder.id)
-                                },
-                            )
-                        }
-                    }
-                }
-                Row(
+                FolderChip(
+                    folders = folders,
+                    parentId = parentId,
+                    onSelected = viewModel::onFolderSelected,
+                )
+                BasicTextField(
+                    value = body,
+                    onValueChange = viewModel::onBodyChanged,
+                    textStyle = MaterialTheme.typography.bodyLarge.copy(color = MaterialTheme.colorScheme.onSurface),
+                    cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
+                    keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences),
+                    // Toute la hauteur restante est zone de saisie : toucher sous le texte place le curseur à la fin.
                     modifier =
                         Modifier
                             .fillMaxWidth()
-                            .horizontalScroll(rememberScrollState())
-                            .padding(top = 12.dp),
-                    horizontalArrangement = Arrangement.spacedBy(4.dp),
-                ) {
-                    MarkdownButton("B") { viewModel.wrapSelection("**", "**") }
-                    MarkdownButton("I") { viewModel.wrapSelection("*", "*") }
-                    MarkdownButton("S") { viewModel.wrapSelection("~~", "~~") }
-                    MarkdownButton("H") { viewModel.insertSnippet("## Titre") }
-                    MarkdownButton("•") { viewModel.insertSnippet("- élément") }
-                    MarkdownButton("☐") { viewModel.insertSnippet("- [ ] tâche") }
-                    MarkdownButton("</>") { viewModel.insertSnippet("`code`") }
-                    MarkdownButton("🔗") { viewModel.insertSnippet("[texte](https://…)") }
-                    MarkdownButton("❝") { viewModel.insertSnippet("> citation") }
-                }
-                OutlinedTextField(
-                    value = body,
-                    onValueChange = viewModel::onBodyChanged,
-                    label = { Text("Note (Markdown)") },
-                    minLines = 12,
-                    modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
-                )
-                Text(
-                    "${body.text.split(Regex("\\s+")).filter { it.isNotBlank() }.size} mot(s)",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
+                            .weight(1f)
+                            .padding(top = 8.dp)
+                            .focusRequester(bodyFocus),
+                    decorationBox = { inner ->
+                        if (body.text.isEmpty()) {
+                            Placeholder(
+                                "Écrivez ici… (Markdown : la barre du bas met en forme la ligne ou la sélection)",
+                                MaterialTheme.typography.bodyLarge,
+                            )
+                        }
+                        inner()
+                    },
                 )
             }
+            StatusLine(saveState = saveState, body = body.text)
         }
     }
 
@@ -204,8 +235,8 @@ fun NoteEditScreen(
             title = { Text("Supprimer la note") },
             text = {
                 Text(
-                    "La note sera supprimée ici et, à la prochaine synchronisation, sur le serveur Joplin. " +
-                        "Continuer ?",
+                    "La note sera supprimée ici et placée dans la corbeille de Joplin à la prochaine " +
+                        "synchronisation. Continuer ?",
                 )
             },
             confirmButton = {
@@ -221,13 +252,142 @@ fun NoteEditScreen(
     }
 }
 
-/** Petit bouton de la barre d'outils Markdown (libellé texte, ex. « B » pour gras). */
 @Composable
-private fun MarkdownButton(
-    label: String,
+private fun Placeholder(
+    text: String,
+    style: androidx.compose.ui.text.TextStyle,
+) {
+    Text(text, style = style, color = MaterialTheme.colorScheme.onSurfaceVariant)
+}
+
+/** Carnet de la note (Joplin exige un carnet : pas de choix « aucun »). */
+@Composable
+private fun FolderChip(
+    folders: List<com.lielu.todo.data.notes.Folder>,
+    parentId: String,
+    onSelected: (String) -> Unit,
+) {
+    if (folders.isEmpty()) return
+    var open by remember { mutableStateOf(false) }
+    val current = folders.firstOrNull { it.id == parentId }?.title ?: "Choisir un carnet"
+    Box(modifier = Modifier.padding(top = 4.dp)) {
+        AssistChip(
+            onClick = { open = true },
+            label = { Text(current) },
+            leadingIcon = {
+                Icon(
+                    Icons.Default.Folder,
+                    contentDescription = null,
+                    modifier = Modifier.size(AssistChipDefaults.IconSize),
+                )
+            },
+        )
+        DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
+            folders.forEach { folder ->
+                DropdownMenuItem(
+                    text = { Text(folder.title) },
+                    onClick = {
+                        open = false
+                        onSelected(folder.id)
+                    },
+                )
+            }
+        }
+    }
+}
+
+/** « Enregistré · Non synchronisée · 12 mots », sous la note. */
+@Composable
+private fun StatusLine(
+    saveState: SaveState,
+    body: String,
+) {
+    val words = body.split(Regex("\\s+")).count { it.isNotBlank() }
+    val state =
+        when (saveState) {
+            SaveState.PENDING -> "Enregistrement…"
+            SaveState.NOT_SYNCED -> "Enregistrée · pas encore envoyée à Joplin"
+            SaveState.SAVED -> "Enregistrée"
+        }
+    Text(
+        "$state · $words mot${if (words > 1) "s" else ""}",
+        style = MaterialTheme.typography.labelSmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp),
+    )
+}
+
+/** Barre de mise en forme, collée au-dessus du clavier (et non perdue en haut d'une longue note). */
+@Composable
+private fun MarkdownToolbar(viewModel: NoteEditViewModel) {
+    Surface(
+        color = MaterialTheme.colorScheme.surfaceContainer,
+        modifier = Modifier.windowInsetsPadding(WindowInsets.ime.union(WindowInsets.navigationBars)),
+    ) {
+        Column {
+            HorizontalDivider()
+            Row(
+                modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 4.dp),
+                horizontalArrangement = Arrangement.spacedBy(0.dp),
+            ) {
+                ToolButton(Icons.Default.Title, "Titre de section", viewModel::toggleHeading)
+                ToolButton(Icons.Default.FormatBold, "Gras", viewModel::toggleBold)
+                ToolButton(Icons.Default.FormatItalic, "Italique", viewModel::toggleItalic)
+                ToolButton(Icons.Default.StrikethroughS, "Barré", viewModel::toggleStrike)
+                ToolButton(Icons.Default.CheckBox, "Case à cocher", viewModel::toggleCheckbox)
+                ToolButton(Icons.AutoMirrored.Filled.FormatListBulleted, "Liste à puces", viewModel::toggleBullet)
+                ToolButton(Icons.Default.FormatListNumbered, "Liste numérotée", viewModel::toggleNumbered)
+                ToolButton(Icons.Default.FormatQuote, "Citation", viewModel::toggleQuote)
+                ToolButton(Icons.Default.Code, "Code", viewModel::toggleCode)
+                ToolButton(Icons.Default.Link, "Lien", viewModel::insertLink)
+            }
+        }
+    }
+}
+
+@Composable
+private fun ToolButton(
+    icon: ImageVector,
+    description: String,
     onClick: () -> Unit,
 ) {
-    TextButton(onClick = onClick) {
-        Text(label, fontWeight = FontWeight.Bold)
+    IconButton(onClick = onClick) { Icon(icon, contentDescription = description) }
+}
+
+/** Aperçu rendu (Markwon : barré et cases à cocher compris), aux couleurs du thème de l'app. */
+@Composable
+private fun NotePreview(
+    title: String,
+    body: String,
+    modifier: Modifier = Modifier,
+) {
+    val textColor = MaterialTheme.colorScheme.onSurface.toArgb()
+    val linkColor = MaterialTheme.colorScheme.primary.toArgb()
+    val outlineColor = MaterialTheme.colorScheme.outline.toArgb()
+    val checkColor = MaterialTheme.colorScheme.onPrimary.toArgb()
+    val context = LocalContext.current
+    val markwon =
+        remember(context, linkColor, outlineColor, checkColor) {
+            Markwon
+                .builder(context)
+                .usePlugin(StrikethroughPlugin.create())
+                .usePlugin(TaskListPlugin.create(linkColor, outlineColor, checkColor))
+                .build()
+        }
+    Column(modifier = modifier.fillMaxWidth().verticalScroll(rememberScrollState())) {
+        Text(
+            title.ifBlank { "Sans titre" },
+            style = MaterialTheme.typography.headlineSmall,
+            color = MaterialTheme.colorScheme.onSurface,
+        )
+        AndroidView(
+            factory = { TextView(it) },
+            update = { view ->
+                view.setTextColor(textColor)
+                view.setLinkTextColor(linkColor)
+                markwon.setMarkdown(view, body)
+            },
+            modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
+        )
     }
 }

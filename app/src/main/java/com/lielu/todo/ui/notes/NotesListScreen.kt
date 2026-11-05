@@ -193,7 +193,7 @@ private fun NoteCard(
             )
             if (note.body.isNotBlank()) {
                 Text(
-                    note.body.take(120),
+                    MarkdownEditing.plainPreview(note.body),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 2,

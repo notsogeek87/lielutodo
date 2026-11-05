@@ -7,7 +7,6 @@ import androidx.lifecycle.viewModelScope
 import com.lielu.todo.data.notes.Folder
 import com.lielu.todo.data.notes.NotesRepository
 import com.lielu.todo.data.notes.NotesSync
-import com.lielu.todo.data.settings.JoplinSettings
 import com.lielu.todo.data.settings.SettingsRepository
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.FlowPreview
@@ -18,9 +17,13 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.launchIn
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+
+/** État d'enregistrement affiché sous la note. */
+enum class SaveState { SAVED, PENDING, NOT_SYNCED }
 
 @OptIn(FlowPreview::class)
 class NoteEditViewModel(
@@ -29,6 +32,7 @@ class NoteEditViewModel(
     private val notesSync: NotesSync,
     private val settingsRepository: SettingsRepository,
     private val appScope: CoroutineScope,
+    private val clock: () -> Long = System::currentTimeMillis,
 ) : ViewModel() {
     private val _title = MutableStateFlow("")
     val title: StateFlow<String> = _title
@@ -40,7 +44,11 @@ class NoteEditViewModel(
     private val _exists = MutableStateFlow(true)
     val exists: StateFlow<Boolean> = _exists
 
-    /** Carnets connus et carnet courant de la note (pour le sélecteur). */
+    /** Note encore vide à l'ouverture (nouvelle note) : l'écran met le curseur dans le titre et ouvre le clavier. */
+    private val _startsEmpty = MutableStateFlow<Boolean?>(null)
+    val startsEmpty: StateFlow<Boolean?> = _startsEmpty
+
+    /** Carnets connus (pour le sélecteur). */
     val folders: StateFlow<List<Folder>> =
         notesRepository.folders.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
@@ -51,8 +59,33 @@ class NoteEditViewModel(
     private val _hasUnsavedChanges = MutableStateFlow(false)
     val hasUnsavedChanges: StateFlow<Boolean> = _hasUnsavedChanges
 
+    /** Enregistrée ici mais pas encore envoyée au serveur Joplin. */
+    private val notSynced: StateFlow<Boolean> =
+        notesRepository.notes
+            .map { list -> list.firstOrNull { it.id == noteId }?.dirty == true }
+            .stateIn(viewModelScope, SharingStarted.Eagerly, false)
+
+    val saveState: StateFlow<SaveState> =
+        combine(_hasUnsavedChanges, notSynced) { unsaved, dirty ->
+            when {
+                unsaved -> SaveState.PENDING
+                dirty -> SaveState.NOT_SYNCED
+                else -> SaveState.SAVED
+            }
+        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), SaveState.SAVED)
+
     /** Contenu au chargement : on ne sauvegarde que ce qui a vraiment changé, pas le premier affichage. */
     private var initial: Pair<String, String>? = null
+
+    // Annuler / rétablir sur le corps : une étape par rafale de frappe (pause > HISTORY_PAUSE_MS) ou par action
+    // de la barre d'outils.
+    private val undoStack = ArrayDeque<TextFieldValue>()
+    private val redoStack = ArrayDeque<TextFieldValue>()
+    private var lastEditAt = 0L
+    private val _canUndo = MutableStateFlow(false)
+    val canUndo: StateFlow<Boolean> = _canUndo
+    private val _canRedo = MutableStateFlow(false)
+    val canRedo: StateFlow<Boolean> = _canRedo
 
     init {
         viewModelScope.launch {
@@ -65,6 +98,7 @@ class NoteEditViewModel(
             _body.value = TextFieldValue(note.body, TextRange(note.body.length))
             _parentId.value = note.parentId
             initial = note.title to note.body
+            _startsEmpty.value = note.title.isBlank() && note.body.isBlank()
         }
         combine(_title, _body) { title, body -> title to body.text }
             .onEach { (title, bodyText) ->
@@ -78,45 +112,79 @@ class NoteEditViewModel(
     }
 
     fun onTitleChanged(value: String) {
-        _title.value = value
+        // Le titre Joplin tient sur une ligne : un retour collé passe dans le corps.
+        _title.value = value.replace('\n', ' ')
     }
 
+    /** Frappe dans le corps : prolonge les listes à la ligne et note l'étape pour « Annuler ». */
     fun onBodyChanged(value: TextFieldValue) {
-        _body.value = value
-    }
-
-    /** Entoure la sélection courante (ou insère les marqueurs à la position du curseur) avec [prefix]/[suffix]. */
-    fun wrapSelection(
-        prefix: String,
-        suffix: String,
-    ) {
         val current = _body.value
-        val selection = current.selection
-        val text = current.text
-        val newText: String
-        val newCursor: Int
-        if (!selection.collapsed) {
-            val selected = text.substring(selection.min, selection.max)
-            newText = text.replaceRange(selection.min, selection.max, "$prefix$selected$suffix")
-            newCursor = selection.min + prefix.length + selected.length + suffix.length
-        } else {
-            newText = text.replaceRange(selection.min, selection.max, "$prefix$suffix")
-            newCursor = selection.min + prefix.length
+        if (value.text == current.text) {
+            _body.value = value // simple déplacement du curseur ou de la sélection
+            return
         }
-        _body.value = TextFieldValue(newText, TextRange(newCursor))
+        val now = clock()
+        if (now - lastEditAt > HISTORY_PAUSE_MS || undoStack.isEmpty()) pushUndo(current)
+        lastEditAt = now
+        _body.value = MarkdownEditing.continueList(current, value)
     }
 
-    /** Insère un modèle Markdown [snippet] à la position du curseur (sur une nouvelle ligne si en milieu de ligne). */
-    fun insertSnippet(snippet: String) {
+    // Barre d'outils : chaque action est une étape d'annulation à elle seule.
+    fun toggleBold() = edit { MarkdownEditing.toggleWrap(it, "**") }
+
+    fun toggleItalic() = edit { MarkdownEditing.toggleWrap(it, "*") }
+
+    fun toggleStrike() = edit { MarkdownEditing.toggleWrap(it, "~~") }
+
+    fun toggleCode() = edit { MarkdownEditing.toggleWrap(it, "`") }
+
+    fun toggleHeading() = edit { MarkdownEditing.toggleLinePrefix(it, MarkdownEditing.HEADING) }
+
+    fun toggleBullet() = edit { MarkdownEditing.toggleLinePrefix(it, MarkdownEditing.BULLET) }
+
+    fun toggleNumbered() = edit { MarkdownEditing.toggleLinePrefix(it, MarkdownEditing.NUMBERED) }
+
+    fun toggleCheckbox() = edit { MarkdownEditing.toggleCheckbox(it) }
+
+    fun toggleQuote() = edit { MarkdownEditing.toggleLinePrefix(it, MarkdownEditing.QUOTE) }
+
+    fun insertLink() = edit { MarkdownEditing.insertLink(it) }
+
+    fun undo() {
+        val previous = undoStack.removeLastOrNull() ?: return
+        redoStack.addLast(_body.value)
+        _body.value = previous
+        lastEditAt = 0L
+        refreshHistory()
+    }
+
+    fun redo() {
+        val next = redoStack.removeLastOrNull() ?: return
+        undoStack.addLast(_body.value)
+        _body.value = next
+        lastEditAt = 0L
+        refreshHistory()
+    }
+
+    private fun edit(transform: (TextFieldValue) -> TextFieldValue) {
         val current = _body.value
-        val pos = current.selection.min
-        val text = current.text
-        val lineStart = text.lastIndexOf('\n', pos - 1) + 1
-        val atLineStart = text.substring(lineStart, pos).isBlank()
-        val insertion = if (atLineStart) snippet else "\n$snippet"
-        val newText = text.replaceRange(pos, pos, insertion)
-        val newCursor = pos + insertion.length
-        _body.value = TextFieldValue(newText, TextRange(newCursor))
+        val next = transform(current)
+        if (next == current) return
+        pushUndo(current)
+        lastEditAt = 0L // la frappe suivante ouvre une nouvelle étape
+        _body.value = next
+    }
+
+    private fun pushUndo(value: TextFieldValue) {
+        undoStack.addLast(value)
+        if (undoStack.size > MAX_HISTORY) undoStack.removeFirst()
+        redoStack.clear()
+        refreshHistory()
+    }
+
+    private fun refreshHistory() {
+        _canUndo.value = undoStack.isNotEmpty()
+        _canRedo.value = redoStack.isNotEmpty()
     }
 
     fun onFolderSelected(folderId: String) {
@@ -148,11 +216,19 @@ class NoteEditViewModel(
     }
 
     suspend fun finish() {
-        val title = _title.value
+        var title = _title.value
         val body = _body.value.text
+        // Note sans titre : Joplin (et la liste) affichent la première ligne du texte.
+        if (title.isBlank() && body.isNotBlank()) title = MarkdownEditing.titleFromBody(body)
         if (initial != null && (title to body) != initial) save(title, body)
         val note = notesRepository.getById(noteId) ?: return
-        if (!note.deleted && note.title.isBlank() && note.body.isBlank()) notesRepository.delete(noteId)
+        if (!note.deleted && note.title.isBlank() && note.body.isBlank()) {
+            if (note.serverRaw == null) {
+                notesRepository.deleteById(noteId) // jamais envoyée : rien à faire côté serveur
+                return
+            }
+            notesRepository.delete(noteId)
+        }
         syncIfEnabled()
     }
 
@@ -166,7 +242,12 @@ class NoteEditViewModel(
     }
 
     private suspend fun syncIfEnabled() {
-        val joplin: JoplinSettings = settingsRepository.joplin.first()
+        val joplin = settingsRepository.joplin.first()
         if (joplin.syncEnabled && joplin.isConfigured) notesSync.syncNow()
+    }
+
+    private companion object {
+        const val HISTORY_PAUSE_MS = 1_000L
+        const val MAX_HISTORY = 100
     }
 }

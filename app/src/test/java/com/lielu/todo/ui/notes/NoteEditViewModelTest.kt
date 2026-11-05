@@ -15,8 +15,9 @@ import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
-import org.junit.Assert.assertTrue
+import org.junit.Assert.assertNull
 import org.junit.Before
 import org.junit.Test
 
@@ -50,7 +51,8 @@ class NoteEditViewModelTest {
 
             vm.finish()
 
-            assertTrue(notes.getById(note.id)?.deleted == true)
+            // Jamais envoyée au serveur : retirée tout de suite, sans passage par la corbeille Joplin.
+            assertNull(notes.getById(note.id))
         }
 
     @Test
@@ -84,83 +86,6 @@ class NoteEditViewModelTest {
         }
 
     @Test
-    fun wrapSelectionEntoureLaSelection() =
-        runTest {
-            val settings = FakeSettingsRepository()
-            val notes = FakeNotesRepository()
-            val note = notes.create()
-            notes.upsert(
-                Note(
-                    id = note.id,
-                    title = "t",
-                    body = "le mot important ici",
-                    userUpdatedTime = 1L,
-                    dirty = true,
-                ),
-            )
-            val vm = NoteEditViewModel(note.id, notes, syncStub(settings, notes), settings, backgroundScope)
-            testDispatcher.scheduler.advanceUntilIdle()
-            vm.onBodyChanged(TextFieldValue("le mot important ici", TextRange(7, 16)))
-
-            vm.wrapSelection("**", "**")
-
-            val bodyValue = vm.body.first()
-            assertEquals("le mot **important** ici", bodyValue.text)
-        }
-
-    @Test
-    fun wrapSelectionSansSelectionInsereAuCurseur() =
-        runTest {
-            val settings = FakeSettingsRepository()
-            val notes = FakeNotesRepository()
-            val note = notes.create()
-            notes.upsert(Note(id = note.id, title = "t", body = "abc", userUpdatedTime = 1L, dirty = true))
-            val vm = NoteEditViewModel(note.id, notes, syncStub(settings, notes), settings, backgroundScope)
-            testDispatcher.scheduler.advanceUntilIdle()
-            vm.onBodyChanged(TextFieldValue("abc", TextRange(1)))
-
-            vm.wrapSelection("**", "**")
-
-            val bodyValue = vm.body.first()
-            assertEquals("a****bc", bodyValue.text)
-            assertEquals(3, bodyValue.selection.start)
-        }
-
-    @Test
-    fun insertSnippetAuMilieuDeLignePasseALaLigne() =
-        runTest {
-            val settings = FakeSettingsRepository()
-            val notes = FakeNotesRepository()
-            val note = notes.create()
-            notes.upsert(Note(id = note.id, title = "t", body = "avant apres", userUpdatedTime = 1L, dirty = true))
-            val vm = NoteEditViewModel(note.id, notes, syncStub(settings, notes), settings, backgroundScope)
-            testDispatcher.scheduler.advanceUntilIdle()
-            vm.onBodyChanged(TextFieldValue("avant apres", TextRange(5)))
-
-            vm.insertSnippet("- élément")
-
-            val bodyValue = vm.body.first()
-            assertEquals("avant\n- élément apres", bodyValue.text)
-        }
-
-    @Test
-    fun insertSnippetEnDebutDeLigneResteSurLaLigne() =
-        runTest {
-            val settings = FakeSettingsRepository()
-            val notes = FakeNotesRepository()
-            val note = notes.create()
-            notes.upsert(Note(id = note.id, title = "t", body = "ligne1\nligne2", userUpdatedTime = 1L, dirty = true))
-            val vm = NoteEditViewModel(note.id, notes, syncStub(settings, notes), settings, backgroundScope)
-            testDispatcher.scheduler.advanceUntilIdle()
-            vm.onBodyChanged(TextFieldValue("ligne1\nligne2", TextRange(7)))
-
-            vm.insertSnippet("- élément")
-
-            val bodyValue = vm.body.first()
-            assertEquals("ligne1\n- élémentligne2", bodyValue.text)
-        }
-
-    @Test
     fun laDerniereFrappeEstEnregistreeALaFermeture() =
         runTest {
             val settings = FakeSettingsRepository()
@@ -175,5 +100,85 @@ class NoteEditViewModelTest {
             vm.finish()
 
             assertEquals("début et fin", notes.getById(note.id)?.body)
+        }
+
+    @Test
+    fun uneNoteSansTitreRecoitLaPremiereLigneALaFermeture() =
+        runTest {
+            val settings = FakeSettingsRepository()
+            val notes = FakeNotesRepository()
+            val note = notes.create()
+            val vm = NoteEditViewModel(note.id, notes, syncStub(settings, notes), settings, backgroundScope)
+            testDispatcher.scheduler.advanceUntilIdle()
+            vm.onBodyChanged(TextFieldValue("## Courses de **samedi**\n- pain"))
+
+            vm.finish()
+
+            assertEquals("Courses de samedi", notes.getById(note.id)?.title)
+        }
+
+    @Test
+    fun annulerPuisRetablirUneActionDeLaBarre() =
+        runTest {
+            val settings = FakeSettingsRepository()
+            val notes = FakeNotesRepository()
+            val note = notes.create()
+            notes.save(note.id, "t", "pain")
+            val vm = NoteEditViewModel(note.id, notes, syncStub(settings, notes), settings, backgroundScope)
+            testDispatcher.scheduler.advanceUntilIdle()
+
+            vm.toggleCheckbox()
+            assertEquals("- [ ] pain", vm.body.first().text)
+            vm.undo()
+            assertEquals("pain", vm.body.first().text)
+            assertFalse(vm.canUndo.first())
+            vm.redo()
+
+            assertEquals("- [ ] pain", vm.body.first().text)
+        }
+
+    @Test
+    fun laFrappeRegroupeUneRafaleEnUneEtapeDAnnulation() =
+        runTest {
+            val settings = FakeSettingsRepository()
+            val notes = FakeNotesRepository()
+            val note = notes.create()
+            var now = 0L
+            val vm =
+                NoteEditViewModel(note.id, notes, syncStub(settings, notes), settings, backgroundScope, clock = { now })
+            testDispatcher.scheduler.advanceUntilIdle()
+            now = 5_000L
+            vm.onBodyChanged(TextFieldValue("a"))
+            now += 100
+            vm.onBodyChanged(TextFieldValue("ab"))
+            now += 5_000
+            vm.onBodyChanged(TextFieldValue("ab c"))
+
+            vm.undo()
+            assertEquals("ab", vm.body.first().text)
+            vm.undo()
+
+            assertEquals("", vm.body.first().text)
+        }
+
+    @Test
+    fun entreeSurUnElementDeListeProlongeLaListe() =
+        runTest {
+            val settings = FakeSettingsRepository()
+            val notes = FakeNotesRepository()
+            val note = notes.create()
+            val vm = NoteEditViewModel(note.id, notes, syncStub(settings, notes), settings, backgroundScope)
+            testDispatcher.scheduler.advanceUntilIdle()
+            vm.onBodyChanged(TextFieldValue("- [x] pain", TextRange(10)))
+
+            vm.onBodyChanged(TextFieldValue("- [x] pain\n", TextRange(11)))
+
+            assertEquals("- [x] pain\n- [ ] ", vm.body.first().text)
+            assertEquals(
+                17,
+                vm.body
+                    .first()
+                    .selection.start,
+            )
         }
 }
