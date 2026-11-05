@@ -46,8 +46,8 @@ import com.lielu.todo.data.api.VikunjaClient
 import com.lielu.todo.data.settings.JoplinSettings
 import com.lielu.todo.data.settings.SettingsRepository
 import com.lielu.todo.data.todo.TodoRepository
-import java.io.IOException
 import kotlinx.coroutines.launch
+import java.io.IOException
 
 @Composable
 fun LoginScreen(
