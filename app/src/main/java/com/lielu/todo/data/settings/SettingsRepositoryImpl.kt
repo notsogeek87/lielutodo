@@ -18,6 +18,13 @@ import kotlinx.coroutines.withContext
 /** Rangement du mot de passe Joplin hors DataStore (le DataStore part dans la sauvegarde Android). */
 interface SecretStore {
     var joplinPassword: String
+
+    /**
+     * Copie de secours du serveur et de l'e-mail Joplin, à côté de la session Vikunja (qui survit aux mises à jour) :
+     * le compte Joplin reste connu même si le DataStore perd ces clés.
+     */
+    var joplinServer: String
+    var joplinEmail: String
 }
 
 class SettingsRepositoryImpl(
@@ -93,28 +100,50 @@ class SettingsRepositoryImpl(
 
     override val joplin: Flow<JoplinSettings> =
         combine(dataStore.data, joplinPassword) { prefs, password ->
+            val email = prefs[Keys.JOPLIN_EMAIL]?.takeIf { it.isNotBlank() } ?: secrets.joplinEmail
+            // Mot de passe illisible au démarrage (Keystore pas encore prêt, ex. relance juste après une mise à
+            // jour) : relu ici plutôt que de rester vide jusqu'au prochain redémarrage de l'app.
+            val pwd =
+                password.ifEmpty {
+                    secrets.joplinPassword.also { if (it.isNotEmpty()) joplinPassword.value = it }
+                }
             JoplinSettings(
                 // Jamais saisi : serveur par défaut (les identifiants suffisent alors pour synchroniser).
-                serverUrl = prefs[Keys.JOPLIN_SERVER_URL]?.takeIf { it.isNotBlank() } ?: DEFAULT_JOPLIN_SERVER,
-                email = prefs[Keys.JOPLIN_EMAIL] ?: "",
-                password = password.ifEmpty { prefs[Keys.LEGACY_JOPLIN_PASSWORD].orEmpty() },
-                syncEnabled = prefs[Keys.JOPLIN_SYNC_ENABLED] ?: false,
+                serverUrl =
+                    prefs[Keys.JOPLIN_SERVER_URL]?.takeIf { it.isNotBlank() }
+                        ?: secrets.joplinServer.ifBlank { DEFAULT_JOPLIN_SERVER },
+                email = email,
+                password = pwd.ifEmpty { prefs[Keys.LEGACY_JOPLIN_PASSWORD].orEmpty() },
+                // Réglage absent (DataStore perdu) : actif dès qu'un compte est connu.
+                syncEnabled = prefs[Keys.JOPLIN_SYNC_ENABLED] ?: (email.isNotBlank() && pwd.isNotEmpty()),
             )
         }
 
     /** Les premières versions rangeaient le mot de passe Joplin en clair dans le DataStore : on le déplace. */
     suspend fun migrateLegacySecrets() {
-        val legacy = dataStore.data.first()[Keys.LEGACY_JOPLIN_PASSWORD] ?: return
+        val prefs = dataStore.data.first()
+        // Copie de secours du compte Joplin pour les installations qui l'avaient saisi avant qu'elle existe.
+        withContext(Dispatchers.IO) {
+            prefs[Keys.JOPLIN_SERVER_URL]?.takeIf { it.isNotBlank() && secrets.joplinServer.isBlank() }?.let {
+                secrets.joplinServer = it
+            }
+            prefs[Keys.JOPLIN_EMAIL]?.takeIf { it.isNotBlank() && secrets.joplinEmail.isBlank() }?.let {
+                secrets.joplinEmail = it
+            }
+        }
+        val legacy = prefs[Keys.LEGACY_JOPLIN_PASSWORD] ?: return
         if (joplinPassword.value.isEmpty() && legacy.isNotEmpty()) setJoplinPassword(legacy)
         dataStore.edit { it.remove(Keys.LEGACY_JOPLIN_PASSWORD) }
     }
 
     override suspend fun setJoplinServerUrl(url: String) {
         dataStore.edit { it[Keys.JOPLIN_SERVER_URL] = url.trim() }
+        withContext(Dispatchers.IO) { secrets.joplinServer = url.trim() }
     }
 
     override suspend fun setJoplinEmail(email: String) {
         dataStore.edit { it[Keys.JOPLIN_EMAIL] = email.trim() }
+        withContext(Dispatchers.IO) { secrets.joplinEmail = email.trim() }
     }
 
     override suspend fun setJoplinPassword(password: String) {

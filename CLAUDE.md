@@ -206,6 +206,9 @@ via son protocole de synchro (`POST /api/sessions` → `X-API-AUTH`, delta `item
   (`resourceContent`/`resourceBlob`), gardé hors ligne (APK : `files/joplin-resources/`, hors sauvegarde ; web : Cache
   Storage `lielutodo-joplin-resources`, épargné par `sw.js`). Aperçu : `NoteImages.split` (APK) / `renderMarkdown` +
   `data-jres` (web) ; une note qui contient une image s'ouvre en aperçu. CSP du site : `img-src … blob: https:`.
+- Identifiants Joplin : serveur + e-mail aussi copiés dans SharedPreferences `session` (`SecretStore.joplinServer/
+  joplinEmail`, secours si le DataStore perd ses clés). `SessionStore` ne crée JAMAIS de clé Keystore pour déchiffrer
+  (une clé recréée rendait les mots de passe illisibles pour toujours) ; un mot de passe illisible est relu plus tard.
 - APK : notes synchronisées à chaque ouverture/retour au premier plan (`MainActivity.syncNotesOnOpen`), « tirer pour
   rafraîchir » sur l'onglet Notes (`NotesSync.syncing`), carte « Notes non connectées » avec formulaire pré-rempli
   (`DEFAULT_JOPLIN_SERVER`, aussi valeur par défaut du réglage). Serveur + e-mail Joplin font partie de la section
