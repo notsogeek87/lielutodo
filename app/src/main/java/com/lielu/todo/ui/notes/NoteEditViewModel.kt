@@ -45,6 +45,10 @@ class NoteEditViewModel(
     private val _parentId = MutableStateFlow("")
     val parentId: StateFlow<String> = _parentId
 
+    /** `true` s'il y a des modifications pas encore enregistrées (bouton « Enregistrer » actif). */
+    private val _hasUnsavedChanges = MutableStateFlow(false)
+    val hasUnsavedChanges: StateFlow<Boolean> = _hasUnsavedChanges
+
     /** Contenu au chargement : on ne sauvegarde que ce qui a vraiment changé, pas le premier affichage. */
     private var initial: Pair<String, String>? = null
 
@@ -60,6 +64,10 @@ class NoteEditViewModel(
             _parentId.value = note.parentId
             initial = note.title to note.body
         }
+        combine(_title, _body) { title, body -> title to body.text }
+            .onEach { (title, bodyText) ->
+                _hasUnsavedChanges.value = initial != null && (title to bodyText) != initial
+            }.launchIn(viewModelScope)
         combine(_title, _body) { title, body -> title to body.text }
             .debounce(400)
             .onEach { (title, bodyText) ->
@@ -125,6 +133,15 @@ class NoteEditViewModel(
         }
     }
 
+    /** Bouton « Enregistrer » : sauvegarde immédiatement (sans attendre le debounce). */
+    fun onSaveClicked() {
+        viewModelScope.launch {
+            save(_title.value, _body.value.text)
+            initial = _title.value to _body.value.text
+            _hasUnsavedChanges.value = false
+        }
+    }
+
     /** Appelé quand l'écran se ferme : supprime la note si elle est restée vide (titre et corps vides). */
     fun onCleared() {
         viewModelScope.launch {
@@ -141,6 +158,8 @@ class NoteEditViewModel(
         body: String,
     ) {
         notesRepository.save(noteId, title, body)
+        initial = title to body
+        _hasUnsavedChanges.value = false
         syncIfEnabled()
     }
 

@@ -14,6 +14,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Save
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DropdownMenu
@@ -56,6 +57,7 @@ fun NoteEditScreen(
     val exists by viewModel.exists.collectAsState()
     val folders by viewModel.folders.collectAsState()
     val parentId by viewModel.parentId.collectAsState()
+    val hasUnsavedChanges by viewModel.hasUnsavedChanges.collectAsState()
     var showDeleteConfirm by remember { mutableStateOf(false) }
     var preview by remember { mutableStateOf(false) }
     var folderMenuOpen by remember { mutableStateOf(false) }
@@ -79,6 +81,9 @@ fun NoteEditScreen(
                     }
                 },
                 actions = {
+                    IconButton(onClick = viewModel::onSaveClicked, enabled = hasUnsavedChanges) {
+                        Icon(Icons.Default.Save, contentDescription = "Enregistrer")
+                    }
                     IconButton(onClick = { preview = !preview }) {
                         Icon(
                             if (preview) Icons.Default.Edit else Icons.Default.Visibility,
