@@ -105,7 +105,8 @@ class NoteEditViewModelTest {
 
             vm.wrapSelection("**", "**")
 
-            assertEquals("le mot **important** ici", vm.body.first().text)
+            val bodyValue = vm.body.first()
+            assertEquals("le mot **important** ici", bodyValue.text)
         }
 
     @Test
@@ -121,8 +122,9 @@ class NoteEditViewModelTest {
 
             vm.wrapSelection("**", "**")
 
-            assertEquals("a****bc", vm.body.first().text)
-            assertEquals(3, vm.body.first().selection.start)
+            val bodyValue = vm.body.first()
+            assertEquals("a****bc", bodyValue.text)
+            assertEquals(3, bodyValue.selection.start)
         }
 
     @Test
@@ -138,7 +140,8 @@ class NoteEditViewModelTest {
 
             vm.insertSnippet("- élément")
 
-            assertEquals("avant\n- élément apres", vm.body.first().text)
+            val bodyValue = vm.body.first()
+            assertEquals("avant\n- élément apres", bodyValue.text)
         }
 
     @Test
@@ -154,6 +157,7 @@ class NoteEditViewModelTest {
 
             vm.insertSnippet("- élément")
 
-            assertEquals("ligne1\n- élémentligne2", vm.body.first().text)
+            val bodyValue = vm.body.first()
+            assertEquals("ligne1\n- élémentligne2", bodyValue.text)
         }
 }
