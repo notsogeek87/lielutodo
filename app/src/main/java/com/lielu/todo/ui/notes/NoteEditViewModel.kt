@@ -143,7 +143,7 @@ class NoteEditViewModel(
     }
 
     /** Appelé quand l'écran se ferme : supprime la note si elle est restée vide (titre et corps vides). */
-    fun onCleared() {
+    fun onScreenDismissed() {
         viewModelScope.launch {
             val note = notesRepository.getById(noteId) ?: return@launch
             if (note.title.isBlank() && note.body.isBlank()) {

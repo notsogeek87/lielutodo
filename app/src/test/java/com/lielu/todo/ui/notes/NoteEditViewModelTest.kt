@@ -48,7 +48,7 @@ class NoteEditViewModelTest {
             val vm = NoteEditViewModel(note.id, notes, syncStub(settings, notes), settings)
             testDispatcher.scheduler.advanceUntilIdle()
 
-            vm.onCleared()
+            vm.onScreenDismissed()
             testDispatcher.scheduler.advanceUntilIdle()
 
             assertNull(notes.getById(note.id))
@@ -64,7 +64,7 @@ class NoteEditViewModelTest {
             val vm = NoteEditViewModel(note.id, notes, syncStub(settings, notes), settings)
             testDispatcher.scheduler.advanceUntilIdle()
 
-            vm.onCleared()
+            vm.onScreenDismissed()
             testDispatcher.scheduler.advanceUntilIdle()
 
             assertNotNull(notes.getById(note.id))
@@ -80,7 +80,7 @@ class NoteEditViewModelTest {
             val vm = NoteEditViewModel(note.id, notes, syncStub(settings, notes), settings)
             testDispatcher.scheduler.advanceUntilIdle()
 
-            vm.onCleared()
+            vm.onScreenDismissed()
             testDispatcher.scheduler.advanceUntilIdle()
 
             assertNotNull(notes.getById(note.id))
