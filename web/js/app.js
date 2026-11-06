@@ -37,6 +37,7 @@ const persistUi = () => {
 };
 
 let sess = session.load();
+let bootGen = 0;
 let store = null;
 let ctx = null;
 let route = { name: 'inbox' };
@@ -60,10 +61,18 @@ export const go = (hash) => { if (location.hash === hash) { route = parseRoute()
 function boot() {
   applyTheme();
   if (!sess) return renderLogin();
-  const api = createApi(() => sess, () => {
-    session.clear(); store?.reset(); sess = null; renderLogin('Session expirée, reconnectez-vous.');
-  });
+  // Chaque démarrage a son propre client : celui d'une session expirée cesse d'envoyer quoi que ce soit (sinon ses
+  // minuteries enverraient ses écritures une seconde fois avec la nouvelle session).
+  const gen = ++bootGen;
+  const api = createApi(() => (gen === bootGen ? sess : null), () => {
+    // Jeton refusé et pas de renouvellement possible : on redemande la connexion SANS effacer le cache local, les
+    // modifications pas encore envoyées partiront une fois reconnecté (même compte, vérifié au démarrage).
+    if (!sess) return;
+    session.clear(); sess = null; renderLogin('Session expirée, reconnectez-vous.');
+  }, (renewed) => { if (gen === bootGen) { sess = renewed; session.save(renewed); } });
   store = createStore(api);
+  // Autre compte que celui du cache : ses écritures en attente ne doivent jamais partir sous ce compte-ci.
+  if (sess.userId && store.state.user?.id && store.state.user.id !== sess.userId) store.reset();
   // Dès que le serveur autorise l'appel direct, on cesse de passer par la réécriture du site.
   preferDirect(sess).then((direct) => {
     if (direct !== sess && sess) { sess = direct; session.save(direct); }
@@ -200,7 +209,8 @@ function scheduleRender() {
 }
 
 function render() {
-  if (!store) return;
+  // Écran de connexion affiché (session expirée) : plus de barre latérale à redessiner.
+  if (!store || !$('#sidebar')) return;
   renderSidebar();
   renderBadge();
   renderContent();

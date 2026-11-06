@@ -5,6 +5,14 @@
   "cleanUrls": true,
   "rewrites": [
     {
+      "source": "/api/v1/login",
+      "destination": "https://task.lielu.eu/api/v1/login"
+    },
+    {
+      "source": "/api/v1/user/token/refresh",
+      "destination": "https://task.lielu.eu/api/v1/user/token/refresh"
+    },
+    {
       "source": "/vk/:path*",
       "destination": "https://task.lielu.eu/:path*"
     },

@@ -236,6 +236,12 @@ Même serveur Vikunja, même logique « local d'abord » que l'APK, en site stat
 `web/README.md`). `js/store.js` = `TodoRepository`, `js/parser.js` = `QuickAddParser` (port fidèle : toute évolution de
 l'un se répercute sur l'autre), `js/model.js` = `Models.kt`. Déployée sur Vercel (Root Directory `web`, réécriture
 `/vk/*` -> `task.lielu.eu`, simple repli : le site appelle le serveur en direct dès que `VIKUNJA_CORS_ORIGINS` l'autorise).
+Session Vikunja 2.x : le jeton ne dure que 10 min ; un cookie HttpOnly (30 j, chemin `/api/v1/user/token/refresh`, sans
+domaine) le renouvelle. Connexion ET renouvellement passent donc par `/api/v1/login` et `/api/v1/user/token/refresh`
+sur le site (réécritures dans les deux `vercel.json`) pour que le navigateur garde le cookie ; `createApi` renouvelle en
+silence sur un 401 et rejoue l'appel. Session impossible à renouveler : reconnexion demandée SANS effacer le cache ni
+les écritures en attente (`sess.userId` : un autre compte remet le cache à zéro avant tout envoi). L'APK, lui, se
+reconnecte avec le mot de passe mémorisé (`VikunjaClient.reauthenticate`).
 Tests : `node --test web/test/*.test.mjs` ; faux serveur : `web/dev/fake-server.mjs`. Les deux parseurs d'ajout rapide
 jouent les mêmes cas (`web/test/fixtures/quickadd.json`, `QuickAddSharedCasesTest`) : tout changement de l'un y ajoute un cas.
 Un nouveau type d'écriture se branche dans `store.js` (action + `apply`) ET dans le faux serveur. Assignation web =

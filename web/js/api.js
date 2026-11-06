@@ -41,6 +41,8 @@ export const session = {
 const base = (s) => (s.viaProxy ? `${PROXY_PREFIX}/api/v1` : `${s.baseUrl}/api/v1`);
 
 async function request(s, method, path, { query, body } = {}) {
+  // Session fermée (expirée, déconnexion) : rien ne part, comme hors ligne.
+  if (!s) throw new NetworkError('Session fermée');
   const qs = query ? `?${new URLSearchParams(query)}` : '';
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
@@ -73,13 +75,85 @@ async function request(s, method, path, { query, body } = {}) {
   return { status: res.status, text, headers: res.headers, json: () => JSON.parse(text) };
 }
 
-/** Appel authentifié avec la session courante ; `onUnauthorized` est appelé sur un 401. */
-export function createApi(getSession, onUnauthorized) {
+// Vikunja 2.x : le jeton de connexion ne dure que quelques minutes ; un cookie HttpOnly (30 jours, chemin
+// /api/v1/user/token/refresh, sans domaine imposé) en donne un nouveau. Pour que le navigateur le garde et le renvoie,
+// connexion ET renouvellement passent par ce même chemin sur le site (réécriture Vercel vers le serveur par défaut).
+const SAME_ORIGIN_API = '/api/v1';
+const canUseSameOrigin = (baseUrl) =>
+  baseUrl === DEFAULT_SERVER && typeof location !== 'undefined' && location.protocol.startsWith('http');
+
+async function sameOrigin(method, path, body) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
+  let res;
+  try {
+    res = await fetch(`${SAME_ORIGIN_API}${path}`, {
+      method,
+      signal: controller.signal,
+      credentials: 'same-origin',
+      headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
+      body: body ? JSON.stringify(body) : undefined,
+    });
+  } catch (e) {
+    throw new NetworkError(e.name === 'AbortError' ? 'Le serveur ne répond pas' : 'Serveur injoignable');
+  } finally {
+    clearTimeout(timer);
+  }
+  const text = await res.text();
+  let json = null;
+  try { json = JSON.parse(text); } catch { /* page HTML : réécriture absente */ }
+  if (!res.ok) throw new ApiError(res.status, json?.message || `Erreur ${res.status}`);
+  if (!json) throw new ApiError(404, 'Réponse inattendue');
+  return json;
+}
+
+/**
+ * Nouveau jeton à partir du cookie de renouvellement. Null si impossible (pas de cookie, refusé : il faut se
+ * reconnecter) ; une panne réseau remonte telle quelle (hors ligne : on garde la session).
+ */
+export async function refreshToken(s) {
+  if (!s?.cookieRefresh || !canUseSameOrigin(s.baseUrl)) return null;
+  try {
+    return (await sameOrigin('POST', '/user/token/refresh')).token || null;
+  } catch (e) {
+    if (e instanceof ApiError && e.code < 500) return null;
+    throw e;
+  }
+}
+
+/**
+ * Appel authentifié avec la session courante. Sur un 401, renouvelle le jeton en silence (un seul renouvellement à
+ * la fois) et recommence une fois ; `onUnauthorized` n'est appelé que si c'est impossible.
+ */
+export function createApi(getSession, onUnauthorized, onSessionRenewed) {
+  let renewing = null;
+  const renew = (rejected) => {
+    renewing ||= (async () => {
+      const s = getSession();
+      // Un autre appel a déjà obtenu un jeton neuf pendant que celui-ci attendait.
+      if (s && s.token !== rejected) return true;
+      const token = await refreshToken(s);
+      if (!token) return false;
+      onSessionRenewed?.({ ...s, token });
+      return true;
+    })().finally(() => { renewing = null; });
+    return renewing;
+  };
   return async (method, path, opts) => {
+    const sent = getSession();
     try {
-      return await request(getSession(), method, path, opts);
+      return await request(sent, method, path, opts);
     } catch (e) {
-      if (e instanceof ApiError && e.code === 401) onUnauthorized?.();
+      if (!(e instanceof ApiError && e.code === 401)) throw e;
+      if (await renew(sent?.token)) {
+        try {
+          return await request(getSession(), method, path, opts);
+        } catch (e2) {
+          if (e2 instanceof ApiError && e2.code === 401) onUnauthorized?.();
+          throw e2;
+        }
+      }
+      onUnauthorized?.();
       throw e;
     }
   };
@@ -90,10 +164,24 @@ export async function login(serverUrl, username, password, totp) {
   const baseUrl = normalizeUrl(serverUrl);
   const body = { username, password, long_token: true };
   if (totp && totp.trim()) body.totp_passcode = totp.trim();
+  const withUser = async (s) => {
+    // Compte connecté : sert à ne jamais envoyer les écritures en attente d'un autre compte (voir app.js).
+    try { return { ...s, userId: (await request(s, 'GET', '/user')).json().id || 0 }; } catch { return s; }
+  };
+  if (canUseSameOrigin(baseUrl)) {
+    try {
+      const res = await sameOrigin('POST', '/login', body);
+      // Les appels suivants passent par la réécriture /vk jusqu'à ce que l'appel direct soit autorisé (preferDirect).
+      return withUser({ baseUrl, viaProxy: true, token: res.token, cookieRefresh: true });
+    } catch (e) {
+      // Réécriture pas encore déployée (404, page HTML) : ancien chemin. Une vraie réponse (401, 412…) est définitive.
+      if (!(e instanceof ApiError && e.code === 404)) throw e;
+    }
+  }
   const tryVia = async (viaProxy) => {
     const s = { baseUrl, viaProxy, token: null };
     const res = await request(s, 'POST', '/login', { body });
-    return { ...s, token: res.json().token };
+    return withUser({ ...s, token: res.json().token });
   };
   try {
     return await tryVia(false);
