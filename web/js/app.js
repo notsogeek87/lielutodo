@@ -38,6 +38,7 @@ const persistUi = () => {
 
 let sess = session.load();
 let bootGen = 0;
+let vkApi = null;
 let store = null;
 let ctx = null;
 let route = { name: 'inbox' };
@@ -71,6 +72,7 @@ function boot() {
     if (!sess) return;
     session.clear(); sess = null; renderLogin('Session expirée, reconnectez-vous.');
   }, (renewed) => { if (gen === bootGen) { sess = renewed; session.save(renewed); } });
+  vkApi = api;
   store = createStore(api);
   // Autre compte que celui du cache : ses écritures en attente ne doivent jamais partir sous ce compte-ci.
   if (sess.userId && store.state.user?.id && store.state.user.id !== sess.userId) store.reset();
@@ -572,12 +574,20 @@ function openSettings() {
     }
     if (e.target.closest('[data-import]')) $('input[type=file]', m.root).click();
     if (e.target.closest('[data-logout]')) {
-      const unsent = store.state.ops.length + store.state.failed.length;
+      // Déconnecte les tâches (Vikunja) ET les notes (Joplin) : sessions, caches et écritures en attente.
+      const unsent = store.state.ops.length + store.state.failed.length
+        + (notes ? notes.state.notes.filter((n) => n.dirty).length + (notes.state.deletedFolders || []).length
+          + notes.state.folders.filter((f) => f.dirty).length : 0);
       const warning = unsent
-        ? `Se déconnecter ? ${unsent} modification${unsent > 1 ? 's' : ''} pas encore sur le serveur ${unsent > 1 ? 'seront perdues' : 'sera perdue'}.`
-        : 'Se déconnecter ?';
-      confirmDialog(warning, 'Se déconnecter', unsent > 0).then((ok) => {
+        ? `Se déconnecter des tâches et des notes ? ${unsent} modification${unsent > 1 ? 's' : ''} pas encore sur le serveur ${unsent > 1 ? 'seront perdues' : 'sera perdue'}.`
+        : 'Se déconnecter des tâches et des notes ?';
+      confirmDialog(warning, 'Se déconnecter', unsent > 0).then(async (ok) => {
         if (!ok) return;
+        // Côté serveur Vikunja : fin de la session et du cookie de renouvellement (au mieux, 3 s maximum).
+        await Promise.race([vkApi?.('POST', '/user/logout').catch(() => {}), new Promise((r) => setTimeout(r, 3000))]);
+        notes?.disconnect();
+        notes?.reset();
+        try { await globalThis.caches?.delete('lielutodo-joplin-resources'); } catch { /* pas de cache */ }
         session.clear(); store.reset(); location.hash = ''; location.reload();
       });
     }

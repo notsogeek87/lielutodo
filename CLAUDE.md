@@ -245,6 +245,8 @@ reconnecte avec le mot de passe mémorisé (`VikunjaClient.reauthenticate`).
 Adresses des serveurs : masquées sur les pages de connexion (tâches et notes), réglables seulement sur la page cachée
 `#/serveurs` (aucun lien, `js/servers.js`, clé `lielutodo.servers`, valeurs par défaut task/notes.lielu.eu). Changer
 de serveur de tâches déconnecte et vide le cache (après confirmation), changer de serveur Joplin déconnecte les notes.
+« Se déconnecter » (Réglages) déconnecte les DEUX : `POST /user/logout` Vikunja (au mieux, 3 s), session et cache des
+tâches, connexion et cache des notes, images Joplin en cache ; l'avertissement compte aussi les notes/carnets non envoyés.
 Tests : `node --test web/test/*.test.mjs` ; faux serveur : `web/dev/fake-server.mjs`. Les deux parseurs d'ajout rapide
 jouent les mêmes cas (`web/test/fixtures/quickadd.json`, `QuickAddSharedCasesTest`) : tout changement de l'un y ajoute un cas.
 Un nouveau type d'écriture se branche dans `store.js` (action + `apply`) ET dans le faux serveur. Assignation web =
