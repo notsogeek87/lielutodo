@@ -1,4 +1,5 @@
-import { ApiError, DEFAULT_SERVER, createApi, login, preferDirect, session } from './api.js';
+import { ApiError, createApi, login, preferDirect, session } from './api.js';
+import { CONFIG_HASH, saveServers, servers } from './servers.js';
 import { createStore, describeWrite } from './store.js';
 import { icon } from './icons.js';
 import { colorOf, todoistLevel } from './model.js';
@@ -8,7 +9,6 @@ import { mountComposer } from './composer.js';
 import { openDetail } from './detail.js';
 import { buildView, inboxProject, openTasks, sectionHtml, weekStrip } from './views.js';
 import { createNotesStore } from './notes/notes-store.js';
-import { DEFAULT_NOTES_SERVER } from './notes/joplin.js';
 import { createNotesView, lastNotesHash } from './notes/notes-view.js';
 import {
   $, $$, closePopover, closeTopModal, confirmDialog, esc, menu, modal, promptDialog, toast, PROJECT_COLORS,
@@ -60,6 +60,7 @@ export const go = (hash) => { if (location.hash === hash) { route = parseRoute()
 // ---------- Démarrage ----------
 function boot() {
   applyTheme();
+  if (location.hash === CONFIG_HASH) return renderServerConfig();
   if (!sess) return renderLogin();
   // Chaque démarrage a son propre client : celui d'une session expirée cesse d'envoyer quoi que ce soit (sinon ses
   // minuteries enverraient ses écritures une seconde fois avec la nouvelle session).
@@ -123,15 +124,13 @@ function renderLogin(message = '') {
   $('#app').innerHTML = `
     <div class="login-wrap"><form class="login" autocomplete="on">
       <img class="logo" src="icon.svg" alt="" width="64" height="64">
-      <h1>LieluTodo</h1><p>Connectez-vous à votre serveur Vikunja.</p>
-      <div class="fl"><label for="srv">Serveur</label><input class="field" id="srv" name="server" value="${esc(DEFAULT_SERVER)}" inputmode="url" autocapitalize="off" spellcheck="false" required></div>
+      <h1>LieluTodo</h1><p>Connectez-vous à vos tâches.</p>
       <div class="fl"><label for="usr">Pseudo ou adresse e-mail</label><input class="field" id="usr" name="username" type="text" autocomplete="username" autocapitalize="off" spellcheck="false" required></div>
       <div class="fl"><label for="pwd">Mot de passe</label><input class="field" id="pwd" name="password" type="password" autocomplete="current-password" required></div>
       <div class="fl" id="totp-wrap" hidden><label for="totp">Code à deux facteurs</label><input class="field" id="totp" name="totp" inputmode="numeric" autocomplete="one-time-code" maxlength="8"></div>
       <div class="login-section">
         <h2>Notes (Joplin Server)</h2>
         ${jp ? `<p>Connectées : ${esc(jp.email)}</p>` : `<p>Facultatif : synchronise vos notes avec un serveur Joplin.</p>
-        <details class="fl"><summary class="view-sub">Serveur Joplin</summary><input class="field" id="jp-srv" name="jpServer" value="${esc(DEFAULT_NOTES_SERVER)}" inputmode="url" autocapitalize="off" spellcheck="false" aria-label="Serveur Joplin"></details>
         <div class="fl"><label for="jp-mail">E-mail Joplin</label><input class="field" id="jp-mail" name="jpEmail" type="email" autocomplete="off" autocapitalize="off" spellcheck="false"></div>
         <div class="fl"><label for="jp-pwd">Mot de passe Joplin</label><input class="field" id="jp-pwd" name="jpPassword" type="password" autocomplete="off"></div>`}
       </div>
@@ -150,13 +149,13 @@ function renderLogin(message = '') {
     btn.textContent = 'Connexion…';
     try {
       if (!jp && f.jpEmail.value.trim() && !f.jpPassword.value) throw new Error('Entrez le mot de passe Joplin (ou videz l’e-mail Joplin).');
-      sess = await login(f.server.value, f.username.value.trim(), f.password.value, f.totp.value);
+      sess = await login(servers().vikunja, f.username.value.trim(), f.password.value, f.totp.value);
       session.save(sess);
       let notesError = '';
       if (!jp && f.jpEmail.value.trim()) {
         btn.textContent = 'Connexion des notes…';
         try {
-          await notesStore.connect(f.jpServer.value || DEFAULT_NOTES_SERVER, f.jpEmail.value.trim(), f.jpPassword.value);
+          await notesStore.connect(servers().joplin, f.jpEmail.value.trim(), f.jpPassword.value);
         } catch (jex) { notesError = `Notes non connectées : ${jex.message || 'connexion impossible'}`; }
       }
       location.hash = '#/inbox';
@@ -175,6 +174,53 @@ function renderLogin(message = '') {
     }
   });
 }
+
+// ---------- Adresses des serveurs (page cachée #/serveurs, aucun lien n'y mène) ----------
+function renderServerConfig() {
+  const cur = servers();
+  $('#app').innerHTML = `
+    <div class="login-wrap"><form class="login" autocomplete="off">
+      <h1>Serveurs</h1><p>Adresses utilisées par ce navigateur.</p>
+      <div class="fl"><label for="cfg-vk">Tâches (Vikunja)</label><input class="field" id="cfg-vk" name="vikunja" value="${esc(cur.vikunja)}" inputmode="url" autocapitalize="off" spellcheck="false" required></div>
+      <div class="fl"><label for="cfg-jp">Notes (Joplin Server)</label><input class="field" id="cfg-jp" name="joplin" value="${esc(cur.joplin)}" inputmode="url" autocapitalize="off" spellcheck="false" required></div>
+      <div class="err" role="alert"></div>
+      <button class="btn primary">Enregistrer</button>
+      <button type="button" class="btn" data-cfg-default>Valeurs par défaut</button>
+      <button type="button" class="btn" data-cfg-back>Retour</button>
+      <small>Changer d’adresse demande de se reconnecter à ce serveur.</small>
+    </form></div>`;
+  const form = $('.login');
+  const leave = () => { location.hash = ''; location.reload(); };
+  const apply = async (wanted) => {
+    const before = servers();
+    let next;
+    try {
+      next = saveServers(wanted);
+    } catch (ex) {
+      $('.err', form).textContent = ex.message || 'Adresse invalide';
+      return;
+    }
+    // Autre serveur de tâches : la session et le cache de l'ancien n'ont plus de sens ici.
+    if (next.vikunja !== before.vikunja && sess) {
+      const s = JSON.parse(localStorage.getItem('lielutodo.pending') || 'null');
+      const unsent = s ? (s.ops?.length || 0) + (s.failed?.length || 0) : 0;
+      const ok = await confirmDialog(unsent
+        ? `Changer de serveur de tâches ? Vous serez déconnecté et ${unsent} modification${unsent > 1 ? 's' : ''} pas encore envoyée${unsent > 1 ? 's' : ''} ${unsent > 1 ? 'seront perdues' : 'sera perdue'}.`
+        : 'Changer de serveur de tâches ? Vous serez déconnecté.', 'Changer', unsent > 0);
+      if (!ok) { saveServers(before); return; }
+      session.clear();
+      store?.reset();
+      if (!store) { localStorage.removeItem('lielutodo.state'); localStorage.removeItem('lielutodo.pending'); }
+    }
+    if (next.joplin !== before.joplin) (notes || createNotesStore()).disconnect();
+    leave();
+  };
+  form.addEventListener('submit', (e) => { e.preventDefault(); apply({ vikunja: form.elements.vikunja.value, joplin: form.elements.joplin.value }); });
+  $('[data-cfg-default]', form).addEventListener('click', () => apply({}));
+  $('[data-cfg-back]', form).addEventListener('click', leave);
+}
+// La page de configuration s'ouvre aussi depuis l'écran de connexion (en tapant l'adresse).
+window.addEventListener('hashchange', () => { if (location.hash === CONFIG_HASH) renderServerConfig(); });
 
 // ---------- Squelette ----------
 function renderShell() {

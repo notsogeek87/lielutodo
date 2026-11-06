@@ -2,7 +2,7 @@
 // listes prolongées, annuler/rétablir, aperçu) et connexion au serveur Joplin. Mêmes règles que l'APK.
 import { icon } from '../icons.js';
 import { $, confirmDialog, esc, modal, promptDialog, toast } from '../ui.js';
-import { DEFAULT_NOTES_SERVER } from './joplin.js';
+import { servers } from '../servers.js';
 import * as md from './markdown.js';
 
 const fmt = new Intl.DateTimeFormat('fr-FR', { dateStyle: 'medium', timeStyle: 'short' });
@@ -20,10 +20,11 @@ export function createNotesView(store, go) {
   let editor = null; // { id, initial, history, redo, lastEditAt, timer, last, preview }
 
   // ---------- Connexion ----------
-  const connectForm = (title, text, { email = '', server = DEFAULT_NOTES_SERVER, onlyPassword = false } = {}) => `
+  // Adresse du serveur masquée : celle de la page cachée #/serveurs (ou celle de la session à renouveler).
+  const connectForm = (title, text, { email = '', server = servers().joplin, onlyPassword = false } = {}) => `
     <form class="notes-connect" data-notes-connect>
       <h2>${esc(title)}</h2><p class="view-sub">${esc(text)}</p>
-      <div class="fl" ${onlyPassword ? 'hidden' : ''}><label for="jp-srv">Serveur Joplin</label><input class="field" id="jp-srv" name="server" value="${esc(server)}" inputmode="url" autocapitalize="off" spellcheck="false" required></div>
+      <div class="fl" hidden><label for="jp-srv">Serveur Joplin</label><input class="field" id="jp-srv" name="server" value="${esc(server)}" inputmode="url" autocapitalize="off" spellcheck="false" required></div>
       <div class="fl" ${onlyPassword ? 'hidden' : ''}><label for="jp-mail">E-mail du compte Joplin</label><input class="field" id="jp-mail" name="email" type="email" value="${esc(email)}" autocomplete="username" required></div>
       <div class="fl"><label for="jp-pwd">Mot de passe Joplin</label><input class="field" id="jp-pwd" name="password" type="password" autocomplete="current-password" required></div>
       <div class="err" role="alert"></div>

@@ -242,6 +242,9 @@ sur le site (réécritures dans les deux `vercel.json`) pour que le navigateur g
 silence sur un 401 et rejoue l'appel. Session impossible à renouveler : reconnexion demandée SANS effacer le cache ni
 les écritures en attente (`sess.userId` : un autre compte remet le cache à zéro avant tout envoi). L'APK, lui, se
 reconnecte avec le mot de passe mémorisé (`VikunjaClient.reauthenticate`).
+Adresses des serveurs : masquées sur les pages de connexion (tâches et notes), réglables seulement sur la page cachée
+`#/serveurs` (aucun lien, `js/servers.js`, clé `lielutodo.servers`, valeurs par défaut task/notes.lielu.eu). Changer
+de serveur de tâches déconnecte et vide le cache (après confirmation), changer de serveur Joplin déconnecte les notes.
 Tests : `node --test web/test/*.test.mjs` ; faux serveur : `web/dev/fake-server.mjs`. Les deux parseurs d'ajout rapide
 jouent les mêmes cas (`web/test/fixtures/quickadd.json`, `QuickAddSharedCasesTest`) : tout changement de l'un y ajoute un cas.
 Un nouveau type d'écriture se branche dans `store.js` (action + `apply`) ET dans le faux serveur. Assignation web =
