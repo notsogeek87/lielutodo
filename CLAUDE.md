@@ -107,7 +107,9 @@ Auto Backup Android (`res/xml/backup_rules.xml`, `data_extraction_rules.xml`) in
 non-prerelease** du dépôt `BuildConfig.GITHUB_REPOSITORY` : `GITHUB_REPOSITORY` en CI, sinon
 `appGithubRepository` de `gradle.properties`. Elle n'est active que pour `production` en `release`
 (`AppContainer.updatesEnabled`) : debug et staging ont un autre `applicationId`, Android refuserait d'installer
-l'APK par-dessus. Vérification à chaque passage au premier plan (`force = true`, une requête GitHub par ouverture).
+l'APK par-dessus. Fenêtre de mise à jour au plus une fois par semaine (`UpdatePromptPolicy`, date dans `AppPrefs.updatePromptShownAt`) :
+à chaque passage au premier plan, vérification (`force = true`) seulement si la fenêtre ne s'est pas affichée depuis
+7 jours ; dans l'intervalle, l'utilisateur force la vérification dans Paramètres (affichée là, pas en fenêtre).
 Changer de signature casse la mise à jour (désinstallation nécessaire).
 
 ### Configuration Gradle notable

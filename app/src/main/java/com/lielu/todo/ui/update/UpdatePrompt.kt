@@ -20,18 +20,22 @@ import com.lielu.githubupdater.UpdateError
 import com.lielu.githubupdater.UpdateState
 import com.lielu.todo.R
 
-/** Fenêtre proposant une mise à jour trouvée au lancement, avec les étapes à suivre expliquées. */
+/**
+ * Fenêtre proposant une mise à jour trouvée à l'ouverture (au plus une fois par semaine), avec les étapes à suivre
+ * expliquées. Une vérification forcée dans Paramètres se poursuit dans Paramètres.
+ */
 @Composable
 fun UpdatePrompt(viewModel: AppUpdateViewModel) {
     val state by viewModel.state.collectAsState()
     val dismissed by viewModel.dismissed.collectAsState()
+    val promptAllowed by viewModel.promptAllowed.collectAsState()
     val userStarted by viewModel.userStarted.collectAsState()
     val appName = stringResource(R.string.app_name)
 
     // ON_START : au lancement ET quand l'app, restée en mémoire, repasse au premier plan.
     LifecycleEventEffect(Lifecycle.Event.ON_START) { viewModel.checkOnOpen() }
 
-    if (dismissed) return
+    if (dismissed || !promptAllowed) return
 
     when (val s = state) {
         is UpdateState.UpdateAvailable ->

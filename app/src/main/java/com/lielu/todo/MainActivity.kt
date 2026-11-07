@@ -70,7 +70,11 @@ class MainActivity : ComponentActivity() {
                             factory =
                                 viewModelFactory {
                                     initializer {
-                                        AppUpdateViewModel(container.updateManager, container.updatesEnabled)
+                                        AppUpdateViewModel(
+                                            container.updateManager,
+                                            container.updatesEnabled,
+                                            container.prefs,
+                                        )
                                     }
                                 },
                         )

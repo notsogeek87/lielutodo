@@ -52,6 +52,11 @@ class AppPrefs(
         get() = prefs.getString(KEY_CAL_NAME, "").orEmpty()
         set(value) = prefs.edit().putString(KEY_CAL_NAME, value).apply()
 
+    /** Dernière fois que la fenêtre de mise à jour automatique s'est affichée (ms), 0 si jamais. */
+    var updatePromptShownAt: Long
+        get() = prefs.getLong(KEY_UPDATE_PROMPT, 0L)
+        set(value) = prefs.edit().putLong(KEY_UPDATE_PROMPT, value).apply()
+
     var inboxShowDone: Boolean
         get() = prefs.getBoolean(KEY_INBOX_DONE, false)
         set(value) = prefs.edit().putBoolean(KEY_INBOX_DONE, value).apply()
@@ -131,6 +136,7 @@ class AppPrefs(
 
     private companion object {
         const val KEY_LOCK = "lock"
+        const val KEY_UPDATE_PROMPT = "update_prompt_shown_at"
         const val KEY_SOUND = "sound"
         const val KEY_CAL_ON = "calendar_sync"
         const val KEY_CAL_ID = "calendar_id"
