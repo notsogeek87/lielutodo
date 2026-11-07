@@ -124,10 +124,10 @@ fun NoteEditScreen(
             titleFocus.requestFocus()
             keyboard?.show()
         }
-        // Note avec images jointes : ouverte en aperçu (on voit les images), le crayon repasse en édition.
+        // Note existante : ouverte en lecture (rendu mis en forme), le crayon passe en édition Markdown.
         if (startsEmpty == false && !autoPreviewDone) {
             autoPreviewDone = true
-            if (NoteImages.hasImages(body.text)) preview = true
+            preview = true
         }
     }
 

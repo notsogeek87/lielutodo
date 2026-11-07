@@ -292,8 +292,9 @@ export function createNotesView(store, go) {
     if (content.dataset.view === key && editor?.id === id) { drawEditorStatus(content); return; }
     content.dataset.view = key;
     editor = { id, initial: { title: n.title, body: n.body }, history: [], redo: [], lastEditAt: 0, timer: null, last: null, preview: false };
-    // Note avec images jointes : ouverte en aperçu (on voit les images), le crayon repasse en édition.
-    const startInPreview = md.resourceIds(n.body).length > 0;
+    // Note existante : ouverte en lecture (rendu mis en forme), le crayon passe en édition Markdown.
+    // Une note encore vide (nouvelle) s'ouvre directement en édition.
+    const startInPreview = Boolean(n.title.trim() || n.body.trim());
     document.title = `${n.title || 'Note'} – LieluTodo`;
     content.innerHTML = `
       <div class="note-editor">
@@ -429,7 +430,9 @@ export function createNotesView(store, go) {
     const ta = $('.note-body', content);
     pane.hidden = !editor.preview;
     ta.hidden = editor.preview;
-    $('.md-toolbar', content).classList.toggle('dim', editor.preview);
+    $('.md-toolbar', content).hidden = editor.preview;
+    $('.note-title-input', content).readOnly = editor.preview;
+    content.querySelectorAll('[data-md=undo], [data-md=redo]').forEach((b) => { b.hidden = editor.preview; });
     const btn = $('[data-md=preview]', content);
     if (btn) {
       btn.innerHTML = icon(editor.preview ? 'edit' : 'eye');
