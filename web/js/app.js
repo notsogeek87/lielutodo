@@ -124,28 +124,39 @@ function renderLogin(message = '') {
   const notesStore = notes || createNotesStore();
   const jp = notesStore.connected ? notesStore.connection : null;
   $('#app').innerHTML = `
-    <div class="login-wrap"><form class="login" autocomplete="on">
+    <div class="login-wrap"><div class="login">
+      <form id="login-vk" autocomplete="on">
       <img class="logo" src="icon.svg" alt="" width="64" height="64">
       <h1>LieluTodo</h1><p>Connectez-vous à vos tâches.</p>
       <div class="fl"><label for="usr">Pseudo ou adresse e-mail</label><input class="field" id="usr" name="username" type="text" autocomplete="username" autocapitalize="off" spellcheck="false" required></div>
       <div class="fl"><label for="pwd">Mot de passe</label><input class="field" id="pwd" name="password" type="password" autocomplete="current-password" required></div>
       <div class="fl" id="totp-wrap" hidden><label for="totp">Code à deux facteurs</label><input class="field" id="totp" name="totp" inputmode="numeric" autocomplete="one-time-code" maxlength="8"></div>
-      <div class="login-section">
+      </form>
+      <!-- Formulaire Joplin séparé : un gestionnaire de mots de passe ne remplit qu'un identifiant par formulaire. -->
+      <form id="login-jp" class="login-section" autocomplete="on">
         <h2>Notes (Joplin Server)</h2>
         ${jp ? `<p>Connectées : ${esc(jp.email)}</p>` : `<p>Facultatif : synchronise vos notes avec un serveur Joplin.</p>
-        <div class="fl"><label for="jp-mail">E-mail Joplin</label><input class="field" id="jp-mail" name="jpEmail" type="email" autocomplete="off" autocapitalize="off" spellcheck="false"></div>
-        <div class="fl"><label for="jp-pwd">Mot de passe Joplin</label><input class="field" id="jp-pwd" name="jpPassword" type="password" autocomplete="off"></div>`}
-      </div>
+        <div class="fl"><label for="jp-mail">E-mail Joplin</label><input class="field" id="jp-mail" name="jpEmail" type="email" autocomplete="username" autocapitalize="off" spellcheck="false"></div>
+        <div class="fl"><label for="jp-pwd">Mot de passe Joplin</label><input class="field" id="jp-pwd" name="jpPassword" type="password" autocomplete="current-password"></div>`}
+      </form>
       <div class="err" role="alert">${esc(message)}</div>
-      <button class="btn primary">Se connecter</button>
+      <button class="btn primary" form="login-vk">Se connecter</button>
       <small>Vos tâches et vos notes restent lisibles et modifiables hors ligne.</small>
-    </form></div>`;
-  const form = $('.login');
+    </div></div>`;
+  const box = $('.login');
+  const form = $('#login-vk');
+  const jpForm = $('#login-jp');
+  // Entrée dans un champ Joplin = « Se connecter » (ce formulaire sans bouton ne s'envoie pas seul).
+  jpForm.addEventListener('submit', (e) => e.preventDefault());
+  jpForm.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && !e.isComposing) { e.preventDefault(); form.requestSubmit(); }
+  });
   form.addEventListener('submit', async (e) => {
     e.preventDefault();
-    const f = form.elements;
-    const err = $('.err', form);
-    const btn = $('button.btn', form);
+    const { username, password, totp } = form.elements;
+    const f = { username, password, totp, jpEmail: jpForm.elements.jpEmail, jpPassword: jpForm.elements.jpPassword };
+    const err = $('.err', box);
+    const btn = $('button.btn', box);
     err.textContent = '';
     btn.disabled = true;
     btn.textContent = 'Connexion…';

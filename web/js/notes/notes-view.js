@@ -24,7 +24,7 @@ export function createNotesView(store, go) {
   const connectForm = (title, text, { email = '', server = servers().joplin, onlyPassword = false } = {}) => `
     <form class="notes-connect" data-notes-connect>
       <h2>${esc(title)}</h2><p class="view-sub">${esc(text)}</p>
-      <div class="fl" hidden><label for="jp-srv">Serveur Joplin</label><input class="field" id="jp-srv" name="server" value="${esc(server)}" inputmode="url" autocapitalize="off" spellcheck="false" required></div>
+      <input type="hidden" name="server" value="${esc(server)}">
       <div class="fl" ${onlyPassword ? 'hidden' : ''}><label for="jp-mail">E-mail du compte Joplin</label><input class="field" id="jp-mail" name="email" type="email" value="${esc(email)}" autocomplete="username" required></div>
       <div class="fl"><label for="jp-pwd">Mot de passe Joplin</label><input class="field" id="jp-pwd" name="password" type="password" autocomplete="current-password" required></div>
       <div class="err" role="alert"></div>
