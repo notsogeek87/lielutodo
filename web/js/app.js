@@ -139,7 +139,7 @@ function renderLogin(message = '') {
       <form id="login-jp" class="login-section" autocomplete="on">
         <h2>Notes (Joplin Server)</h2>
         ${jp ? `<p>Connectées : ${esc(jp.email)}</p>` : `<p>Facultatif : synchronise vos notes avec un serveur Joplin.</p>
-        <label class="login-same"><input type="checkbox" id="jp-same" ${same ? 'checked' : ''}> Mêmes e-mail et mot de passe que pour les tâches</label>
+        <label class="login-same"><input type="checkbox" id="jp-same" ${same ? 'checked' : ''}> Même e-mail et mot de passe pour todo et notes</label>
         <div id="jp-fields" ${same ? 'hidden' : ''}>
         <div class="fl"><label for="jp-mail">E-mail Joplin</label><input class="field" id="jp-mail" name="jpEmail" type="email" autocomplete="username" autocapitalize="off" spellcheck="false"></div>
         <div class="fl"><label for="jp-pwd">Mot de passe Joplin</label><input class="field" id="jp-pwd" name="jpPassword" type="password" autocomplete="current-password"></div>
