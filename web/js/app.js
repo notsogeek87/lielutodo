@@ -119,10 +119,13 @@ function applyTheme() {
 function closeAllOverlays() { closePopover(); while (closeTopModal()); }
 
 // ---------- Connexion ----------
+const SAME_CREDS_KEY = 'lielutodo.loginSameCreds';
 function renderLogin(message = '') {
   // Notes Joplin : section facultative, comme dans l'app (rien n'est fait si l'e-mail Joplin reste vide).
   const notesStore = notes || createNotesStore();
   const jp = notesStore.connected ? notesStore.connection : null;
+  let same = false;
+  try { same = localStorage.getItem(SAME_CREDS_KEY) === '1'; } catch { /* ok */ }
   $('#app').innerHTML = `
     <div class="login-wrap"><div class="login">
       <form id="login-vk" autocomplete="on">
@@ -136,8 +139,11 @@ function renderLogin(message = '') {
       <form id="login-jp" class="login-section" autocomplete="on">
         <h2>Notes (Joplin Server)</h2>
         ${jp ? `<p>Connectées : ${esc(jp.email)}</p>` : `<p>Facultatif : synchronise vos notes avec un serveur Joplin.</p>
+        <label class="login-same"><input type="checkbox" id="jp-same" ${same ? 'checked' : ''}> Mêmes e-mail et mot de passe que pour les tâches</label>
+        <div id="jp-fields" ${same ? 'hidden' : ''}>
         <div class="fl"><label for="jp-mail">E-mail Joplin</label><input class="field" id="jp-mail" name="jpEmail" type="email" autocomplete="username" autocapitalize="off" spellcheck="false"></div>
-        <div class="fl"><label for="jp-pwd">Mot de passe Joplin</label><input class="field" id="jp-pwd" name="jpPassword" type="password" autocomplete="current-password"></div>`}
+        <div class="fl"><label for="jp-pwd">Mot de passe Joplin</label><input class="field" id="jp-pwd" name="jpPassword" type="password" autocomplete="current-password"></div>
+        </div>`}
       </form>
       <div class="err" role="alert">${esc(message)}</div>
       <button class="btn primary" form="login-vk">Se connecter</button>
@@ -148,6 +154,12 @@ function renderLogin(message = '') {
   const jpForm = $('#login-jp');
   // Entrée dans un champ Joplin = « Se connecter » (ce formulaire sans bouton ne s'envoie pas seul).
   jpForm.addEventListener('submit', (e) => e.preventDefault());
+  // Coche « mêmes identifiants » : les champs Joplin disparaissent, ceux des tâches servent aux deux (choix mémorisé).
+  const sameBox = $('#jp-same', jpForm);
+  sameBox?.addEventListener('change', () => {
+    $('#jp-fields', jpForm).hidden = sameBox.checked;
+    try { localStorage.setItem(SAME_CREDS_KEY, sameBox.checked ? '1' : '0'); } catch { /* ok */ }
+  });
   jpForm.addEventListener('keydown', (e) => {
     if (e.key === 'Enter' && !e.isComposing) { e.preventDefault(); form.requestSubmit(); }
   });
@@ -155,20 +167,24 @@ function renderLogin(message = '') {
     e.preventDefault();
     const { username, password, totp } = form.elements;
     const f = { username, password, totp, jpEmail: jpForm.elements.jpEmail, jpPassword: jpForm.elements.jpPassword };
+    const useSame = !jp && !!sameBox?.checked;
+    const jpEmail = useSame ? username.value.trim() : f.jpEmail?.value.trim() || '';
+    const jpPassword = useSame ? password.value : f.jpPassword?.value || '';
     const err = $('.err', box);
     const btn = $('button.btn', box);
     err.textContent = '';
     btn.disabled = true;
     btn.textContent = 'Connexion…';
     try {
-      if (!jp && f.jpEmail.value.trim() && !f.jpPassword.value) throw new Error('Entrez le mot de passe Joplin (ou videz l’e-mail Joplin).');
+      if (useSame && !jpEmail.includes('@')) throw new Error('Pour connecter aussi les notes, saisissez votre adresse e-mail (Joplin n’accepte pas de pseudo).');
+      if (!jp && jpEmail && !jpPassword) throw new Error('Entrez le mot de passe Joplin (ou videz l’e-mail Joplin).');
       sess = await login(servers().vikunja, f.username.value.trim(), f.password.value, f.totp.value);
       session.save(sess);
       let notesError = '';
-      if (!jp && f.jpEmail.value.trim()) {
+      if (!jp && jpEmail) {
         btn.textContent = 'Connexion des notes…';
         try {
-          await notesStore.connect(servers().joplin, f.jpEmail.value.trim(), f.jpPassword.value);
+          await notesStore.connect(servers().joplin, jpEmail, jpPassword);
         } catch (jex) { notesError = `Notes non connectées : ${jex.message || 'connexion impossible'}`; }
       }
       location.hash = '#/inbox';

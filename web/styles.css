@@ -333,6 +333,8 @@ select.field { appearance: auto; }
 .login-section { margin: 18px 0 8px; padding-top: 14px; border-top: 1px solid var(--line); }
 .login-section h2 { margin: 0; font-size: 15px; color: var(--brand); }
 .login-section p { margin: 2px 0 10px; font-size: 13px; }
+.login-same { display: flex; align-items: center; gap: 8px; margin: 0 0 10px; font-size: 14px; cursor: pointer; }
+.login-same input { width: 18px; height: 18px; margin: 0; accent-color: var(--brand); flex: none; }
 .md pre code { background: none; padding: 0; }
 .md a { color: var(--brand); }
 .share-form { display: flex; gap: 6px; }
