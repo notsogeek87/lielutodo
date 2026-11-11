@@ -94,16 +94,15 @@ fun LoginScreen(
         token: String,
         user: String,
     ) {
-        // Un autre compte ne doit pas voir le cache du précédent.
-        if (url != session.baseUrl || user != session.username) repository.reset()
-        session.save(url, token, user, password.takeIf { totp.isBlank() })
         if (sameCredentials) {
             joplinEmail = user
             joplinPassword = password
         }
+        val vikunjaPassword = password.takeIf { totp.isBlank() }
         scope.launch {
-            repository.refresh()
             // Notes facultatives : rien n'est enregistré tant que l'e-mail Joplin n'est pas rempli.
+            // Enregistré AVANT session.save : une fois connecté, cet écran quitte la composition et `scope` est
+            // annulé ; enregistré après (comme avant), les identifiants Joplin étaient presque toujours perdus.
             if (joplinEmail.isNotBlank()) {
                 settings.setJoplinServerUrl(joplinServer.trim().ifBlank { DEFAULT_JOPLIN_SERVER })
                 settings.setJoplinEmail(joplinEmail.trim())
@@ -113,6 +112,10 @@ fun LoginScreen(
                     joplinEmail.isNotBlank() && (joplinPassword.isNotBlank() || savedJoplin.password.isNotBlank())
                 settings.setJoplinSyncEnabled(joplinReady)
             }
+            // Un autre compte ne doit pas voir le cache du précédent.
+            if (url != session.baseUrl || user != session.username) repository.reset()
+            session.save(url, token, user, vikunjaPassword)
+            repository.refresh()
         }
     }
 
