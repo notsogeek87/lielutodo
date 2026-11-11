@@ -223,8 +223,9 @@ via son protocole de synchro (`POST /api/sessions` → `X-API-AUTH`, delta `item
   `settings` des sauvegardes (restaurés seulement si absents) ; le mot de passe jamais.
 - Web : la synchro des notes est visible (`meta.syncing`/`meta.progress` : ligne d'état sous le titre, roue du haut,
   « Récupération de vos notes… » à la première) ; contenus téléchargés 6 par 6. La page de connexion a, comme l'APK, une
-  section Notes facultative (formulaire séparé pour les gestionnaires de mots de passe ; coche « mêmes
-  identifiants » mémorisée dans `lielutodo.loginSameCreds` : e-mail/mot de passe des tâches réutilisés pour Joplin).
+  section Notes facultative (formulaire séparé pour les gestionnaires de mots de passe ; coche « Même
+  e-mail et mot de passe pour todo et notes », cochée par défaut, APK et web — web : choix mémorisé dans
+  `lielutodo.loginSameCreds` ; APK : décochée si un autre e-mail Joplin est déjà enregistré).
 - Test contre un vrai serveur : `JoplinServerIntegrationTest` (Kotlin) et le test « intégration » de
   `web/test/notes.test.mjs`, ignorés sans `JOPLIN_IT_URL` (+ `JOPLIN_IT_USER1/PASS1`, `USER2/PASS2`). Serveur local :
   `docker run -d --network host -e APP_BASE_URL=http://localhost:22300 -e APP_PORT=22300 -e MAX_TIME_DRIFT=0

@@ -124,8 +124,9 @@ function renderLogin(message = '') {
   // Notes Joplin : section facultative, comme dans l'app (rien n'est fait si l'e-mail Joplin reste vide).
   const notesStore = notes || createNotesStore();
   const jp = notesStore.connected ? notesStore.connection : null;
-  let same = false;
-  try { same = localStorage.getItem(SAME_CREDS_KEY) === '1'; } catch { /* ok */ }
+  // Cochée par défaut, comme dans l'APK ; le dernier choix est mémorisé dans ce navigateur.
+  let same = true;
+  try { same = localStorage.getItem(SAME_CREDS_KEY) !== '0'; } catch { /* ok */ }
   $('#app').innerHTML = `
     <div class="login-wrap"><div class="login">
       <form id="login-vk" autocomplete="on">

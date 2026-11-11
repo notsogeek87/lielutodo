@@ -5,6 +5,7 @@ import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.imePadding
@@ -12,10 +13,12 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
@@ -34,6 +37,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
@@ -72,9 +76,17 @@ fun LoginScreen(
     var joplinServer by remember { mutableStateOf("") }
     var joplinEmail by remember { mutableStateOf("") }
     var joplinPassword by remember { mutableStateOf("") }
+    // « Même e-mail et mot de passe pour todo et notes » : cochée par défaut, sauf si un autre e-mail Joplin
+    // est déjà enregistré (compte de notes distinct). Cochée, les champs Joplin disparaissent.
+    var sameCredentials by remember { mutableStateOf(true) }
+    var sameDecided by remember { mutableStateOf(false) }
     LaunchedEffect(savedJoplin) {
         if (joplinServer.isBlank()) joplinServer = savedJoplin.serverUrl.ifBlank { DEFAULT_JOPLIN_SERVER }
         if (joplinEmail.isBlank()) joplinEmail = savedJoplin.email
+        if (!sameDecided && savedJoplin.email.isNotBlank()) {
+            sameCredentials = savedJoplin.email.equals(session.username, ignoreCase = true)
+            sameDecided = true
+        }
     }
 
     fun finish(
@@ -85,6 +97,10 @@ fun LoginScreen(
         // Un autre compte ne doit pas voir le cache du précédent.
         if (url != session.baseUrl || user != session.username) repository.reset()
         session.save(url, token, user, password.takeIf { totp.isBlank() })
+        if (sameCredentials) {
+            joplinEmail = user
+            joplinPassword = password
+        }
         scope.launch {
             repository.refresh()
             // Notes facultatives : rien n'est enregistré tant que l'e-mail Joplin n'est pas rempli.
@@ -101,6 +117,10 @@ fun LoginScreen(
     }
 
     fun submit() {
+        if (sameCredentials && !username.contains('@')) {
+            error = "Pour connecter aussi les notes, saisissez votre adresse e-mail (Joplin n'accepte pas de pseudo)."
+            return
+        }
         busy = true
         error = null
         scope.launch {
@@ -232,6 +252,27 @@ fun LoginScreen(
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.outline,
         )
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier =
+                Modifier
+                    .fillMaxWidth()
+                    .toggleable(
+                        value = sameCredentials,
+                        role = Role.Checkbox,
+                        onValueChange = {
+                            sameDecided = true
+                            sameCredentials = it
+                        },
+                    ),
+        ) {
+            Checkbox(checked = sameCredentials, onCheckedChange = null)
+            Text(
+                "Même e-mail et mot de passe pour todo et notes",
+                style = MaterialTheme.typography.bodyMedium,
+                modifier = Modifier.padding(start = 12.dp),
+            )
+        }
         if (showAdvanced) {
             OutlinedTextField(
                 value = joplinServer,
@@ -243,30 +284,32 @@ fun LoginScreen(
                 modifier = Modifier.fillMaxWidth(),
             )
         }
-        OutlinedTextField(
-            value = joplinEmail,
-            onValueChange = { joplinEmail = it },
-            label = { Text("E-mail Joplin") },
-            singleLine = true,
-            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
-            modifier = Modifier.fillMaxWidth(),
-        )
-        // Le mot de passe reste toujours visible (seule l'adresse du serveur est cachée, comme pour Vikunja).
-        OutlinedTextField(
-            value = joplinPassword,
-            onValueChange = { joplinPassword = it },
-            label = { Text("Mot de passe Joplin") },
-            supportingText =
-                if (savedJoplin.password.isNotBlank() && joplinPassword.isEmpty()) {
-                    { Text("Déjà enregistré : laissez vide pour le garder") }
-                } else {
-                    null
-                },
-            singleLine = true,
-            visualTransformation = PasswordVisualTransformation(),
-            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
-            modifier = Modifier.fillMaxWidth(),
-        )
+        if (!sameCredentials) {
+            OutlinedTextField(
+                value = joplinEmail,
+                onValueChange = { joplinEmail = it },
+                label = { Text("E-mail Joplin") },
+                singleLine = true,
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
+                modifier = Modifier.fillMaxWidth(),
+            )
+            // Le mot de passe reste toujours visible (seule l'adresse du serveur est cachée, comme pour Vikunja).
+            OutlinedTextField(
+                value = joplinPassword,
+                onValueChange = { joplinPassword = it },
+                label = { Text("Mot de passe Joplin") },
+                supportingText =
+                    if (savedJoplin.password.isNotBlank() && joplinPassword.isEmpty()) {
+                        { Text("Déjà enregistré : laissez vide pour le garder") }
+                    } else {
+                        null
+                    },
+                singleLine = true,
+                visualTransformation = PasswordVisualTransformation(),
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+                modifier = Modifier.fillMaxWidth(),
+            )
+        }
 
         error?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyMedium) }
         Button(
