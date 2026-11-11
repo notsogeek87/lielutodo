@@ -80,6 +80,27 @@ class NotesSync(
             }
         }
 
+    /** Modifications de notes et de carnets pas encore envoyées (avertissement avant la déconnexion). */
+    suspend fun unsentCount(): Int =
+        notes.getAllIncludingDeleted().count { it.dirty } + notes.getFolders().count { it.dirty }
+
+    /**
+     * Déconnexion des notes (« Se déconnecter », comme sur le site) : mot de passe, e-mail, cursor, cache des notes et
+     * images téléchargées effacés, pour qu'un autre compte ne retrouve jamais les notes du précédent. L'adresse du
+     * serveur est gardée. Attend la fin d'une synchro en cours (même verrou).
+     */
+    suspend fun disconnect() =
+        running.withLock {
+            settings.setJoplinSyncEnabled(false)
+            settings.setJoplinPassword("")
+            settings.setJoplinEmail("")
+            settings.setJoplinCursor(null)
+            cachedApi = null
+            notes.replaceAll(emptyList())
+            notes.replaceFolders(emptyList())
+            withContext(Dispatchers.IO) { resourceDir?.listFiles()?.forEach { it.deleteRecursively() } }
+        }
+
     /**
      * Fichier d'une ressource Joplin (image jointe `![…](:/<id>)`) : lu dans [resourceDir] s'il a déjà été téléchargé,
      * sinon demandé au serveur puis gardé. Null si indisponible (hors ligne, notes non connectées, id invalide).

@@ -221,6 +221,10 @@ via son protocole de synchro (`POST /api/sessions` → `X-API-AUTH`, delta `item
   rafraîchir » sur l'onglet Notes (`NotesSync.syncing`), carte « Notes non connectées » avec formulaire pré-rempli
   (`DEFAULT_JOPLIN_SERVER`, aussi valeur par défaut du réglage). Serveur + e-mail Joplin font partie de la section
   `settings` des sauvegardes (restaurés seulement si absents) ; le mot de passe jamais.
+- APK, « Se déconnecter » (Parcourir) : déconnecte les tâches ET les notes, comme le site. `NotesSync.disconnect()`
+  (sous le verrou de synchro) efface mot de passe, e-mail, cursor, cache des notes et images, garde l'adresse du
+  serveur ; puis `session.clear()`. Les écritures de tâches en attente restent (renvoyées au même compte), les notes non
+  envoyées sont perdues : l'avertissement compte les deux (`NotesSync.unsentCount()`).
 - Web : la synchro des notes est visible (`meta.syncing`/`meta.progress` : ligne d'état sous le titre, roue du haut,
   « Récupération de vos notes… » à la première) ; contenus téléchargés 6 par 6. La page de connexion a, comme l'APK, une
   section Notes facultative (formulaire séparé pour les gestionnaires de mots de passe ; coche « Même

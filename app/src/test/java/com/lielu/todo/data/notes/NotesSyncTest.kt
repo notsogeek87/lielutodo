@@ -92,6 +92,30 @@ class NotesSyncTest {
         }
 
     @Test
+    fun deconnexionEffaceIdentifiantsCacheEtCursorMaisGardeLeServeur() =
+        runTest {
+            val settings = configuredSettings()
+            settings.setJoplinCursor("c9")
+            val notes = FakeNotesRepository()
+            notes.upsert(Note(id = "d".repeat(32), title = "Pas envoyée", body = "", parentId = "f", dirty = true))
+            notes.createFolder("Carnet local")
+            val sync = NotesSync(settings, notes, apiFactory = { error("pas de réseau") })
+            assertEquals(2, sync.unsentCount())
+
+            sync.disconnect()
+
+            val joplin = settings.joplin.first()
+            assertEquals("https://notes.lielu.eu", joplin.serverUrl)
+            assertEquals("", joplin.email)
+            assertEquals("", joplin.password)
+            assertTrue(!joplin.syncEnabled)
+            assertNull(settings.joplinCursor.first())
+            assertTrue(notes.getAllIncludingDeleted().isEmpty())
+            assertTrue(notes.getFolders().isEmpty())
+            assertEquals(0, sync.unsentCount())
+        }
+
+    @Test
     fun noteRecueViaDeltaEstStockeeEtCursorEnregistre() =
         runTest {
             val settings = configuredSettings()

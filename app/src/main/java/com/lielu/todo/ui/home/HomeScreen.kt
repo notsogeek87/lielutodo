@@ -136,6 +136,7 @@ fun HomeScreen(
     onOpenNotifications: () -> Unit,
     onOpenActivity: () -> Unit,
     onSettings: () -> Unit,
+    unsentNotes: suspend () -> Int,
     onLogout: () -> Unit,
     /** Onglet Notes (liste des notes Joplin), fourni par la navigation. */
     notesContent: @Composable () -> Unit = {},
@@ -362,6 +363,7 @@ fun HomeScreen(
                                     onOpenNotifications = onOpenNotifications,
                                     onOpenActivity = onOpenActivity,
                                     onSettings = onSettings,
+                                    unsentNotes = unsentNotes,
                                     onLogout = onLogout,
                                 )
                         }

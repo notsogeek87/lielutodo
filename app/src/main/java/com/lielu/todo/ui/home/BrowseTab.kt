@@ -97,6 +97,7 @@ fun BrowseTab(
     onOpenNotifications: () -> Unit,
     onOpenActivity: () -> Unit,
     onSettings: () -> Unit,
+    unsentNotes: suspend () -> Int,
     onLogout: () -> Unit,
 ) {
     val scope = rememberCoroutineScope()
@@ -106,6 +107,7 @@ fun BrowseTab(
     var showIcons by remember { mutableStateOf(false) }
     var showFailed by remember { mutableStateOf(false) }
     var confirmLogout by remember { mutableStateOf(false) }
+    var notesUnsent by remember { mutableStateOf(0) }
     val context = LocalContext.current
     var projectsOpen by rememberSaveable { mutableStateOf(true) }
     var labelsOpen by rememberSaveable { mutableStateOf(true) }
@@ -148,7 +150,14 @@ fun BrowseTab(
                 BrowseRow(Icons.Outlined.BarChart, "Productivité et activité", onClick = onOpenActivity)
                 BrowseRow(Icons.Outlined.Settings, "Paramètres et sauvegarde", onClick = onSettings)
                 BrowseRow(Icons.AutoMirrored.Outlined.Logout, "Se déconnecter", onClick = {
-                    if (state.ops.isEmpty() && state.failed.isEmpty()) onLogout() else confirmLogout = true
+                    scope.launch {
+                        notesUnsent = unsentNotes()
+                        if (state.ops.isEmpty() && state.failed.isEmpty() && notesUnsent == 0) {
+                            onLogout()
+                        } else {
+                            confirmLogout = true
+                        }
+                    }
                 })
             }
         }
@@ -376,10 +385,21 @@ fun BrowseTab(
             onDismissRequest = { confirmLogout = false },
             title = { Text("Se déconnecter ?") },
             text = {
+                val tasksUnsent = state.ops.size + state.failed.size
                 Text(
-                    "${state.ops.size + state.failed.size} modification(s) ne sont pas encore sur le serveur. " +
-                        "Elles restent sur ce téléphone et partiront quand vous vous reconnecterez avec ce compte ; " +
-                        "un autre compte les effacerait.",
+                    buildString {
+                        append("Les tâches et les notes seront déconnectées. ")
+                        if (tasksUnsent > 0) {
+                            append(
+                                "$tasksUnsent modification(s) de tâches ne sont pas encore sur le serveur : elles " +
+                                    "restent sur ce téléphone et partiront quand vous vous reconnecterez avec ce " +
+                                    "compte ; un autre compte les effacerait. ",
+                            )
+                        }
+                        if (notesUnsent > 0) {
+                            append("$notesUnsent modification(s) de notes pas encore envoyées seront perdues.")
+                        }
+                    }.trim(),
                 )
             },
             confirmButton = {

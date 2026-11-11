@@ -34,6 +34,7 @@ import com.lielu.todo.ui.notes.NotesViewModel
 import com.lielu.todo.ui.settings.SettingsScreen
 import com.lielu.todo.ui.settings.SettingsViewModel
 import com.lielu.todo.ui.task.TaskDetailScreen
+import kotlinx.coroutines.launch
 
 object AppDestinations {
     const val HOME = "home"
@@ -147,7 +148,15 @@ fun AppNavHost(
                 onOpenNotifications = { navController.navigate(AppDestinations.NOTIFICATIONS) },
                 onOpenActivity = { navController.navigate(AppDestinations.ACTIVITY) },
                 onSettings = { navController.navigate(AppDestinations.SETTINGS) },
-                onLogout = { container.session.clear() },
+                unsentNotes = { container.notesSync.unsentCount() },
+                // Déconnecte les tâches ET les notes (comme le site) ; les notes d'abord, puis la session, pour qu'une
+                // reconnexion immédiate ne voie pas ses nouveaux identifiants Joplin effacés.
+                onLogout = {
+                    container.applicationScope.launch {
+                        container.notesSync.disconnect()
+                        container.session.clear()
+                    }
+                },
             )
         }
 
