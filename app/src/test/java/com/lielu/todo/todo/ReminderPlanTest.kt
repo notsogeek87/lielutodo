@@ -47,6 +47,23 @@ class ReminderPlanTest {
     }
 
     @Test
+    fun tasksAssignedOnlyToSomeoneElseDoNotRing() {
+        val me = User(7, "moi", "")
+        val other = User(8, "autre", "")
+        val due = "2026-10-25T09:30:00Z"
+        val tasks =
+            listOf(
+                task(1, due),
+                task(2, due).copy(assignees = listOf(me)),
+                task(3, due).copy(assignees = listOf(other)),
+                task(4, due).copy(assignees = listOf(other, me)),
+            )
+        assertEquals(listOf(1L, 2L, 4L), planReminders(tasks, now, zone, userId = 7).map { it.taskId })
+        // Utilisateur encore inconnu (cache sans user_id) : rien n'est écarté.
+        assertEquals(listOf(1L, 2L, 3L, 4L), planReminders(tasks, now, zone).map { it.taskId })
+    }
+
+    @Test
     fun explicitRemindersReplaceTheDueTimeAndFollowTheDueDate() {
         val t =
             task(

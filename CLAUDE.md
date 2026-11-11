@@ -150,7 +150,8 @@ rester lisible ET modifiable hors ligne.
   est renvoyée avec son HTML d'origine (`htmlForServer`), pour ne pas perdre la mise en forme du site.
 - `QuickAddParser` : ajout rapide en langage naturel (dates, heure, `#projet`, `@étiquette`, `p1`-`p4`, récurrence).
   Une date seule est stockée à midi (heure « sans heure » masquée dans l'UI).
-- `reminder/` (AlarmManager, notifications Terminer/Reporter, résumé quotidien), `widget/` (liste + ajout rapide),
+- `reminder/` (AlarmManager, notifications Terminer/Reporter, résumé quotidien ; une tâche assignée seulement à
+  d'autres ne sonne pas et n'entre pas dans le résumé : `Task.isForUser`), `widget/` (liste + ajout rapide),
   `work/SyncWorker` (30 min), `QuickAddActivity` (widget, tuile, raccourci, « Partager »).
 - Tests : `TodoRepositoryTest` joue contre un faux serveur en mémoire ; tout nouveau type d'écriture y ajoute sa route.
 

@@ -158,6 +158,12 @@ data class Task(
     /** Date de planification : l'échéance, sinon le premier rappel (une tâche avec rappel seul reste planifiée). */
     val plannedAt: Instant? get() = dueDate ?: reminders.mapNotNull { it.effective(null) }.minOrNull()
 
+    /**
+     * Concerne-t-elle l'utilisateur [userId] ? Oui si personne n'est assigné, ou s'il l'est. Une tâche assignée
+     * seulement à d'autres (projet partagé) ne le notifie pas. [userId] inconnu (0) : on ne filtre rien.
+     */
+    fun isForUser(userId: Long): Boolean = userId <= 0 || assignees.isEmpty() || assignees.any { it.id == userId }
+
     /** Instants où la notifier : ses rappels, ou à l'échéance si elle a une heure et aucun rappel explicite. */
     fun notificationTimes(dueHasTime: Boolean): List<Instant> {
         val explicit = reminders.mapNotNull { it.effective(dueDate) }

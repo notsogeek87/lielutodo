@@ -15,16 +15,18 @@ data class PlannedReminder(
 /**
  * Les prochaines notifications, de la plus proche à la plus lointaine. Android limite le nombre d'alarmes par
  * application : on n'en programme que [max], les suivantes le seront quand celles-ci auront sonné (la liste est
- * recalculée à chaque changement, au démarrage et à chaque synchro).
+ * recalculée à chaque changement, au démarrage et à chaque synchro). Les tâches assignées seulement à d'autres que
+ * [userId] ne sonnent pas (voir [Task.isForUser]).
  */
 fun planReminders(
     tasks: List<Task>,
     now: Instant,
     zone: ZoneId = ZoneId.systemDefault(),
     max: Int = 60,
+    userId: Long = 0,
 ): List<PlannedReminder> =
     tasks
-        .filter { !it.done }
+        .filter { !it.done && it.isForUser(userId) }
         .flatMap { task ->
             val dueHasTime =
                 task.dueDate

@@ -198,11 +198,11 @@ class AppContainer(
         }
         applicationScope.launch {
             todoRepository.state
-                .map { it.tasks }
+                .map { it.tasks to it.userId }
                 .distinctUntilChanged()
                 .debounce(WIDGET_DEBOUNCE_MS)
-                .collect { tasks ->
-                    runCatching { reminderScheduler.apply(planReminders(tasks, Instant.now())) }
+                .collect { (tasks, userId) ->
+                    runCatching { reminderScheduler.apply(planReminders(tasks, Instant.now(), userId = userId)) }
                     runCatching { refreshWidgets(appContext) }
                 }
         }

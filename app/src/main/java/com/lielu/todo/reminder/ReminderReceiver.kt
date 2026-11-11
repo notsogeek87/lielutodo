@@ -27,13 +27,15 @@ class ReminderReceiver : BroadcastReceiver() {
         val taskId = intent.getLongExtra(EXTRA_TASK_ID, 0)
         when (intent.action) {
             ACTION_DAILY -> {
-                showDaily(context, container.todoRepository.state.value.tasks)
+                val state = container.todoRepository.state.value
+                showDaily(context, state.tasks.filter { it.isForUser(state.userId) })
                 container.reminderScheduler.scheduleDaily()
             }
             ACTION_REMIND ->
                 show(
                     context,
                     container.todoRepository.task(taskId),
+                    container.todoRepository.state.value.userId,
                     taskId,
                     intent.getStringExtra(EXTRA_TITLE).orEmpty(),
                 )
@@ -106,11 +108,14 @@ class ReminderReceiver : BroadcastReceiver() {
     private fun show(
         context: Context,
         task: com.lielu.todo.data.model.Task?,
+        userId: Long,
         taskId: Long,
         fallbackTitle: String,
     ) {
         // Terminée ou supprimée entre-temps (sur un autre appareil, par exemple) : plus rien à rappeler.
         if (task?.done == true) return
+        // Assignée entre-temps à quelqu'un d'autre : ce n'est plus à cet utilisateur qu'il faut la rappeler.
+        if (task != null && !task.isForUser(userId)) return
         if (!canNotify(context)) return
         val manager = NotificationManagerCompat.from(context)
         manager.createNotificationChannel(
