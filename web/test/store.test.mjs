@@ -25,6 +25,7 @@ function fakeServer() {
     tasks: new Map(),
     nextId: 100,
     labelCalls: 0,
+    loseResponse: false,
     assigned: [],
     /** Statut d'erreur à renvoyer pour « MÉTHODE chemin », ou undefined. */
     refuse: () => undefined,
@@ -49,8 +50,10 @@ function fakeServer() {
       return res([...srv.tasks.values()].filter((t) => !!t.done === done));
     }
     if ((m = key.match(/^PUT \/projects\/(\d+)\/tasks$/))) {
-      const t = { ...body, id: srv.nextId++, done: false, project_id: Number(m[1]) };
+      const t = { ...body, id: srv.nextId++, done: false, project_id: Number(m[1]), created: new Date().toISOString() };
       srv.tasks.set(t.id, t);
+      // Réponse perdue en route (réseau coupé, délai dépassé) alors que la tâche est créée.
+      if (srv.loseResponse) throw new NetworkError('Serveur injoignable');
       return res(t);
     }
     if ((m = key.match(/^GET \/tasks\/(\d+)$/))) {
@@ -291,4 +294,39 @@ test('assigner hors ligne : écritures gardées puis envoyées après la créati
   store.assign(real, bob, false);
   await store.syncPending();
   assert.ok(srv.assigned.includes(`${real}<7`));
+});
+
+test('une création dont la réponse s\'est perdue n\'est pas recréée au renvoi (pas de doublon)', async () => {
+  const { srv, store } = fresh();
+  await store.refresh();
+  srv.loseResponse = true;
+  const id = store.addTask({ title: 'Contacter Yavon', projectId: 2 });
+  await store.syncPending().catch(() => {});
+  assert.equal(store.state.ops.length, 1);
+  assert.equal(srv.tasks.size, 1);
+  assert.ok(store.state.ops[0].sentAt > 0);
+
+  // Le rafraîchissement relit la copie serveur pendant que la création est encore en file.
+  srv.loseResponse = false;
+  await store.refresh();
+  await store.syncPending();
+  assert.equal(srv.tasks.size, 1);
+  assert.equal(store.state.ops.length, 0);
+  const mine = store.state.tasks.filter((t) => t.title === 'Contacter Yavon');
+  assert.equal(mine.length, 1);
+  assert.equal(mine[0].id, 100);
+  assert.ok(!store.state.tasks.some((t) => t.id === id));
+});
+
+test('une tâche du même titre créée avant le premier envoi n\'est pas prise pour la création perdue', async () => {
+  const { srv, store } = fresh();
+  srv.tasks.set(5, { id: 5, title: 'Pain', project_id: 2, done: false, created: '2020-01-01T00:00:00Z' });
+  await store.refresh();
+  srv.loseResponse = true;
+  store.addTask({ title: 'Pain', projectId: 2 });
+  await store.syncPending().catch(() => {});
+  srv.loseResponse = false;
+  await store.syncPending();
+  assert.equal(srv.tasks.size, 2);
+  assert.equal(store.state.tasks.filter((t) => t.title === 'Pain').length, 2);
 });

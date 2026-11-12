@@ -26,6 +26,11 @@ data class PendingOp(
     val extra: String = "",
     /** Erreurs 500 de suite sur cette écriture alors que le serveur répond au reste (voir `TodoRepository.flush`). */
     val attempts: Int = 0,
+    /**
+     * Création (CREATE) : heure du premier envoi, enregistrée avant la requête. Non nulle = la tâche existe
+     * peut-être déjà sur le serveur (réponse perdue) : `TodoRepository.applyCreate` la cherche avant de la recréer.
+     */
+    val sentAt: Long = 0,
 ) {
     enum class Kind {
         CREATE,

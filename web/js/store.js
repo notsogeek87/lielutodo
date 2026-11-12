@@ -20,6 +20,8 @@ const POSITIONS_EVERY_MS = 10 * 60_000;
 const MAX_SERVER_ERRORS = 3;
 // Panne passagère : réessayer plus tard sans compter d'échec. 408 délai, 429 trop de requêtes, 502-504 proxy.
 const TRANSIENT_CODES = new Set([408, 429, 502, 503, 504]);
+// Écart d'horloge toléré entre l'appareil et le serveur pour reconnaître une création dont la réponse s'est perdue.
+const CREATE_MATCH_SLACK_MS = 5 * 60_000;
 // Écritures qui changent les champs de la tâche : sa version locale prime sur celle du serveur au rafraîchissement.
 const TASK_FIELD_KINDS = new Set(['create', 'update', 'delete', 'position', 'relate', 'assign']);
 
@@ -522,6 +524,28 @@ export function createStore(api) {
     };
   };
 
+  /**
+   * Note l'heure du premier envoi d'une création, enregistrée AVANT la requête : si la réponse se perd (réseau
+   * coupé, délai dépassé, 502/504 du proxy), le prochain essai sait que la tâche existe peut-être déjà.
+   */
+  function markSent(op) {
+    if (op.sentAt) return;
+    const at = Date.now();
+    const mark = (o) => (o.kind === op.kind && o.taskId === op.taskId && !o.sentAt ? { ...o, sentAt: at } : o);
+    state = { ...state, ops: state.ops.map(mark), failed: state.failed.map((f) => ({ ...f, op: mark(f.op) })) };
+    save();
+  }
+
+  /** Tâche créée par un envoi précédent dont la réponse s'est perdue : même projet, même titre, créée depuis. */
+  async function findAlreadyCreated(local, sentAt) {
+    const since = sentAt - CREATE_MATCH_SLACK_MS;
+    const open = (await fetchPaged(api, '/tasks', { filter: 'done = false', sort_by: 'id' })).map(taskFromJson);
+    return open
+      .filter((t) => t.projectId === local.projectId && t.title === local.title)
+      .filter((t) => Date.parse(t.raw?.created || '') >= since)
+      .sort((a, b) => a.id - b.id)[0] || null;
+  }
+
   async function apply(op) {
     switch (op.kind) {
       case 'create': {
@@ -529,9 +553,17 @@ export function createStore(api) {
         if (op.taskId > 0) return apply({ ...op, kind: 'update', flag: true });
         const local = taskById(op.taskId);
         if (!local) return;
-        const body = taskToRequest(local);
-        delete body.id;
-        const created = taskFromJson((await api('PUT', `/projects/${local.projectId}/tasks`, { body })).json());
+        // Envoi déjà tenté : la réponse a pu se perdre alors que le serveur avait créé la tâche. La reprendre
+        // plutôt que la recréer (sinon doublon). Comme TodoRepository.applyCreate.
+        let created = op.sentAt ? await findAlreadyCreated(local, op.sentAt) : null;
+        if (!created) {
+          markSent(op);
+          const body = taskToRequest(local);
+          delete body.id;
+          created = taskFromJson((await api('PUT', `/projects/${local.projectId}/tasks`, { body })).json());
+        }
+        // Une copie serveur déjà relue (rafraîchissement après une réponse perdue) cède la place à la tâche locale.
+        state = { ...state, tasks: state.tasks.filter((t) => t.id !== created.id) };
         // Remapper AVANT les étiquettes : si elles échouent, la tâche existe déjà sur le serveur sous son vrai id.
         remap(local.id, created.id);
         state = { ...state, tasks: state.tasks.map((t) => (t.id === created.id ? { ...t, raw: created.raw, commentCount: created.commentCount } : t)) };

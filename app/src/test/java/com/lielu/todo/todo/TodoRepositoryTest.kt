@@ -30,6 +30,7 @@ private class FakeServer : HttpApi {
     val calls = mutableListOf<String>()
     var labelCalls = 0
     var serverError = false
+    var loseResponse = false
     val created = mutableListOf<String>()
     private val extraProjects = mutableListOf<JSONObject>()
     private val extraLabels = mutableListOf<JSONObject>()
@@ -106,8 +107,14 @@ private class FakeServer : HttpApi {
                     JSONArray(tasks.values.filter { !it.getBoolean("done") }).toString(),
                 )
             method == "PUT" && path.matches(Regex("/projects/\\d+/tasks")) -> {
-                val task = JSONObject(body.toString()).put("id", nextId++).put("done", false)
+                val task =
+                    JSONObject(body.toString())
+                        .put("id", nextId++)
+                        .put("done", false)
+                        .put("created", java.time.Instant.now().toString())
                 tasks[task.getLong("id")] = task
+                // Réponse perdue en route (réseau coupé, délai dépassé) alors que la tâche est créée.
+                if (loseResponse) throw IOException("réponse perdue")
                 ok(task.toString())
             }
             method == "GET" && path.matches(Regex("/tasks/\\d+")) ->
@@ -1075,5 +1082,48 @@ class TodoRepositoryTest {
             assertTrue(repo.syncPending())
             assertEquals("Premier", server.tasks[5]!!.getString("title"))
             assertEquals("<p>ajoutée pendant l'envoi</p>", server.tasks[5]!!.getString("description"))
+        }
+
+    @Test
+    fun createWhoseResponseWasLostIsNotSentTwice() =
+        runTest {
+            val server = FakeServer()
+            val cache = MemoryCache()
+            val first = repo(server, cache)
+            first.refresh()
+            server.loseResponse = true
+            first.addTask("Contacter Yavon", 2)
+            advanceUntilIdle()
+            assertEquals(1, server.tasks.size)
+            assertEquals(1, first.state.value.pending)
+            first.saveNow()
+
+            // Redémarrage de l'app : l'heure du premier envoi survit dans le cache.
+            server.loseResponse = false
+            val repo = repo(server, cache)
+            repo.refresh()
+            advanceUntilIdle()
+            assertEquals(1, server.tasks.size)
+            assertEquals(0, repo.state.value.pending)
+            val mine = repo.state.value.tasks.filter { it.title == "Contacter Yavon" }
+            assertEquals(listOf(100L), mine.map { it.id })
+        }
+
+    @Test
+    fun olderTaskWithSameTitleIsNotMistakenForTheLostCreate() =
+        runTest {
+            val server = FakeServer()
+            server.tasks[5] =
+                JSONObject("""{"id":5,"title":"Pain","project_id":2,"done":false,"created":"2020-01-01T00:00:00Z"}""")
+            val repo = repo(server)
+            repo.refresh()
+            server.loseResponse = true
+            repo.addTask("Pain", 2)
+            advanceUntilIdle()
+            server.loseResponse = false
+            repo.refresh()
+            advanceUntilIdle()
+            assertEquals(2, server.tasks.size)
+            assertEquals(2, repo.state.value.tasks.count { it.title == "Pain" })
         }
 }

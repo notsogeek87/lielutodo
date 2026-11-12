@@ -841,13 +841,15 @@ class TodoRepository(
 
     private suspend fun applyCreate(op: PendingOp) {
         val local = task(op.taskId) ?: return
-        val body = local.toRequestJson().also { it.remove("id") }
-        val created = taskFromJson(JSONObject(api.call("PUT", "/projects/${local.projectId}/tasks", body = body).body))
+        // Envoi déjà tenté : la réponse a pu se perdre alors que le serveur avait créé la tâche. On la reprend
+        // plutôt que de la recréer (sinon doublon).
+        val created = findAlreadyCreated(local, op.sentAt) ?: sendCreate(local, op)
         // Remapper AVANT les étiquettes : si elles échouent, la tâche existe déjà sur le serveur sous son vrai id.
+        // Une copie serveur déjà relue (rafraîchi après une réponse perdue) cède la place à la tâche locale.
         _state.update { s ->
             s.copy(
                 tasks =
-                    s.tasks.map {
+                    s.tasks.filterNot { it.id == created.id }.map {
                         when {
                             it.id == local.id ->
                                 it.copy(
@@ -898,6 +900,51 @@ class TodoRepository(
             )
         }
         if (local.labels.isNotEmpty()) setLabels(created.id, local.labels)
+    }
+
+    /**
+     * Envoie une création en notant d'abord l'heure du premier envoi, enregistrée AVANT la requête : si la réponse
+     * se perd (réseau coupé, délai dépassé, 502/504 du proxy), le prochain essai sait que la tâche existe peut-être.
+     */
+    private suspend fun sendCreate(
+        local: Task,
+        op: PendingOp,
+    ): Task {
+        if (op.sentAt == 0L) {
+            val at = clock()
+            _state.update { s ->
+                s.copy(
+                    ops = s.ops.map { markSent(it, op, at) },
+                    failed = s.failed.map { it.copy(op = markSent(it.op, op, at)) },
+                )
+            }
+            saveNow()
+        }
+        val body = local.toRequestJson().also { it.remove("id") }
+        return taskFromJson(JSONObject(api.call("PUT", "/projects/${local.projectId}/tasks", body = body).body))
+    }
+
+    private fun markSent(
+        candidate: PendingOp,
+        op: PendingOp,
+        at: Long,
+    ): PendingOp {
+        val same = candidate.kind == op.kind && candidate.taskId == op.taskId
+        return if (same && candidate.sentAt == 0L) candidate.copy(sentAt = at) else candidate
+    }
+
+    /** Tâche créée par un envoi précédent dont la réponse s'est perdue : même projet, même titre, créée depuis. */
+    private suspend fun findAlreadyCreated(
+        local: Task,
+        sentAt: Long,
+    ): Task? {
+        if (sentAt == 0L) return null
+        val since = sentAt - CREATE_MATCH_SLACK_MS
+        return fetchPaged("/tasks", mapOf("filter" to "done = false", "sort_by" to "id"))
+            .map(::taskFromJson)
+            .filter { it.projectId == local.projectId && it.title == local.title }
+            .filter { (it.createdAt?.toEpochMilli() ?: 0L) >= since }
+            .minByOrNull { it.id }
     }
 
     private suspend fun applyUpdate(op: PendingOp) {
@@ -1491,6 +1538,9 @@ class TodoRepository(
 
     private companion object {
         const val SAVE_DELAY_MS = 150L
+
+        /** Écart d'horloge toléré (appareil / serveur) pour reconnaître une création dont la réponse s'est perdue. */
+        const val CREATE_MATCH_SLACK_MS = 5 * 60_000L
         const val PAGE_SIZE = 50
         const val DIAGNOSTIC_BODY_MAX = 300
         const val POSITION_STEP = 65536.0

@@ -225,6 +225,7 @@ object TodoStateCodec {
             .put("flag", op.flag)
             .put("extra", op.extra)
             .put("attempts", op.attempts)
+            .put("sent_at", op.sentAt)
 
     private fun opFromJson(o: JSONObject) =
         PendingOp(
@@ -236,5 +237,6 @@ object TodoStateCodec {
             flag = o.optBoolean("flag", o.optBoolean("labels")),
             extra = o.optString("extra"),
             attempts = o.optInt("attempts"),
+            sentAt = o.optLong("sent_at"),
         )
 }
