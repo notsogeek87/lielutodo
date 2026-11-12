@@ -15,6 +15,18 @@ export function lastNotesHash() {
   try { const id = localStorage.getItem(FOLDER_KEY); return id ? `#/notes/${id}` : '#/notes'; } catch { return '#/notes'; }
 }
 
+/**
+ * Remplace le contenu d'un élément seulement s'il a changé. L'écran est redessiné à chaque émission des stores
+ * (synchro, invitations…) : réécrire un bouton entre l'appui et le relâchement perd le clic (« Nouvelle note » qui
+ * ne réagit pas pendant une synchro). Rend vrai si le contenu a été remplacé.
+ */
+function setHtml(el, html) {
+  if (el.dataset.html === html) return false;
+  el.innerHTML = html;
+  el.dataset.html = html;
+  return true;
+}
+
 export function createNotesView(store, go) {
   let query = '';
   let editor = null; // { id, initial, history, redo, lastEditAt, timer, last, preview }
@@ -79,17 +91,17 @@ export function createNotesView(store, go) {
       $('#notes-search', head).addEventListener('input', (e) => { query = e.target.value; drawList(content, folderId); });
     }
     $('#notes-title', head).textContent = folder ? folder.title : 'Notes';
-    $('#notes-sync', head).innerHTML = syncStatus();
+    setHtml($('#notes-sync', head), syncStatus());
     document.title = `${folder ? folder.title : 'Notes'} – LieluTodo`;
-    $('#notes-actions', head).innerHTML = `
+    setHtml($('#notes-actions', head), `
       ${connected ? `<button class="btn${invitations.length ? ' primary' : ''}" data-nact="invitations" title="Carnets partagés et invitations">${icon('users', 16)} Partages${invitations.length ? ` · ${invitations.length}` : ''}</button>` : ''}
       ${folder && connected && !folder.parentId ? `<button class="btn" data-nact="share">${icon('userPlus', 16)} Partager</button>` : ''}
       ${folder ? `<button class="icon-btn" data-nact="delete-folder" title="Supprimer le carnet" aria-label="Supprimer le carnet">${icon('trash', 20)}</button>` : ''}
       <button class="icon-btn" data-nact="new-folder" title="Nouveau carnet" aria-label="Nouveau carnet">${icon('folderPlus', 20)}</button>
-      <button class="btn primary" data-nact="new-note">${icon('plus', 16)} Nouvelle note</button>`;
-    $('#notes-chips', head).innerHTML = s.folders.length ? `
+      <button class="btn primary" data-nact="new-note">${icon('plus', 16)} Nouvelle note</button>`);
+    setHtml($('#notes-chips', head), s.folders.length ? `
       <a class="pill${folderId ? '' : ' sel'}" href="#/notes">Toutes</a>
-      ${s.folders.map((f) => `<a class="pill${f.id === folderId ? ' sel' : ''}" href="#/notes/${f.id}">${f.shareId ? icon('users', 14) : icon('folder', 14)} ${esc(f.title)}${f.dirty ? ' ·' : ''}</a>`).join('')}` : '';
+      ${s.folders.map((f) => `<a class="pill${f.id === folderId ? ' sel' : ''}" href="#/notes/${f.id}">${f.shareId ? icon('users', 14) : icon('folder', 14)} ${esc(f.title)}${f.dirty ? ' ·' : ''}</a>`).join('')}` : '');
     drawList(content, folderId);
   }
 
@@ -131,7 +143,7 @@ export function createNotesView(store, go) {
       ? `<div class="empty"><div class="big">${icon('sync', 40, 'spin')}</div><h2>Récupération de vos notes…</h2><p>La première synchronisation avec Joplin peut prendre un moment.${store.meta.progress ? ` ${store.meta.progress} élément${store.meta.progress > 1 ? 's' : ''} reçu${store.meta.progress > 1 ? 's' : ''}.` : ''}</p></div>`
       : !notes.length
       ? `<div class="empty"><div class="big">${icon('note', 40)}</div><h2>${q ? 'Aucun résultat' : 'Aucune note'}</h2><p>${q ? `Rien ne correspond à « ${esc(query)} ».` : 'Créez votre première note avec « Nouvelle note ».'}</p></div>` : '';
-    list.innerHTML = banner + status + notes.map((n) => {
+    const html = banner + status + notes.map((n) => {
       const f = store.folder(n.parentId);
       return `<a class="note-card" href="#/note/${n.id}">
         <div class="note-title">${esc(n.title || 'Sans titre')}</div>
@@ -139,7 +151,8 @@ export function createNotesView(store, go) {
         <div class="note-meta"><span>${esc(fmt.format(n.userUpdatedTime))}</span>${!folderId && f ? `<span>${icon(f.shareId ? 'users' : 'folder', 12)} ${esc(f.title)}</span>` : ''}${n.dirty ? `<span class="note-pending">${icon('offline', 12)} pas encore envoyée</span>` : ''}</div>
       </a>`;
     }).join('') + empty;
-    bindConnect(list);
+    // Formulaire de connexion en cours de saisie gardé tel quel ; liaison seulement pour un contenu neuf.
+    if (setHtml(list, html)) bindConnect(list);
   }
 
   function bindListEvents(content) {
