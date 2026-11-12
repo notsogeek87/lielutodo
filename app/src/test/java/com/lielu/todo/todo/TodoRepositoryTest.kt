@@ -22,6 +22,7 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.io.IOException
+import java.time.Instant
 
 /** Serveur Vikunja minimal en mémoire : juste les routes que l'app utilise. */
 private class FakeServer : HttpApi {
@@ -111,7 +112,7 @@ private class FakeServer : HttpApi {
                     JSONObject(body.toString())
                         .put("id", nextId++)
                         .put("done", false)
-                        .put("created", java.time.Instant.now().toString())
+                        .put("created", "${Instant.now()}")
                 tasks[task.getLong("id")] = task
                 // Réponse perdue en route (réseau coupé, délai dépassé) alors que la tâche est créée.
                 if (loseResponse) throw IOException("réponse perdue")
@@ -1105,7 +1106,9 @@ class TodoRepositoryTest {
             advanceUntilIdle()
             assertEquals(1, server.tasks.size)
             assertEquals(0, repo.state.value.pending)
-            val mine = repo.state.value.tasks.filter { it.title == "Contacter Yavon" }
+            val mine =
+                repo.state.value.tasks
+                    .filter { it.title == "Contacter Yavon" }
             assertEquals(listOf(100L), mine.map { it.id })
         }
 
@@ -1124,6 +1127,10 @@ class TodoRepositoryTest {
             repo.refresh()
             advanceUntilIdle()
             assertEquals(2, server.tasks.size)
-            assertEquals(2, repo.state.value.tasks.count { it.title == "Pain" })
+            assertEquals(
+                2,
+                repo.state.value.tasks
+                    .count { it.title == "Pain" },
+            )
         }
 }
