@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.input.TextFieldState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -38,7 +39,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextField
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
@@ -47,7 +47,6 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -63,6 +62,7 @@ import com.lielu.todo.data.model.Task
 import com.lielu.todo.data.todo.QuickAdd
 import com.lielu.todo.data.todo.TodoRepository
 import com.lielu.todo.ui.common.AssigneesDialog
+import com.lielu.todo.ui.common.BorderlessStateTextField
 import com.lielu.todo.ui.common.DatePickerSheet
 import com.lielu.todo.ui.common.IncomingFileResult
 import com.lielu.todo.ui.common.LabelsDialog
@@ -74,7 +74,6 @@ import com.lielu.todo.ui.common.TaskCheckbox
 import com.lielu.todo.ui.common.TaskRow
 import com.lielu.todo.ui.common.TimePickerDialog
 import com.lielu.todo.ui.common.absoluteReminder
-import com.lielu.todo.ui.common.borderlessFieldColors
 import com.lielu.todo.ui.common.dueLabel
 import com.lielu.todo.ui.common.localDate
 import com.lielu.todo.ui.common.priorityName
@@ -132,8 +131,9 @@ fun TaskDetailScreen(
         return
     }
 
-    var title by remember(task.id) { mutableStateOf(task.title) }
-    var description by remember(task.id) { mutableStateOf(task.description) }
+    // Champs « par état » : le clavier y écrit directement (voir BorderlessStateTextField).
+    val titleState = remember(task.id) { TextFieldState(task.title) }
+    val descriptionState = remember(task.id) { TextFieldState(task.description) }
     var dialog by remember { mutableStateOf<Dialog?>(null) }
     var pendingReminderDate by remember { mutableStateOf<LocalDate?>(null) }
     var pendingDueDate by remember { mutableStateOf<LocalDate?>(null) }
@@ -192,12 +192,15 @@ fun TaskDetailScreen(
     val parent = state.tasks.firstOrNull { it.id == task.parentId }
 
     // Titre et description s'enregistrent en quittant l'écran, sans bouton « Enregistrer ».
-    val latestTitle by rememberUpdatedState(title)
-    val latestDescription by rememberUpdatedState(description)
     DisposableEffect(task.id) {
         onDispose {
             val current = repository.task(task.id) ?: return@onDispose
-            val newTitle = latestTitle.trim().ifEmpty { current.title }
+            val newTitle =
+                titleState.text
+                    .toString()
+                    .trim()
+                    .ifEmpty { current.title }
+            val latestDescription = descriptionState.text.toString()
             if (newTitle != current.title || latestDescription != current.description) {
                 repository.updateTask(current.copy(title = newTitle, description = latestDescription))
             }
@@ -277,10 +280,8 @@ fun TaskDetailScreen(
             }
             Row(modifier = Modifier.padding(horizontal = 4.dp), verticalAlignment = Alignment.Top) {
                 TaskCheckbox(task.done, task.priority, onToggle = { repository.setDone(task.id, it) })
-                TextField(
-                    value = title,
-                    onValueChange = { title = it },
-                    colors = borderlessFieldColors(),
+                BorderlessStateTextField(
+                    state = titleState,
                     modifier = Modifier.weight(1f).padding(end = 4.dp),
                     textStyle =
                         MaterialTheme.typography.titleMedium.copy(
@@ -288,16 +289,14 @@ fun TaskDetailScreen(
                         ),
                 )
             }
-            TextField(
-                value = description,
-                onValueChange = { description = it },
+            BorderlessStateTextField(
+                state = descriptionState,
                 placeholder = { Text("Description") },
-                colors = borderlessFieldColors(),
                 modifier = Modifier.fillMaxWidth().padding(start = 52.dp, end = 4.dp, bottom = 8.dp),
                 minLines = 2,
             )
             // Les liens de la description s'ouvrent d'un toucher (le champ reste éditable pour les modifier).
-            extractLinks(description).forEach { link ->
+            extractLinks(descriptionState.text.toString()).forEach { link ->
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     modifier =

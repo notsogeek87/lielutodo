@@ -127,6 +127,9 @@ Changer de signature casse la mise à jour (désinstallation nécessaire).
   ligne max 120, exception de nommage pour les fonctions `@Composable`. `kotlin.code.style=official`.
 - Aucune couleur en dur dans un écran : tout passe par `ui/theme/Theme.kt`.
 - Textes de l'interface en français.
+- Saisie de texte long dans un écran lourd (détail de tâche) : `BorderlessStateTextField` (`TextFieldState`), pas un
+  `TextField(value, onValueChange)` : ce dernier se désynchronise du clavier (mot effacé en acceptant une correction,
+  retour à la ligne en trop).
 
 ## LieluTodo : client Vikunja « façon Todoist » (ce dépôt)
 
