@@ -575,15 +575,19 @@ export function createStore(api) {
         if (!local) return;
         // Fusion avec la version actuelle du serveur (raw = la version sur laquelle la modification a été faite).
         const base = local.raw && local.raw.id > 0 ? taskFromJson(local.raw) : null;
-        const toSend = base ? mergeEdits(base, local, taskFromJson((await api('GET', `/tasks/${local.id}`)).json())) : local;
+        const remote = taskFromJson((await api('GET', `/tasks/${local.id}`)).json());
+        const toSend = base ? mergeEdits(base, local, remote) : local;
         const body = taskToRequest(toSend);
+        // Affectations renvoyées telles que le serveur les a : sans ce champ, Vikunja les efface, et les remettre une à
+        // une notifiait « assigné(e) » à chaque enregistrement. Ajouts et retraits passent par les écritures `assign`.
+        body.assignees = (remote.assignees || []).map((u) => ({ id: u.id }));
         if (op.done !== undefined) body.done = op.done;
         const saved = taskFromJson((await api('POST', `/tasks/${local.id}`, { body })).json());
         if (op.flag) await setLabels(local.id, local.labels);
-        // Vikunja efface les affectations d'une tâche mise à jour sans `assignees` (champ en lecture seule ici) :
-        // on remet celles que la réponse ne contient plus. Un échec (déjà affecté) est sans importance.
+        // Filet de sécurité : si la réponse perd malgré tout des affectations du serveur, on remet celles-là seulement
+        // (jamais une personne retirée ailleurs). Un échec (déjà affecté) est sans importance.
         const kept = new Set((saved.assignees || []).map((u) => u.id));
-        for (const u of toSend.assignees || []) {
+        for (const u of remote.assignees || []) {
           if (kept.has(u.id)) continue;
           try {
             await api('PUT', `/tasks/${local.id}/assignees`, { body: { user_id: u.id } });

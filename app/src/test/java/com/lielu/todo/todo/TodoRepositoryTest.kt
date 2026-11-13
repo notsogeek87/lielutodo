@@ -563,7 +563,15 @@ class TodoRepositoryTest {
                     .copy(title = "T2"),
             )
             repo.syncPending()
-            assertTrue("assign:5>7" in server.created)
+            // Renvoyées avec la modification : aucune ré-affectation, donc aucune notification « assigné(e) ».
+            assertTrue(server.created.none { it.startsWith("assign:") })
+            assertEquals(
+                7L,
+                server.tasks[5]!!
+                    .getJSONArray("assignees")
+                    .getJSONObject(0)
+                    .getLong("id"),
+            )
         }
 
     @Test

@@ -217,7 +217,9 @@ test('modifier une tâche garde ses affectations (Vikunja les efface sinon)', as
   await store.refresh();
   store.updateTask({ ...store.task(5), title: 'T2' });
   await store.syncPending();
-  assert.deepEqual(srv.assigned, ['5>7']);
+  // Renvoyées avec la modification : aucune ré-affectation, donc aucune notification « assigné(e) ».
+  assert.deepEqual(srv.assigned, []);
+  assert.deepEqual(srv.tasks.get(5).assignees.map((u) => u.id), [7]);
 });
 
 test('stockage plein : les écritures en attente (et leurs tâches) passent avant le cache', async () => {

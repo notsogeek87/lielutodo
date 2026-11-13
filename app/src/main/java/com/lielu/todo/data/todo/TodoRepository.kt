@@ -952,15 +952,17 @@ class TodoRepository(
         // Fusion avec la version actuelle du serveur : une modification faite ailleurs entre-temps n'est pas écrasée.
         // Base inconnue (cache d'une version précédente de l'app) : comme avant, la version locale entière.
         val base = local.serverRaw?.let { runCatching { taskFromJson(JSONObject(it)) }.getOrNull() }
-        val toSend =
-            if (base == null) {
-                local
-            } else {
-                mergeEdits(base, local, taskFromJson(JSONObject(api.call("GET", "/tasks/${local.id}").body)))
-            }
-        val saved = taskFromJson(JSONObject(api.call("POST", "/tasks/${local.id}", body = toSend.toRequestJson()).body))
+        val remote = taskFromJson(JSONObject(api.call("GET", "/tasks/${local.id}").body))
+        val toSend = if (base == null) local else mergeEdits(base, local, remote)
+        // Affectations renvoyées telles que le serveur les a : sans ce champ, Vikunja les efface, et les remettre une à
+        // une notifiait « assigné(e) » à chaque enregistrement. Ajouts et retraits passent par les écritures ASSIGN.
+        val body =
+            toSend
+                .toRequestJson()
+                .put("assignees", JSONArray(remote.assignees.map { JSONObject().put("id", it.id) }))
+        val saved = taskFromJson(JSONObject(api.call("POST", "/tasks/${local.id}", body = body).body))
         if (op.flag) setLabels(local.id, local.labels)
-        restoreAssignees(toSend, saved)
+        restoreAssignees(local.id, remote, saved)
         // Une tâche répétée revient « non terminée » avec une nouvelle échéance : on prend la réponse. Si
         // l'utilisateur l'a encore modifiée pendant l'envoi, sa version reste, et repart (sur la base du serveur) :
         // cette écriture-ci, fusionnée avec la nouvelle, va être retirée de la file.
@@ -996,21 +998,21 @@ class TodoRepository(
     }
 
     /**
-     * Vikunja efface les affectations d'une tâche mise à jour sans champ `assignees` (on ne l'envoie pas, voir
-     * `READ_ONLY_KEYS`) : on remet celles que la réponse ne contient plus, sauf celles qu'une écriture ASSIGN en
-     * attente enverra de toute façon. Un échec (déjà affecté) est sans importance.
+     * Filet de sécurité : la mise à jour renvoie les affectations du serveur ([remote]) ; si la réponse en perd
+     * malgré tout, on remet celles-là seulement (jamais une personne retirée ailleurs, ce qui la notifierait).
+     * Un échec (déjà affecté) est sans importance.
      */
     private suspend fun restoreAssignees(
-        local: Task,
+        taskId: Long,
+        remote: Task,
         saved: Task,
     ) {
         val kept = saved.assignees.map { it.id }.toSet()
-        val queued = _state.value.ops.filter { it.kind == PendingOp.Kind.ASSIGN && it.taskId == local.id }
-        local.assignees
-            .filter { u -> u.id !in kept && queued.none { it.otherId == u.id } }
+        remote.assignees
+            .filter { u -> u.id !in kept }
             .forEach { u ->
                 try {
-                    api.call("PUT", "/tasks/${local.id}/assignees", body = JSONObject().put("user_id", u.id))
+                    api.call("PUT", "/tasks/$taskId/assignees", body = JSONObject().put("user_id", u.id))
                 } catch (_: ApiException) {
                     // déjà affecté ou refusé : la prochaine synchronisation relira l'état du serveur
                 }
