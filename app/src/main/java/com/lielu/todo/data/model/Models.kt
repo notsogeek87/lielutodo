@@ -72,6 +72,8 @@ data class AppNotification(
     val created: Instant?,
     /** Tâche concernée, 0 si la notification n'en vise pas. */
     val taskId: Long,
+    /** Type Vikunja (`task.reminder`, `task.comment`…), vide pour un ancien cache. */
+    val kind: String = "",
 )
 
 data class Comment(
@@ -426,6 +428,7 @@ fun notificationFromJson(o: JSONObject): AppNotification {
         read = o.optBoolean("read") || parseDate(o.optString("read_at")) != null,
         created = parseDate(o.optString("created")),
         taskId = task?.optLong("id") ?: 0,
+        kind = name,
     )
 }
 
@@ -436,6 +439,7 @@ fun AppNotification.toJson(): JSONObject =
         .put("read", read)
         .put("created", created?.toString() ?: ZERO_DATE)
         .put("task_id", taskId)
+        .put("kind", kind)
 
 fun appNotificationFromStoredJson(o: JSONObject) =
     AppNotification(
@@ -444,6 +448,7 @@ fun appNotificationFromStoredJson(o: JSONObject) =
         o.optBoolean("read"),
         parseDate(o.optString("created")),
         o.optLong("task_id"),
+        o.optString("kind"),
     )
 
 /**

@@ -15,11 +15,21 @@ import com.lielu.todo.MainActivity
 import com.lielu.todo.R
 import com.lielu.todo.data.model.AppNotification
 
+/**
+ * Types que l'app signale déjà elle-même : un rappel sonne par l'alarme locale, à l'heure exacte. Le relayer depuis
+ * Vikunja ferait sonner deux fois la même tâche, la seconde avec le retard de la synchro. « Échéance atteinte » reste
+ * relayée : une tâche qui a des rappels explicites ne sonne pas à l'échéance.
+ */
+val ALREADY_RUNG_KINDS = setOf("task.reminder")
+
 /** Notifications non lues à signaler : celles dont l'id dépasse le dernier déjà signalé. */
 fun newUnread(
     notifications: List<AppNotification>,
     lastNotifiedId: Long,
-): List<AppNotification> = notifications.filter { !it.read && it.id > lastNotifiedId }.sortedBy { it.id }
+): List<AppNotification> =
+    notifications
+        .filter { !it.read && it.id > lastNotifiedId && it.kind !in ALREADY_RUNG_KINDS }
+        .sortedBy { it.id }
 
 /**
  * Affiche en notification système les nouvelles notifications Vikunja (assignation, commentaire, mention…)
