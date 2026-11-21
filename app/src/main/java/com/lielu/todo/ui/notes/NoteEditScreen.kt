@@ -87,6 +87,7 @@ import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import io.noties.markwon.Markwon
+import io.noties.markwon.SoftBreakAddsNewLinePlugin
 import io.noties.markwon.ext.strikethrough.StrikethroughPlugin
 import io.noties.markwon.ext.tasklist.TaskListPlugin
 import kotlinx.coroutines.Dispatchers
@@ -395,6 +396,8 @@ private fun NotePreview(
         remember(context, linkColor, outlineColor, checkColor) {
             Markwon
                 .builder(context)
+                // Un retour à la ligne simple reste un retour à la ligne, comme dans l'éditeur, Joplin et le site.
+                .usePlugin(SoftBreakAddsNewLinePlugin.create())
                 .usePlugin(StrikethroughPlugin.create())
                 .usePlugin(TaskListPlugin.create(linkColor, outlineColor, checkColor))
                 .build()
