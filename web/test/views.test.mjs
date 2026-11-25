@@ -15,17 +15,21 @@ test('boîte de réception triée comme l\'APK : date, sans date à la fin, puis
     defaultProjectId: 1,
     projects: [{ id: 1, title: 'Inbox' }],
     tasks: [
-      task({ id: 1, position: 1 }),
+      task({ id: 1, position: 1, raw: { created: new Date(at(2, 8)).toISOString() } }),
       task({ id: 2, due: at(5, 9), priority: 1 }),
       task({ id: 3, due: at(3, 18) }),
       task({ id: 4, due: at(5, 9), priority: 4 }),
       task({ id: 5, position: 0, priority: 3 }),
       task({ id: 6, reminders: [{ at: at(4, 8), relativeTo: '' }] }),
+      task({ id: 7, done: true, due: at(6, 8) }),
+      task({ id: 8, done: true, due: at(7, 8), parentId: 3 }),
     ],
     filterResults: {},
   };
   const view = buildView(state, { name: 'inbox' }, ui, at(1, 8));
-  assert.deepEqual(ids(view), [3, 6, 4, 2, 5, 1]);
+  assert.deepEqual(ids(view), [3, 4, 2, 1, 6, 5]);
+  const withDone = buildView(state, { name: 'inbox' }, { showDone: new Set([1]) }, at(1, 8));
+  assert.deepEqual(ids(withDone), [...ids(view), 8, 7]);
   assert.equal(view.draggable, false);
 });
 
