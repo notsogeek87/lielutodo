@@ -193,7 +193,8 @@ fun TaskListScreen(
                             DropdownMenu(expanded = showMenu, onDismissRequest = { showMenu = false }) {
                                 DropdownMenuItem(
                                     text = {
-                                        Text(if (showDone) "Masquer les tâches terminées" else "Afficher les tâches terminées")
+                                        val action = if (showDone) "Masquer" else "Afficher"
+                                        Text("$action les tâches terminées")
                                     },
                                     onClick = {
                                         showDone = !showDone
