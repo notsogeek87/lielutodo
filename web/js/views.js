@@ -16,17 +16,8 @@ export function inboxProject(state) {
 }
 
 // Tris identiques à l'APK (HomeScreen, TaskListScreen, UpcomingPlan.sortedFor).
-/** Échéance, sinon le premier rappel (`Task.plannedAt` de l'APK). */
-export function plannedAt(t) {
-  if (t.due != null) return t.due;
-  const times = (t.reminders || []).map((r) => (r.relativeTo ? null : r.at)).filter((x) => x != null);
-  return times.length ? Math.min(...times) : null;
-}
 const byPosition = (a, b) => a.position - b.position || a.id - b.id;
 const byDueThenPriority = (a, b) => (a.due ?? Infinity) - (b.due ?? Infinity) || b.priority - a.priority || byPosition(a, b);
-/** Boîte de réception : non terminées d'abord, date (sans date à la fin), priorité, position. */
-export const inboxOrder = (a, b) => Number(a.done) - Number(b.done)
-  || (plannedAt(a) ?? Infinity) - (plannedAt(b) ?? Infinity) || b.priority - a.priority || byPosition(a, b);
 function taskOrderWithCompleted(a, b) {
   return Number(a.done) - Number(b.done)
     || Number(a.due == null) - Number(b.due == null)
@@ -75,9 +66,9 @@ export function buildView(state, route, ui, now = Date.now()) {
       const mine = (t) => route.name === 'inbox' && state.user?.id && t.assignees?.some((a) => a.id === state.user.id);
       const isInbox = route.name === 'inbox';
       const tasks = state.tasks.filter((t) => t.projectId === project.id || mine(t));
-      const { roots, children } = showDone
-        ? { roots: tasks.sort(taskOrderWithCompleted) }
-        : projectTree(tasks, false, isInbox ? inboxOrder : byPosition);
+      const { roots, children } = isInbox || showDone
+        ? { roots: tasks.filter((t) => showDone || !t.done).sort(taskOrderWithCompleted) }
+        : projectTree(tasks, false);
       return {
         ...base, title: project.title, project, projectId: project.id, color: colorOf(project.hex), draggable: !isInbox && !showDone,
         icon: route.name === 'inbox' ? 'inbox' : 'hash', showProject: route.name === 'inbox',

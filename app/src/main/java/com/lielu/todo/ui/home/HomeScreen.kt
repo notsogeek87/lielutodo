@@ -511,17 +511,7 @@ private fun InboxTab(
                         ALL_PROJECTS -> true
                         else -> it.projectId == filter
                     }
-            }.sortedWith(
-                if (showDone) {
-                    taskOrderWithCompleted
-                } else {
-                    compareBy<Task> { it.done }
-                        .thenBy(nullsLast()) { it.plannedAt }
-                        .thenByDescending { it.priority }
-                        .thenBy { it.position }
-                        .thenBy { it.id }
-                },
-            )
+            }.sortedWith(taskOrderWithCompleted)
     val projects = state.projects.associate { it.id to it.title }
     val projectColors = projectColors(state.projects)
     // Titre = projet sélectionné (avec sa couleur) ; la boîte de réception s'appelle « Tâches personnelles » ;
