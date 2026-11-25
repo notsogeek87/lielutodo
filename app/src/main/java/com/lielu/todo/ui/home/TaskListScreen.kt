@@ -128,17 +128,24 @@ fun TaskListScreen(
             else -> state.tasks.filter { t -> t.labels.any { it.id == target.labelId } }
         }
     val open = all.filter { !it.done }
-    val done = all.filter { it.done }.sortedByDescending { it.id }
+    val completed = all.filter { it.done }
     val projects = state.projects.associate { it.id to it.title }
     val projectColors = projectColors(state.projects)
-    val manualOrder = projectId != null
+    val sortWithCompleted = projectId != null && showDone
+    val done =
+        completed.sortedWith(
+            if (sortWithCompleted) taskOrderWithCompleted else compareByDescending<Task> { it.id },
+        )
+    val manualOrder = projectId != null && !sortWithCompleted
 
     // Ordre local pendant un glisser-déposer ; remis à zéro dès que la liste change.
     val roots =
         run {
             val ids = open.map { it.id }.toSet()
             val sorted =
-                if (manualOrder) {
+                if (sortWithCompleted) {
+                    open.sortedWith(taskOrderWithCompleted)
+                } else if (manualOrder) {
                     open.sortedWith(compareBy<Task> { it.position }.thenBy { it.id })
                 } else {
                     open.sortedWith(
@@ -146,7 +153,7 @@ fun TaskListScreen(
                     )
                 }
             // Une sous-tâche dont la parente est dans la liste s'affiche sous elle ; sinon elle est à la racine.
-            sorted.filter { it.parentId == 0L || it.parentId !in ids }
+            if (sortWithCompleted) sorted else sorted.filter { it.parentId == 0L || it.parentId !in ids }
         }
     val childrenOf = open.filter { it.parentId != 0L }.groupBy { it.parentId }
     val doneChildren = all.filter { it.done && it.parentId != 0L }.groupBy { it.parentId }
@@ -184,6 +191,16 @@ fun TaskListScreen(
                                 Icon(Icons.Filled.MoreVert, contentDescription = "Options du projet")
                             }
                             DropdownMenu(expanded = showMenu, onDismissRequest = { showMenu = false }) {
+                                DropdownMenuItem(
+                                    text = {
+                                        val action = if (showDone) "Masquer" else "Afficher"
+                                        Text("$action les tâches terminées")
+                                    },
+                                    onClick = {
+                                        showDone = !showDone
+                                        showMenu = false
+                                    },
+                                )
                                 listOf(
                                     "Renommer" to ProjectDialog.RENAME,
                                     "Couleur" to ProjectDialog.COLOR,
@@ -297,19 +314,21 @@ fun TaskListScreen(
                             onToggle = { d -> scope.toggleDone(repository, snackbar, task, d) },
                             onClick = { onOpenTask(task.id) },
                         )
-                        kids.forEach { kid ->
-                            TaskRow(
-                                task = kid,
-                                today = today,
-                                projectName = null,
-                                indent = 1,
-                                onToggle = { d -> scope.toggleDone(repository, snackbar, kid, d) },
-                                onClick = { onOpenTask(kid.id) },
-                            )
+                        if (!sortWithCompleted) {
+                            kids.forEach { kid ->
+                                TaskRow(
+                                    task = kid,
+                                    today = today,
+                                    projectName = null,
+                                    indent = 1,
+                                    onToggle = { d -> scope.toggleDone(repository, snackbar, kid, d) },
+                                    onClick = { onOpenTask(kid.id) },
+                                )
+                            }
                         }
                     }
                 }
-                if (ordered.isEmpty()) item { EmptyState("Aucune tâche.") }
+                if (ordered.isEmpty() && (!showDone || done.isEmpty())) item { EmptyState("Aucune tâche.") }
                 if (done.isNotEmpty()) {
                     item(key = "done-header") {
                         TextButton(onClick = { showDone = !showDone }, modifier = Modifier.padding(horizontal = 8.dp)) {
@@ -635,3 +654,10 @@ private fun ProjectActionDialog(
         dismissButton = { TextButton(onClick = onDismiss) { Text("Annuler") } },
     )
 }
+
+internal val taskOrderWithCompleted =
+    compareBy<Task> { it.done }
+        .thenBy(nullsLast()) { if (it.done) null else it.dueDate }
+        .thenBy(nullsLast(reverseOrder())) { if (it.done) it.dueDate else null }
+        .thenBy(nullsLast(reverseOrder())) { it.createdAt }
+        .thenByDescending { it.id }

@@ -2,7 +2,7 @@
 // fonctions état -> description, rendues ensuite en HTML.
 import { colorOf, isRecurring, todoistLevel } from './model.js';
 import {
-  addDays, dayHeading, dueKind, dueText, hasTime, repeatLabel, startOfDay, weekdayShort, DAY_MS,
+  addDays, dayHeading, dueKind, dueText, hasTime, parseDate, repeatLabel, startOfDay, weekdayShort, DAY_MS,
 } from './dates.js';
 import { icon } from './icons.js';
 import { esc } from './ui.js';
@@ -27,6 +27,13 @@ const byDueThenPriority = (a, b) => (a.due ?? Infinity) - (b.due ?? Infinity) ||
 /** Boîte de réception : non terminées d'abord, date (sans date à la fin), priorité, position. */
 export const inboxOrder = (a, b) => Number(a.done) - Number(b.done)
   || (plannedAt(a) ?? Infinity) - (plannedAt(b) ?? Infinity) || b.priority - a.priority || byPosition(a, b);
+function taskOrderWithCompleted(a, b) {
+  return Number(a.done) - Number(b.done)
+    || Number(a.due == null) - Number(b.due == null)
+    || (a.done ? b.due - a.due : a.due - b.due)
+    || (parseDate(b.raw?.created) ?? -Infinity) - (parseDate(a.raw?.created) ?? -Infinity)
+    || b.id - a.id;
+}
 /** À venir, tri « intelligent » : tâches avec heure d'abord, puis heure, priorité, position. */
 export const smartDayOrder = (a, b) => Number(!hasTime(a.due)) - Number(!hasTime(b.due))
   || a.due - b.due || b.priority - a.priority || byPosition(a, b);
@@ -66,13 +73,13 @@ export function buildView(state, route, ui, now = Date.now()) {
       const showDone = ui.showDone.has(project.id);
       // La boîte de réception réunit aussi les tâches des autres projets affectées à l'utilisateur connecté.
       const mine = (t) => route.name === 'inbox' && state.user?.id && t.assignees?.some((a) => a.id === state.user.id);
-      // Comme l'APK : la boîte de réception est triée par date puis priorité, un projet suit l'ordre manuel.
       const isInbox = route.name === 'inbox';
-      const { roots, children } = projectTree(
-        state.tasks.filter((t) => t.projectId === project.id || mine(t)), showDone, isInbox ? inboxOrder : byPosition,
-      );
+      const tasks = state.tasks.filter((t) => t.projectId === project.id || mine(t));
+      const { roots, children } = showDone
+        ? { roots: tasks.sort(taskOrderWithCompleted) }
+        : projectTree(tasks, false, isInbox ? inboxOrder : byPosition);
       return {
-        ...base, title: project.title, project, projectId: project.id, color: colorOf(project.hex), draggable: !isInbox,
+        ...base, title: project.title, project, projectId: project.id, color: colorOf(project.hex), draggable: !isInbox && !showDone,
         icon: route.name === 'inbox' ? 'inbox' : 'hash', showProject: route.name === 'inbox',
         sections: roots.length ? [{ key: 'all', tasks: roots, children }] : [],
         empty: { icon: '🌤️', title: 'Rien à faire ici', text: 'Ajoutez une tâche pour commencer.' },
