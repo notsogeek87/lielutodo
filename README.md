@@ -5,6 +5,13 @@ Client **Vikunja « façon Todoist »** (Android natif Kotlin/Compose + version 
 file puis renvoyées. Ajout rapide en langage naturel, rappels, widget, sauvegarde automatique, mise à jour depuis
 GitHub.
 
+## Afficher les tâches terminées
+
+Sur Android et sur le web, cette option affiche d’abord les tâches ouvertes, puis les tâches terminées.
+Les échéances sont triées de la plus ancienne à la plus récente pour les tâches ouvertes, et de la plus récente
+à la plus ancienne pour les terminées. À échéance identique, la date de création la plus récente passe en premier.
+Dans chaque groupe, les tâches sans échéance sont affichées à la fin, par date de création décroissante.
+
 ## Documentation
 
 Toute la documentation est dans [`docs/`](docs/README.md) : architecture, API/syntaxes, guides, legacy.
