@@ -512,11 +512,15 @@ private fun InboxTab(
                         else -> it.projectId == filter
                     }
             }.sortedWith(
-                compareBy<Task> { it.done }
-                    .thenBy(nullsLast()) { it.plannedAt }
-                    .thenByDescending { it.priority }
-                    .thenBy { it.position }
-                    .thenBy { it.id },
+                if (showDone) {
+                    taskOrderWithCompleted
+                } else {
+                    compareBy<Task> { it.done }
+                        .thenBy(nullsLast()) { it.plannedAt }
+                        .thenByDescending { it.priority }
+                        .thenBy { it.position }
+                        .thenBy { it.id }
+                },
             )
     val projects = state.projects.associate { it.id to it.title }
     val projectColors = projectColors(state.projects)
